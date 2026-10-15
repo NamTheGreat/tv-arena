@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #F6F1EA;
+  background-image: 
+    radial-gradient(at 15% 12%, rgba(226, 218, 203, 0.8) 0px, transparent 55%),
+    radial-gradient(at 85% 18%, rgba(234, 212, 196, 0.75) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(248, 244, 238, 0.9) 0px, transparent 75%),
+    radial-gradient(at 80% 85%, rgba(228, 215, 201, 0.6) 0px, transparent 50%),
+    radial-gradient(at 15% 80%, rgba(218, 222, 214, 0.5) 0px, transparent 50%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  color: #211E1C;
+}
+
+.font-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.ranking-row {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ranking-row:hover {
+  transform: translateY(-1px);
+}
+.bar-highlight {
+  background: linear-gradient(90deg, rgba(198, 106, 61, 0.12) 0%, rgba(198, 106, 61, 0.03) 90%, transparent 100%);
+}
+.bar-subtle {
+  background: linear-gradient(90deg, rgba(168, 148, 128, 0.10) 0%, rgba(168, 148, 128, 0.02) 90%, transparent 100%);
+}
+
+.chart-line {
+  transition: stroke-width 0.25s ease, opacity 0.25s ease;
+  cursor: pointer;
+}
+.chart-group:hover .chart-line {
+  opacity: 0.35;
+}
+.chart-group:hover .chart-line:hover {
+  opacity: 1;
+  stroke-width: 3.5;
+}
