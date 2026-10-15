@@ -7,7 +7,6 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-DEA584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](#license)
 
 **A high-performance entertainment analytics platform and battleground comparing worldwide streaming viewership metrics across major networks and flagship television franchises.**
 
@@ -221,8 +220,4 @@ To enable:
   - Headings: `Newsreader`, `Cormorant Garamond` (Editorial Serif)
   - UI & Data: `Plus Jakarta Sans` with `font-tabular` for numerical stability
 
----
 
-## 📄 License
-
-This project is open-source and available under the [MIT License](LICENSE).
