@@ -62,24 +62,30 @@ export default function App() {
       }
 
       if (data && data.length > 0) {
-        // Query recent telemetry (last 90 days) with generous limit to avoid default 1,000 row truncation
+        // Query recent telemetry (last 90 days) scoped to top charted/cumulative shows to respect Supabase row limits
         const ninetyDaysAgo = new Date();
         ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
         const startDateStr = ninetyDaysAgo.toISOString().split('T')[0];
+        const chartedIds = data.slice(0, 10).map((s: any) => s.id);
 
         const { data: telemetryData } = await supabase
           .from('series_daily_telemetry')
           .select('series_id, daily_viewers, recorded_date')
+          .in('series_id', chartedIds)
           .gte('recorded_date', startDateStr)
-          .order('recorded_date', { ascending: true })
-          .limit(5000);
+          .order('recorded_date', { ascending: true });
 
-        const telemetryMap = new Map<string, number[]>();
+        const telemetryValuesMap = new Map<string, number[]>();
+        const telemetryDatesMap = new Map<string, string[]>();
         if (telemetryData) {
           for (const row of telemetryData) {
-            const arr = telemetryMap.get(row.series_id) || [];
+            const arr = telemetryValuesMap.get(row.series_id) || [];
             arr.push(Number(row.daily_viewers));
-            telemetryMap.set(row.series_id, arr);
+            telemetryValuesMap.set(row.series_id, arr);
+
+            const dateArr = telemetryDatesMap.get(row.series_id) || [];
+            dateArr.push(String(row.recorded_date));
+            telemetryDatesMap.set(row.series_id, dateArr);
           }
         }
 
@@ -88,7 +94,8 @@ export default function App() {
           viewers_premiere_28d: Number(row.viewers_premiere_28d || 0),
           viewers_finale: Number(row.viewers_finale || 0),
           delta_pct: Number(row.delta_pct || 0),
-          daily_series: telemetryMap.get(row.id) || [],
+          daily_series: telemetryValuesMap.get(row.id) || [],
+          daily_dates: telemetryDatesMap.get(row.id) || [],
         }));
 
         setSeriesList(mapped);
@@ -153,12 +160,6 @@ export default function App() {
     return ['ALL', ...Array.from(set)];
   }, [seriesList]);
 
-  const cyclePlatformFilter = () => {
-    const idx = availablePlatforms.indexOf(platformFilter);
-    const nextIdx = (idx + 1) % availablePlatforms.length;
-    setPlatformFilter(availablePlatforms[nextIdx]);
-  };
-
   const availableGenres = useMemo(() => {
     const set = new Set<string>();
     for (const s of seriesList) {
@@ -166,12 +167,6 @@ export default function App() {
     }
     return ['ALL', ...Array.from(set)];
   }, [seriesList]);
-
-  const cycleGenreFilter = () => {
-    const idx = availableGenres.indexOf(genreFilter);
-    const nextIdx = (idx + 1) % availableGenres.length;
-    setGenreFilter(availableGenres[nextIdx]);
-  };
 
   // Leaderboard filtered list
   const rankedShows = useMemo(() => {
@@ -183,20 +178,67 @@ export default function App() {
 
   const maxLeaderboardViewers = rankedShows[0]?.viewers_premiere_28d || 1;
 
-  // Dynamic X-Axis labels responding to chosen time range
+  // Dynamic X-Axis labels responding to chosen time range with real calendar dates
   const xAxisLabels = useMemo(() => {
-    switch (chartRange) {
-      case '30D':
-        return ['-30d', '-25d', '-20d', '-15d', '-10d', '-5d', 'now'];
-      case '90D':
-        return ['-90d', '-75d', '-60d', '-45d', '-30d', '-15d', 'now'];
-      case 'All-Time':
-        return ['Start', '-120d', '-90d', '-60d', '-30d', '-7d', 'now'];
-      case '7D':
-      default:
-        return ['-6d', '-5d', '-4d', '-3d', '-2d', '-1d', 'now'];
+    const formatShortDate = (dateStrOrObj: string | Date): string => {
+      if (typeof dateStrOrObj === 'string') {
+        const parts = dateStrOrObj.split('-');
+        if (parts.length === 3) {
+          return `${Number(parts[1])}/${Number(parts[2])}`;
+        }
+      }
+      const d = new Date(dateStrOrObj);
+      return `${d.getMonth() + 1}/${d.getDate()}`;
+    };
+
+    const referenceShow = seriesList.find((s) => s.daily_dates && s.daily_dates.length > 0);
+    const rawDates = referenceShow?.daily_dates || [];
+
+    const days =
+      chartRange === '7D'
+        ? 7
+        : chartRange === '30D'
+        ? 30
+        : chartRange === '90D'
+        ? 90
+        : Math.max(7, rawDates.length);
+
+    if (rawDates.length > 0) {
+      const windowDates = rawDates.slice(-days);
+      if (windowDates.length <= 7) {
+        const labels: string[] = [];
+        const missingCount = 7 - windowDates.length;
+        const firstDate = new Date(windowDates[0] + 'T00:00:00Z');
+        for (let i = missingCount; i > 0; i--) {
+          const d = new Date(firstDate);
+          d.setUTCDate(d.getUTCDate() - i);
+          labels.push(formatShortDate(d));
+        }
+        for (const ds of windowDates) {
+          labels.push(formatShortDate(ds));
+        }
+        return labels;
+      } else {
+        const bucketSize = windowDates.length / 7;
+        const labels: string[] = [];
+        for (let b = 0; b < 7; b++) {
+          const idx = Math.min(windowDates.length - 1, Math.floor(b * bucketSize));
+          labels.push(formatShortDate(windowDates[idx]));
+        }
+        return labels;
+      }
     }
-  }, [chartRange]);
+
+    const labels: string[] = [];
+    const now = new Date();
+    const stepDays = chartRange === '7D' ? 1 : chartRange === '30D' ? 5 : chartRange === '90D' ? 15 : 20;
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i * stepDays);
+      labels.push(formatShortDate(d));
+    }
+    return labels;
+  }, [seriesList, chartRange]);
 
   // Dynamic Chart Scale & Y-Axis Ticks
   const chartSeries = useMemo(() => seriesList.slice(0, 6), [seriesList]);
@@ -281,7 +323,7 @@ export default function App() {
             TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
           </h1>
           <p className="text-[10px] sm:text-xs uppercase tracking-[0.22em] sm:tracking-[0.24em] text-arena-muted font-semibold mt-1 sm:mt-1.5">
-            Global Viewership Intelligence
+            Global TV Engagement Intelligence
           </p>
         </header>
 
@@ -404,7 +446,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
           TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
         </h1>
         <p className="text-[10px] sm:text-xs uppercase tracking-[0.22em] sm:tracking-[0.24em] text-arena-muted font-semibold mt-1 sm:mt-1.5">
-          Global Viewership Intelligence
+          Global TV Engagement Intelligence
         </p>
       </header>
 
@@ -538,7 +580,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
                 </span>
               </div>
               <div className="bg-arena-cream px-2.5 py-1 rounded-full border border-arena-border/80 text-arena-muted text-[10px] sm:text-[11px] font-medium">
-                {leftShow.release_years || '7-Day Window'}
+                7-Day Window
               </div>
             </div>
 
@@ -645,20 +687,45 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
               </span>
             </div>
             <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
-              <button
-                onClick={cyclePlatformFilter}
-                className="bg-[#F6F1EA] hover:bg-[#EFE8DD] text-[#3D372E] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors"
-                title="Click to cycle platforms"
-              >
-                Platform: {platformFilter === 'ALL' ? 'All Platforms' : platformFilter}
-              </button>
-              <button
-                onClick={cycleGenreFilter}
-                className="bg-white hover:bg-stone-50 text-[#786E63] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors"
-                title="Click to cycle genres"
-              >
-                Genre: {genreFilter === 'ALL' ? 'All Genres' : genreFilter}
-              </button>
+              <div className="relative">
+                <select
+                  value={platformFilter}
+                  onChange={(e) => setPlatformFilter(e.target.value)}
+                  className="appearance-none bg-[#F6F1EA] hover:bg-[#EFE8DD] text-[#3D372E] pl-3 pr-7 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors cursor-pointer outline-none focus:border-brand-terracotta"
+                  aria-label="Filter by Platform"
+                >
+                  {availablePlatforms.map((p) => (
+                    <option key={p} value={p}>
+                      Platform: {p === 'ALL' ? 'All Platforms' : p}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-[#786E63]">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+
+              <div className="relative">
+                <select
+                  value={genreFilter}
+                  onChange={(e) => setGenreFilter(e.target.value)}
+                  className="appearance-none bg-white hover:bg-stone-50 text-[#786E63] pl-3 pr-7 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors cursor-pointer outline-none focus:border-brand-terracotta"
+                  aria-label="Filter by Genre"
+                >
+                  {availableGenres.map((g) => (
+                    <option key={g} value={g}>
+                      Genre: {g === 'ALL' ? 'All Genres' : g}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-[#786E63]">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
             </div>
           </div>
 

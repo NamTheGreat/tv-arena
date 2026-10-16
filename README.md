@@ -1,4 +1,4 @@
-# 📺 TV Arena — Global Viewership Intelligence
+# 📺 TV Arena — Global TV Engagement Intelligence
 
 <div align="center">
 
@@ -8,7 +8,7 @@
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-DEA584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 
-**A high-performance entertainment analytics platform and battleground comparing worldwide streaming viewership metrics across major networks and flagship television franchises.**
+**A high-performance entertainment analytics platform and battleground comparing worldwide television engagement metrics across major networks and flagship television franchises.**
 
 </div>
 
@@ -52,11 +52,11 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 
 ### 1. ⚔️ The Arena (1v1 Head-to-Head Comparison)
 - Interactive contender selector with live search filtering and swap capabilities.
-- Dynamic tug-of-war bar visualizing viewership splits between any two series.
+- Dynamic tug-of-war bar visualizing engagement splits between any two series.
 - Instant differential calculation showing absolute volume and percentage margins.
 
 ### 2. 🏆 Global Leaderboard
-- Real-time ranking of top television properties by measured premiere window households (28 days).
+- Real-time ranking of top television properties by measured 7-day engagement index.
 - Platform filtering (Netflix, HBO, Apple TV+, Prime Video, Hulu, Disney+, etc.) and genre isolation.
 - Visual proportional telemetry bars and trend indicators (`▲ Up`, `▼ Down`, `Steady`).
 
@@ -65,7 +65,7 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 - Multi-series telemetry curves with interactive hover states and 7-day retrospective data points.
 - Cumulative period volume bars comparing market footprints.
 
-### 4. 🎯 Higher / Lower Viewership Trivia
+### 4. 🎯 Higher / Lower Engagement Trivia
 - Engaging interactive game pitting known benchmark series against challenger shows.
 - Tests player intuition comparing 7-day engagement index performance.
 - Streak counting with browser `localStorage` best-score persistence and instant answer feedback.

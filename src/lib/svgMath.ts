@@ -38,11 +38,15 @@ export function sampleDailyValues(
   if (window.length <= 7) {
     return window;
   }
-  const step = (window.length - 1) / 6;
+  // Divide into 7 buckets and compute average per bucket to preserve spikes across multi-week views
+  const bucketSize = window.length / 7;
   const sampled: number[] = [];
-  for (let i = 0; i < 7; i++) {
-    const idx = Math.round(i * step);
-    sampled.push(window[Math.min(idx, window.length - 1)]);
+  for (let b = 0; b < 7; b++) {
+    const start = Math.floor(b * bucketSize);
+    const end = Math.min(window.length, Math.floor((b + 1) * bucketSize));
+    const slice = window.slice(start, Math.max(start + 1, end));
+    const avg = Math.round(slice.reduce((acc, v) => acc + v, 0) / slice.length);
+    sampled.push(avg);
   }
   return sampled;
 }
@@ -56,15 +60,17 @@ export function buildChartGeometry(dailyValues: number[], maxScale = 1600000): {
   const Y_ZERO = 340;
   const Y_SPAN = 300; // Y=340 (0) to Y=40 (maxScale)
 
-  // Take the latest 7 points
+  // Take the latest up-to-7 points without injecting fake zero padding
   const recentValues = dailyValues.slice(-7);
-  const paddedValues = Array(Math.max(0, 7 - recentValues.length))
-    .fill(0)
-    .concat(recentValues);
+  if (recentValues.length === 0) {
+    return { pathD: '', points: [] };
+  }
 
+  const startIdx = 7 - recentValues.length;
   const safeScale = Math.max(1, maxScale);
-  const points: SvgPoint[] = paddedValues.map((value, idx) => {
-    const x = X_START + idx * X_STEP;
+  const points: SvgPoint[] = recentValues.map((value, i) => {
+    const gridIdx = startIdx + i;
+    const x = X_START + gridIdx * X_STEP;
     const ratio = Math.min(1, Math.max(0, value / safeScale));
     const y = Math.round(Y_ZERO - ratio * Y_SPAN);
     return { x, y, value };
@@ -83,15 +89,17 @@ export function buildMobileChartGeometry(dailyValues: number[], maxScale = 16000
   const Y_ZERO = 162;
   const Y_SPAN = 142; // Y=162 (0) to Y=20 (maxScale)
 
-  // Take the latest 7 points
+  // Take the latest up-to-7 points without injecting fake zero padding
   const recentValues = dailyValues.slice(-7);
-  const paddedValues = Array(Math.max(0, 7 - recentValues.length))
-    .fill(0)
-    .concat(recentValues);
+  if (recentValues.length === 0) {
+    return { pathD: '', points: [] };
+  }
 
+  const startIdx = 7 - recentValues.length;
   const safeScale = Math.max(1, maxScale);
-  const points: SvgPoint[] = paddedValues.map((value, idx) => {
-    const x = X_START + idx * X_STEP;
+  const points: SvgPoint[] = recentValues.map((value, i) => {
+    const gridIdx = startIdx + i;
+    const x = X_START + gridIdx * X_STEP;
     const ratio = Math.min(1, Math.max(0, value / safeScale));
     const y = Math.round(Y_ZERO - ratio * Y_SPAN);
     return { x, y, value };
