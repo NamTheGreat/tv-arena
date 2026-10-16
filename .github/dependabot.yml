@@ -9,6 +9,10 @@ updates:
     labels:
       - "dependencies"
       - "frontend"
+    groups:
+      dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: "cargo"
     directory: "/pipeline"
@@ -19,3 +23,21 @@ updates:
     labels:
       - "dependencies"
       - "rust-pipeline"
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "develop"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "ci-cd"
+    groups:
+      actions:
+        patterns:
+          - "*"
