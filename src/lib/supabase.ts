@@ -12,6 +12,7 @@ export interface SeriesItem {
   viewers_finale: number;
   delta_pct: number;
   daily_series: number[];
+  daily_dates?: string[];
 }
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
