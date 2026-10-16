@@ -109,10 +109,41 @@ const CHART_PALETTE: [&str; 6] = [
 ];
 
 fn main() -> Result<()> {
+    // Attempt loading from current directory (.env) and parent directory (../.env)
     dotenvy::dotenv().ok();
-    let supabase_url = env::var("SUPABASE_URL").context("Missing SUPABASE_URL")?;
-    let supabase_key =
-        env::var("SUPABASE_SERVICE_ROLE_KEY").context("Missing SUPABASE_SERVICE_ROLE_KEY")?;
+    dotenvy::from_filename("../.env").ok();
+
+    let raw_url = env::var("SUPABASE_URL").unwrap_or_default();
+    let supabase_url = raw_url.trim().trim_end_matches('/').to_string();
+
+    if supabase_url.is_empty() {
+        eprintln!(
+            "Error: SUPABASE_URL is not set or empty.\n\
+             Please configure SUPABASE_URL in your .env file or GitHub Secrets.\n\
+             Example: SUPABASE_URL=https://your-project-id.supabase.co"
+        );
+        std::process::exit(1);
+    }
+
+    if let Err(e) = url::Url::parse(&supabase_url) {
+        eprintln!(
+            "Error: SUPABASE_URL is not a valid absolute URL ('{}'): {}\n\
+             Please provide a full URL with scheme, e.g. https://your-project.supabase.co",
+            supabase_url, e
+        );
+        std::process::exit(1);
+    }
+
+    let raw_key = env::var("SUPABASE_SERVICE_ROLE_KEY").unwrap_or_default();
+    let supabase_key = raw_key.trim().to_string();
+
+    if supabase_key.is_empty() {
+        eprintln!(
+            "Error: SUPABASE_SERVICE_ROLE_KEY is not set or empty.\n\
+             Please configure SUPABASE_SERVICE_ROLE_KEY in your .env file or GitHub Secrets."
+        );
+        std::process::exit(1);
+    }
 
     let cli = Cli::parse();
     match cli.command {
@@ -320,12 +351,33 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
         "{}/rest/v1/series?select=*&order=viewers_premiere_28d.desc",
         supabase_url
     );
-    let shows: Vec<SeriesRow> = client
+    let list_res = client
         .get(&list_url)
         .set("apikey", supabase_key)
         .set("Authorization", &format!("Bearer {}", supabase_key))
-        .call()?
-        .into_json()?;
+        .call();
+
+    let shows: Vec<SeriesRow> = match list_res {
+        Ok(res) => res
+            .into_json()
+            .context("Failed to parse series response from Supabase as JSON")?,
+        Err(ureq::Error::Status(404, res)) => {
+            let body = res.into_string().unwrap_or_default();
+            eprintln!(
+                "Error: Table 'series' was not found in Supabase (HTTP 404).\n\
+                 Please execute 'supabase/schema.sql' in your Supabase SQL Editor to initialize the database tables.\n\
+                 Server response: {}",
+                body
+            );
+            std::process::exit(1);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    if shows.is_empty() {
+        println!("ℹ️  No series found in Supabase. Run 'cargo run -- seed' or execute 'supabase/schema.sql' to initialize show records.");
+        return Ok(());
+    }
 
     // Use yesterday as the end boundary so completed Wikimedia day dumps are guaranteed published
     let now = Utc::now();
