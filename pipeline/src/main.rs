@@ -74,8 +74,9 @@ struct WikiPageviews {
     items: Option<Vec<WikiDay>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct WikiDay {
+    timestamp: String,
     views: i64,
 }
 
@@ -326,20 +327,25 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
 
         let wiki_result = client
             .get(&wiki_url)
-            .set("User-Agent", "TVArenaRust/1.0 (tv-arena-telemetry)")
+            .set(
+                "User-Agent",
+                "linux:tv-arena-pipeline:v0.1.0 (https://github.com/NamTheGreat/tv-arena)",
+            )
             .call();
 
-        let wiki_views: Option<i64> = match wiki_result {
+        let wiki_days: Option<Vec<WikiDay>> = match wiki_result {
             Ok(r) if r.status() == 200 => r
                 .into_json::<WikiPageviews>()
                 .ok()
-                .and_then(|w| w.items)
-                .map(|days| days.iter().map(|d| d.views).sum()),
+                .and_then(|w| w.items),
+            Ok(r) => {
+                eprintln!("⚠️  Wiki returned status {} for '{}'", r.status(), show.title);
+                None
+            }
             Err(e) => {
                 eprintln!("⚠️  Wiki fetch error for '{}': {}", show.title, e);
                 None
             }
-            _ => None,
         };
 
         let reddit_url = format!(
@@ -349,7 +355,10 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
 
         let reddit_result = client
             .get(&reddit_url)
-            .set("User-Agent", "TVArenaRust/1.0 (tv-arena-telemetry)")
+            .set(
+                "User-Agent",
+                "linux:tv-arena-pipeline:v0.1.0 (by /u/tv_arena_bot)",
+            )
             .call();
 
         let reddit_stats: Option<(i64, i64)> = match reddit_result {
@@ -358,15 +367,29 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
                 let u: i64 = l.data.children.iter().map(|p| p.data.score).sum();
                 (c, u)
             }),
+            Ok(r) => {
+                eprintln!(
+                    "⚠️  Reddit returned HTTP {} for '{}'",
+                    r.status(),
+                    show.title
+                );
+                None
+            }
+            Err(ureq::Error::Status(code, _resp)) => {
+                eprintln!(
+                    "⚠️  Reddit returned HTTP status {} for '{}' (URL: {})",
+                    code, show.title, reddit_url
+                );
+                None
+            }
             Err(e) => {
                 eprintln!("⚠️  Reddit fetch error for '{}': {}", show.title, e);
                 None
             }
-            _ => None,
         };
 
         // If both sources failed or throttled, DO NOT store fake 0s. Skip this show and retain previous valid telemetry.
-        if wiki_views.is_none() && reddit_stats.is_none() {
+        if wiki_days.is_none() && reddit_stats.is_none() {
             eprintln!(
                 "❌ Both Wikipedia and Reddit failed for '{}'. Skipping to preserve historical scores.",
                 show.title
@@ -375,23 +398,38 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
             continue;
         }
 
-        let total_wiki = wiki_views.unwrap_or(0);
+        let total_wiki: i64 = wiki_days
+            .as_ref()
+            .map(|days| days.iter().map(|d| d.views).sum())
+            .unwrap_or(0);
         let (total_comments, total_upvotes) = reddit_stats.unwrap_or((0, 0));
 
         let new_score = (total_wiki * 10) + (total_comments * 150) + (total_upvotes * 25);
-        let prev_score = if show.viewers_premiere_28d > 0 {
-            show.viewers_premiere_28d
-        } else {
-            new_score
-        };
 
-        let raw_delta = if prev_score > 0 {
-            (((new_score - prev_score) as f64 / prev_score as f64) * 1000.0).round() / 10.0
+        // Day-zero delta calculation: if freshly seeded (viewers_premiere_28d == 0),
+        // compute delta across the 7-day window (Day 7 vs Day 1) instead of forcing 0.0%
+        let delta_pct = if show.viewers_premiere_28d > 0 {
+            let prev_score = show.viewers_premiere_28d;
+            let raw_delta = (((new_score - prev_score) as f64 / prev_score as f64) * 1000.0).round() / 10.0;
+            raw_delta.clamp(-99999.0, 99999.0)
+        } else if let Some(ref days) = wiki_days {
+            if days.len() >= 2 {
+                let first_day = days.first().map(|d| d.views).unwrap_or(0);
+                let last_day = days.last().map(|d| d.views).unwrap_or(0);
+                let first_est = (first_day * 10) + ((total_comments / 7) * 150) + ((total_upvotes / 7) * 25);
+                let last_est = (last_day * 10) + ((total_comments / 7) * 150) + ((total_upvotes / 7) * 25);
+                if first_est > 0 {
+                    let raw_delta = (((last_est - first_est) as f64 / first_est as f64) * 1000.0).round() / 10.0;
+                    raw_delta.clamp(-99999.0, 99999.0)
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
         } else {
             0.0
         };
-        // Clamp delta to prevent NUMERIC overflow
-        let delta_pct = raw_delta.clamp(-99999.0, 99999.0);
 
         let patch_url = format!("{}/rest/v1/series?id=eq.{}", supabase_url, show_id);
         let patch_res = client
@@ -414,23 +452,48 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
             "{}/rest/v1/series_daily_telemetry?on_conflict=series_id,recorded_date",
             supabase_url
         );
-        let telemetry_res = client
-            .post(&telemetry_url)
-            .set("apikey", supabase_key)
-            .set("Authorization", &format!("Bearer {}", supabase_key))
-            .set("Prefer", "resolution=merge-duplicates")
-            .send_json(json!({
-                "series_id": show_id,
-                "recorded_date": recorded_date,
-                "daily_viewers": new_score / 7,
-                "wiki_views": total_wiki,
-                "reddit_comments": total_comments
-            }));
 
-        if let Err(e) = telemetry_res {
-            eprintln!("❌ Failed recording daily telemetry for '{}': {}", show.title, e);
-            fetch_failures += 1;
-            continue;
+        // Upsert all 7 days of daily telemetry so frontend Charts tab has full 7-day curves immediately
+        if let Some(ref days) = wiki_days {
+            for day in days {
+                if day.timestamp.len() >= 8 {
+                    let date_iso = format!(
+                        "{}-{}-{}",
+                        &day.timestamp[0..4],
+                        &day.timestamp[4..6],
+                        &day.timestamp[6..8]
+                    );
+                    let daily_est = (day.views * 10)
+                        + ((total_comments / 7) * 150)
+                        + ((total_upvotes / 7) * 25);
+
+                    let _ = client
+                        .post(&telemetry_url)
+                        .set("apikey", supabase_key)
+                        .set("Authorization", &format!("Bearer {}", supabase_key))
+                        .set("Prefer", "resolution=merge-duplicates")
+                        .send_json(json!({
+                            "series_id": show_id,
+                            "recorded_date": date_iso,
+                            "daily_viewers": daily_est,
+                            "wiki_views": day.views,
+                            "reddit_comments": total_comments / 7
+                        }));
+                }
+            }
+        } else {
+            let _ = client
+                .post(&telemetry_url)
+                .set("apikey", supabase_key)
+                .set("Authorization", &format!("Bearer {}", supabase_key))
+                .set("Prefer", "resolution=merge-duplicates")
+                .send_json(json!({
+                    "series_id": show_id,
+                    "recorded_date": recorded_date,
+                    "daily_viewers": new_score / 7,
+                    "wiki_views": total_wiki,
+                    "reddit_comments": total_comments
+                }));
         }
 
         updated_count += 1;
