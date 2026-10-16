@@ -6,7 +6,10 @@ use serde_json::json;
 use std::{env, thread, time::Duration};
 
 #[derive(Parser)]
-#[command(name = "tv-arena-pipeline", about = "Rust Seeder & Nightly Scraper for TV Arena")]
+#[command(
+    name = "tv-arena-pipeline",
+    about = "Rust Seeder & Nightly Scraper for TV Arena"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -88,7 +91,8 @@ const CHART_PALETTE: [&str; 6] = [
 fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     let supabase_url = env::var("SUPABASE_URL").context("Missing SUPABASE_URL")?;
-    let supabase_key = env::var("SUPABASE_SERVICE_ROLE_KEY").context("Missing SUPABASE_SERVICE_ROLE_KEY")?;
+    let supabase_key =
+        env::var("SUPABASE_SERVICE_ROLE_KEY").context("Missing SUPABASE_SERVICE_ROLE_KEY")?;
 
     let cli = Cli::parse();
     match cli.command {
@@ -103,7 +107,10 @@ fn resolve_wiki_slug(title: &str) -> Option<String> {
     let candidates = [format!("{}_(TV_series)", base), base];
 
     for slug in candidates {
-        let url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(&slug));
+        let url = format!(
+            "https://en.wikipedia.org/api/rest_v1/page/summary/{}",
+            urlencoding::encode(&slug)
+        );
         if let Ok(res) = ureq::get(&url).set("User-Agent", "TVArenaRust/1.0").call() {
             if res.status() == 200 {
                 if let Ok(body) = res.into_json::<serde_json::Value>() {
@@ -121,7 +128,18 @@ fn run_seed(csv_path: &str, limit: usize, supabase_url: &str, supabase_key: &str
     let mut rdr = csv::Reader::from_path(csv_path).context("Failed to open Kaggle CSV")?;
     let mut candidates: Vec<KaggleRow> = Vec::new();
 
-    let major_nets = ["Netflix", "HBO", "Apple TV", "Prime Video", "Amazon", "FX", "Hulu", "Disney+", "AMC", "Max"];
+    let major_nets = [
+        "Netflix",
+        "HBO",
+        "Apple TV",
+        "Prime Video",
+        "Amazon",
+        "FX",
+        "Hulu",
+        "Disney+",
+        "AMC",
+        "Max",
+    ];
     let bad_genres = ["Talk", "News", "Reality", "Soap", "Kids"];
 
     for result in rdr.deserialize::<KaggleRow>() {
@@ -141,10 +159,20 @@ fn run_seed(csv_path: &str, limit: usize, supabase_url: &str, supabase_key: &str
         if seeded >= limit {
             break;
         }
-        let Some(wiki_slug) = resolve_wiki_slug(&row.name) else { continue };
+        let Some(wiki_slug) = resolve_wiki_slug(&row.name) else {
+            continue;
+        };
 
-        let network = row.networks.split(',').next().unwrap_or("Streaming").trim().to_string();
-        let slug = row.name.to_lowercase()
+        let network = row
+            .networks
+            .split(',')
+            .next()
+            .unwrap_or("Streaming")
+            .trim()
+            .to_string();
+        let slug = row
+            .name
+            .to_lowercase()
             .chars()
             .map(|c| if c.is_alphanumeric() { c } else { '-' })
             .collect::<String>()
@@ -193,11 +221,18 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
         .into_json()?;
 
     let now = Utc::now();
-    let start_str = (now - ChronoDuration::days(7)).format("%Y%m%d00").to_string();
+    let start_str = (now - ChronoDuration::days(7))
+        .format("%Y%m%d00")
+        .to_string();
     let end_str = now.format("%Y%m%d00").to_string();
     let today_iso = now.format("%Y-%m-%d").to_string();
 
-    println!("Syncing {} shows for window {} -> {}...", shows.len(), start_str, end_str);
+    println!(
+        "Syncing {} shows for window {} -> {}...",
+        shows.len(),
+        start_str,
+        end_str
+    );
 
     for show in shows {
         let Some(show_id) = &show.id else { continue };
@@ -234,7 +269,11 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
             .unwrap_or((0, 0));
 
         let new_score = (wiki_views * 10) + (reddit_comments * 150) + (reddit_upvotes * 25);
-        let prev_score = if show.viewers_premiere_28d > 0 { show.viewers_premiere_28d } else { new_score };
+        let prev_score = if show.viewers_premiere_28d > 0 {
+            show.viewers_premiere_28d
+        } else {
+            new_score
+        };
         let delta_pct = if prev_score > 0 {
             (((new_score - prev_score) as f64 / prev_score as f64) * 1000.0).round() / 10.0
         } else {
@@ -251,7 +290,10 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
                 "updated_at": Utc::now().to_rfc3339()
             }));
 
-        let telemetry_url = format!("{}/rest/v1/series_daily_telemetry?on_conflict=series_id,recorded_date", supabase_url);
+        let telemetry_url = format!(
+            "{}/rest/v1/series_daily_telemetry?on_conflict=series_id,recorded_date",
+            supabase_url
+        );
         let _ = ureq::post(&telemetry_url)
             .set("apikey", supabase_key)
             .set("Authorization", &format!("Bearer {}", supabase_key))
@@ -264,7 +306,10 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
                 "reddit_comments": reddit_comments
             }));
 
-        println!("✓ {}: {} viewers ({:+.1}%)", show.title, new_score, delta_pct);
+        println!(
+            "✓ {}: {} viewers ({:+.1}%)",
+            show.title, new_score, delta_pct
+        );
         thread::sleep(Duration::from_millis(600));
     }
     Ok(())
