@@ -15,6 +15,38 @@ export function formatMetricNumber(val: number): string {
   return val.toLocaleString();
 }
 
+export function calculateNiceMaxScale(maxValue: number): number {
+  if (maxValue <= 0) return 400_000;
+  if (maxValue > 800_000) {
+    return Math.ceil((maxValue * 1.05) / 400_000) * 400_000;
+  }
+  if (maxValue > 100_000) {
+    return Math.ceil((maxValue * 1.05) / 50_000) * 50_000;
+  }
+  if (maxValue > 10_000) {
+    return Math.ceil((maxValue * 1.05) / 10_000) * 10_000;
+  }
+  return Math.max(1_000, Math.ceil((maxValue * 1.1) / 1_000) * 1_000);
+}
+
+export function sampleDailyValues(
+  dailyValues: number[],
+  range: '7D' | '30D' | '90D' | 'All-Time'
+): number[] {
+  const days = range === '7D' ? 7 : range === '30D' ? 30 : range === '90D' ? 90 : Math.max(7, dailyValues.length);
+  const window = dailyValues.slice(-days);
+  if (window.length <= 7) {
+    return window;
+  }
+  const step = (window.length - 1) / 6;
+  const sampled: number[] = [];
+  for (let i = 0; i < 7; i++) {
+    const idx = Math.round(i * step);
+    sampled.push(window[Math.min(idx, window.length - 1)]);
+  }
+  return sampled;
+}
+
 export function buildChartGeometry(dailyValues: number[], maxScale = 1600000): {
   pathD: string;
   points: SvgPoint[];

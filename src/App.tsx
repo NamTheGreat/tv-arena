@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { isSupabaseConfigured, SeriesItem, supabase } from './lib/supabase';
-import { buildChartGeometry, buildMobileChartGeometry, formatMetricNumber } from './lib/svgMath';
+import {
+  buildChartGeometry,
+  buildMobileChartGeometry,
+  calculateNiceMaxScale,
+  formatMetricNumber,
+  sampleDailyValues,
+} from './lib/svgMath';
 
 type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess';
 
@@ -138,37 +144,71 @@ export default function App() {
     }
   };
 
+  // Available platforms and genres dynamically derived from dataset
+  const availablePlatforms = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of seriesList) {
+      if (s.network) set.add(s.network);
+    }
+    return ['ALL', ...Array.from(set)];
+  }, [seriesList]);
+
+  const cyclePlatformFilter = () => {
+    const idx = availablePlatforms.indexOf(platformFilter);
+    const nextIdx = (idx + 1) % availablePlatforms.length;
+    setPlatformFilter(availablePlatforms[nextIdx]);
+  };
+
+  const availableGenres = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of seriesList) {
+      if (s.genre_group) set.add(s.genre_group);
+    }
+    return ['ALL', ...Array.from(set)];
+  }, [seriesList]);
+
+  const cycleGenreFilter = () => {
+    const idx = availableGenres.indexOf(genreFilter);
+    const nextIdx = (idx + 1) % availableGenres.length;
+    setGenreFilter(availableGenres[nextIdx]);
+  };
+
   // Leaderboard filtered list
   const rankedShows = useMemo(() => {
     return [...seriesList]
       .filter((s) => (platformFilter === 'ALL' ? true : s.network === platformFilter))
-      .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group.includes('Sci-Fi')))
+      .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group === genreFilter))
       .sort((a, b) => b.viewers_premiere_28d - a.viewers_premiere_28d);
   }, [seriesList, platformFilter, genreFilter]);
 
   const maxLeaderboardViewers = rankedShows[0]?.viewers_premiere_28d || 1;
+
+  // Dynamic X-Axis labels responding to chosen time range
+  const xAxisLabels = useMemo(() => {
+    switch (chartRange) {
+      case '30D':
+        return ['-30d', '-25d', '-20d', '-15d', '-10d', '-5d', 'now'];
+      case '90D':
+        return ['-90d', '-75d', '-60d', '-45d', '-30d', '-15d', 'now'];
+      case 'All-Time':
+        return ['Start', '-120d', '-90d', '-60d', '-30d', '-7d', 'now'];
+      case '7D':
+      default:
+        return ['-6d', '-5d', '-4d', '-3d', '-2d', '-1d', 'now'];
+    }
+  }, [chartRange]);
 
   // Dynamic Chart Scale & Y-Axis Ticks
   const chartSeries = useMemo(() => seriesList.slice(0, 6), [seriesList]);
   const { maxChartScale, chartYTicks } = useMemo(() => {
     let maxVal = 0;
     for (const s of chartSeries) {
-      const slice = s.daily_series.slice(-7);
-      for (const v of slice) {
+      const sampled = sampleDailyValues(s.daily_series, chartRange);
+      for (const v of sampled) {
         if (v > maxVal) maxVal = v;
       }
     }
-    const target = maxVal > 0 ? maxVal * 1.15 : 1000;
-    const exp = Math.floor(Math.log10(target));
-    const base = Math.pow(10, exp);
-    const frac = target / base;
-    let niceFrac = 1;
-    if (frac <= 1) niceFrac = 1;
-    else if (frac <= 2) niceFrac = 2;
-    else if (frac <= 2.5) niceFrac = 2.5;
-    else if (frac <= 5) niceFrac = 5;
-    else niceFrac = 10;
-    const niceMax = Math.max(100, Math.round(niceFrac * base));
+    const niceMax = calculateNiceMaxScale(maxVal);
 
     const ticks = [
       { pct: 1.0, val: niceMax, label: formatMetricNumber(niceMax) },
@@ -178,7 +218,7 @@ export default function App() {
       { pct: 0, val: 0, label: '0' },
     ];
     return { maxChartScale: niceMax, chartYTicks: ticks };
-  }, [chartSeries]);
+  }, [chartSeries, chartRange]);
 
   const getCumulativeScore = (show: SeriesItem, range: '7D' | '30D' | '90D' | 'All-Time'): number => {
     const days = range === '7D' ? 7 : range === '30D' ? 30 : range === '90D' ? 90 : show.daily_series.length;
@@ -606,16 +646,18 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
             </div>
             <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
               <button
-                onClick={() => setPlatformFilter(platformFilter === 'ALL' ? 'Netflix' : 'ALL')}
-                className="bg-[#F6F1EA] text-[#3D372E] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5]"
+                onClick={cyclePlatformFilter}
+                className="bg-[#F6F1EA] hover:bg-[#EFE8DD] text-[#3D372E] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors"
+                title="Click to cycle platforms"
               >
-                {platformFilter === 'ALL' ? 'All Platforms' : platformFilter}
+                Platform: {platformFilter === 'ALL' ? 'All Platforms' : platformFilter}
               </button>
               <button
-                onClick={() => setGenreFilter(genreFilter === 'ALL' ? 'SCI-FI' : 'ALL')}
-                className="bg-white text-[#786E63] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5]"
+                onClick={cycleGenreFilter}
+                className="bg-white hover:bg-stone-50 text-[#786E63] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors"
+                title="Click to cycle genres"
               >
-                {genreFilter === 'ALL' ? 'All Genres' : 'Drama & Sci-Fi'}
+                Genre: {genreFilter === 'ALL' ? 'All Genres' : genreFilter}
               </button>
             </div>
           </div>
@@ -750,10 +792,10 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
               <line stroke="#DDD4C7" strokeWidth="1" x1="35" x2="335" y1="162" y2="162" />
               <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="165">0</text>
 
-              {['-6d', '-5d', '-4d', '-3d', '-2d', '-1d', 'now'].map((label, idx) => {
+              {xAxisLabels.map((label, idx) => {
                 const x = 35 + idx * 49;
                 return (
-                  <g key={label}>
+                  <g key={label + idx}>
                     <line stroke="#F4EDE4" x1={x} x2={x} y1="20" y2="162" />
                     <text fill="#999083" fontSize="8.5" textAnchor="middle" x={x} y="176">
                       {label}
@@ -763,7 +805,8 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
               })}
 
               {seriesList.slice(0, 6).map((show) => {
-                const { pathD, points } = buildMobileChartGeometry(show.daily_series, maxChartScale);
+                const sampled = sampleDailyValues(show.daily_series, chartRange);
+                const { pathD, points } = buildMobileChartGeometry(sampled, maxChartScale);
                 return (
                   <g key={show.slug}>
                     <path
@@ -804,10 +847,10 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
               <line stroke="#DDD4C7" strokeWidth="1.25" x1="75" x2="960" y1="340" y2="340" />
               <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="344">0</text>
 
-              {['-6d', '-5d', '-4d', '-3d', '-2d', '-1d', 'now'].map((label, idx) => {
+              {xAxisLabels.map((label, idx) => {
                 const x = 85 + idx * 145;
                 return (
-                  <g key={label}>
+                  <g key={label + idx}>
                     <line stroke="#F4EDE4" x1={x} x2={x} y1="40" y2="340" />
                     <text fill="#999083" fontSize="12" textAnchor="middle" x={x} y="375">
                       {label}
@@ -817,7 +860,8 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
               })}
 
               {seriesList.slice(0, 6).map((show) => {
-                const { pathD, points } = buildChartGeometry(show.daily_series, maxChartScale);
+                const sampled = sampleDailyValues(show.daily_series, chartRange);
+                const { pathD, points } = buildChartGeometry(sampled, maxChartScale);
                 return (
                   <g key={show.slug}>
                     <path
