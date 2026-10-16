@@ -67,7 +67,7 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 
 ### 4. 🎯 Higher / Lower Viewership Trivia
 - Engaging interactive game pitting known benchmark series against challenger shows.
-- Tests player intuition across **Global Premieres** and **Season Finales**.
+- Tests player intuition comparing 7-day engagement index performance.
 - Streak counting with browser `localStorage` best-score persistence and instant answer feedback.
 
 ---
@@ -78,7 +78,7 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 .
 ├── .github/
 │   └── workflows/
-│       └── nightly-sync.yml      # GitHub Actions daily automated cron pipeline
+│       └── nightly-sync.yml      # GitHub Actions daily automated cron pipeline (06:00 UTC)
 ├── .env.example                  # Environment configuration template
 ├── .gitignore                    # Comprehensive multi-language ignore rules
 ├── index.html                    # Single Page Application HTML entrypoint
@@ -93,7 +93,7 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 │   ├── index.css                 # Custom background gradients & utility classes
 │   ├── vite-env.d.ts             # Vite client environment typing
 │   └── lib/
-│       ├── supabase.ts           # Supabase client & fallback catalog (12 flagship shows)
+│       ├── supabase.ts           # Supabase client & connection configuration
 │       └── svgMath.ts            # Mathematical coordinate transformations for SVG lines
 ├── supabase/
 │   └── schema.sql                # Complete PostgreSQL schema, indexes, RLS, and seed data
@@ -110,7 +110,7 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 ### Prerequisites
 - **Node.js**: v18.0.0 or higher (v20+ recommended)
 - **Rust**: 1.85.0 or higher with Cargo
-- **Supabase Account**: (Optional, application includes an integrated 12-series offline catalog)
+- **Supabase Account**: Required for real streaming telemetry and PostgreSQL storage
 
 ---
 
@@ -131,7 +131,7 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
    VITE_SUPABASE_URL=https://your-project-id.supabase.co
    VITE_SUPABASE_ANON_KEY=your-public-anon-key
    ```
-   *(Note: If left empty, the application automatically uses the offline flagship catalog seamlessly).*
+   *(Note: When unconfigured, the application presents a clear connection guide rather than masking missing infrastructure with fake data).*
 
 3. **Install dependencies:**
    ```bash
@@ -199,7 +199,7 @@ cd pipeline
 
 ## ⚙️ Automated Nightly Sync (CI/CD)
 
-The repository includes a GitHub Actions workflow in [`.github/workflows/nightly-sync.yml`](.github/workflows/nightly-sync.yml) that executes daily at midnight UTC (`0 0 * * *`).
+The repository includes a GitHub Actions workflow in [`.github/workflows/nightly-sync.yml`](.github/workflows/nightly-sync.yml) that executes daily at 06:00 UTC (`0 6 * * *`).
 
 To enable:
 1. Navigate to your GitHub repository **Settings > Secrets and variables > Actions**.

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { isSupabaseConfigured, SeriesItem, supabase } from './lib/supabase';
-import { buildChartGeometry, buildMobileChartGeometry } from './lib/svgMath';
+import { buildChartGeometry, buildMobileChartGeometry, formatMetricNumber } from './lib/svgMath';
 
 type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess';
 
@@ -26,7 +26,6 @@ export default function App() {
   const [chartRange, setChartRange] = useState<'7D' | '30D' | '90D' | 'All-Time'>('7D');
 
   // Guess Trivia State
-  const [guessMode, setGuessMode] = useState<'premieres' | 'finales'>('premieres');
   const [knownIdx, setKnownIdx] = useState<number>(0);
   const [challengerIdx, setChallengerIdx] = useState<number>(1);
   const [revealed, setRevealed] = useState<boolean>(false);
@@ -57,10 +56,17 @@ export default function App() {
       }
 
       if (data && data.length > 0) {
+        // Query recent telemetry (last 90 days) with generous limit to avoid default 1,000 row truncation
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        const startDateStr = ninetyDaysAgo.toISOString().split('T')[0];
+
         const { data: telemetryData } = await supabase
           .from('series_daily_telemetry')
           .select('series_id, daily_viewers, recorded_date')
-          .order('recorded_date', { ascending: true });
+          .gte('recorded_date', startDateStr)
+          .order('recorded_date', { ascending: true })
+          .limit(5000);
 
         const telemetryMap = new Map<string, number[]>();
         if (telemetryData) {
@@ -142,20 +148,59 @@ export default function App() {
 
   const maxLeaderboardViewers = rankedShows[0]?.viewers_premiere_28d || 1;
 
+  // Dynamic Chart Scale & Y-Axis Ticks
+  const chartSeries = useMemo(() => seriesList.slice(0, 6), [seriesList]);
+  const { maxChartScale, chartYTicks } = useMemo(() => {
+    let maxVal = 0;
+    for (const s of chartSeries) {
+      const slice = s.daily_series.slice(-7);
+      for (const v of slice) {
+        if (v > maxVal) maxVal = v;
+      }
+    }
+    const target = maxVal > 0 ? maxVal * 1.15 : 1000;
+    const exp = Math.floor(Math.log10(target));
+    const base = Math.pow(10, exp);
+    const frac = target / base;
+    let niceFrac = 1;
+    if (frac <= 1) niceFrac = 1;
+    else if (frac <= 2) niceFrac = 2;
+    else if (frac <= 2.5) niceFrac = 2.5;
+    else if (frac <= 5) niceFrac = 5;
+    else niceFrac = 10;
+    const niceMax = Math.max(100, Math.round(niceFrac * base));
+
+    const ticks = [
+      { pct: 1.0, val: niceMax, label: formatMetricNumber(niceMax) },
+      { pct: 0.75, val: Math.round(niceMax * 0.75), label: formatMetricNumber(Math.round(niceMax * 0.75)) },
+      { pct: 0.50, val: Math.round(niceMax * 0.50), label: formatMetricNumber(Math.round(niceMax * 0.50)) },
+      { pct: 0.25, val: Math.round(niceMax * 0.25), label: formatMetricNumber(Math.round(niceMax * 0.25)) },
+      { pct: 0, val: 0, label: '0' },
+    ];
+    return { maxChartScale: niceMax, chartYTicks: ticks };
+  }, [chartSeries]);
+
+  const getCumulativeScore = (show: SeriesItem, range: '7D' | '30D' | '90D' | 'All-Time'): number => {
+    const days = range === '7D' ? 7 : range === '30D' ? 30 : range === '90D' ? 90 : show.daily_series.length;
+    const slice = show.daily_series.slice(-days);
+    if (slice.length > 0) {
+      return slice.reduce((sum, v) => sum + v, 0);
+    }
+    return show.viewers_premiere_28d;
+  };
+
+  const topCumulativeShows = useMemo(() => seriesList.slice(0, 3), [seriesList]);
+  const maxCumulativeScore = useMemo(() => {
+    const scores = topCumulativeShows.map((s) => getCumulativeScore(s, chartRange));
+    return Math.max(...scores, 1);
+  }, [topCumulativeShows, chartRange]);
+
   // Guess Trivia Handlers
   const knownShow = seriesList.length > 0 ? seriesList[knownIdx % seriesList.length] : null;
   const challengerShow =
     seriesList.length > 0 ? seriesList[challengerIdx % seriesList.length] : null;
-  const knownScore = knownShow
-    ? guessMode === 'premieres'
-      ? knownShow.viewers_premiere_28d
-      : knownShow.viewers_finale
-    : 0;
-  const challengerScore = challengerShow
-    ? guessMode === 'premieres'
-      ? challengerShow.viewers_premiere_28d
-      : challengerShow.viewers_finale
-    : 0;
+  const knownScore = knownShow ? knownShow.viewers_premiere_28d : 0;
+  const challengerScore = challengerShow ? challengerShow.viewers_premiere_28d : 0;
 
   const makeGuess = (choice: 'higher' | 'lower') => {
     if (revealed || !knownShow || !challengerShow) return;
@@ -304,7 +349,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
           </span>
           <h2 className="text-xl font-serif font-medium text-stone-900 mt-3 mb-2">Database Table Empty</h2>
           <p className="text-xs text-stone-500 leading-relaxed">
-            Your Supabase connection is active, but the <code className="font-semibold">series</code> table contains no records. Execute <code className="font-semibold">supabase/schema.sql</code> or run the Rust ingestion pipeline (<code className="font-semibold">cargo run -- ingest</code>) to populate show data.
+            Your Supabase connection is active, but the <code className="font-semibold">series</code> table contains no records. Execute <code className="font-semibold">supabase/schema.sql</code> or run the Rust ingestion pipeline (<code className="font-semibold">cargo run -- seed</code> or <code className="font-semibold">cargo run -- sync</code>) to populate show data.
           </p>
         </main>
       </div>
@@ -449,11 +494,11 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
               <div className="flex items-center space-x-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
                 <span className="font-medium text-arena-muted uppercase tracking-wider text-[10px] sm:text-[11px]">
-                  Metric: Global Premieres (First 28 Days)
+                  Metric: 7-Day Engagement Index
                 </span>
               </div>
               <div className="bg-arena-cream px-2.5 py-1 rounded-full border border-arena-border/80 text-arena-muted text-[10px] sm:text-[11px] font-medium">
-                Season 1
+                {leftShow.release_years || '7-Day Window'}
               </div>
             </div>
 
@@ -484,13 +529,13 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
                 <div className="text-2xl sm:text-4xl md:text-5xl font-serif font-semibold">
                   {leftShow.viewers_premiere_28d.toLocaleString()}
                 </div>
-                <div className="text-[11px] sm:text-xs text-arena-muted font-medium mt-1 sm:mt-1.5">Household Viewers</div>
+                <div className="text-[11px] sm:text-xs text-arena-muted font-medium mt-1 sm:mt-1.5">Engagement Index</div>
               </div>
               <div className="text-right">
                 <div className="text-2xl sm:text-4xl md:text-5xl font-serif font-semibold">
                   {rightShow.viewers_premiere_28d.toLocaleString()}
                 </div>
-                <div className="text-[11px] sm:text-xs text-arena-muted font-medium mt-1 sm:mt-1.5">Household Viewers</div>
+                <div className="text-[11px] sm:text-xs text-arena-muted font-medium mt-1 sm:mt-1.5">Engagement Index</div>
               </div>
             </div>
 
@@ -556,7 +601,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
             <div className="flex items-center space-x-2 sm:space-x-2.5">
               <span className="inline-block w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full bg-brand-terracotta" />
               <span className="text-[10px] sm:text-xs uppercase tracking-wider font-semibold text-[#665D53]">
-                Metric: Global Premieres (First 28 Days)
+                Metric: 7-Day Engagement Index
               </span>
             </div>
             <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
@@ -654,11 +699,11 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-brand-terracotta" />
                 <span className="text-[10px] sm:text-xs font-semibold tracking-widest uppercase text-stone-500">
-                  Metric: Daily Active Household Viewers
+                  Metric: Daily Engagement Index
                 </span>
               </div>
               <p className="text-[10px] sm:text-xs text-stone-400 mt-0.5 sm:mt-1">
-                Real-time syndicated streaming telemetry across primary global markets
+                Daily synthesized telemetry across Wikipedia pageviews &amp; Reddit discussion metrics
               </p>
             </div>
             <div className="self-end sm:self-auto inline-flex items-center bg-[#F3EFE9] p-0.5 sm:p-1 rounded-full text-[10px] sm:text-xs font-medium border border-[#E7DFD5]">
@@ -695,13 +740,13 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
           <div className="block sm:hidden relative w-full overflow-hidden mt-1 mb-6">
             <svg className="w-full h-auto select-none chart-group" viewBox="0 0 340 185">
               <line stroke="#ECE5DA" strokeDasharray="2 3" x1="35" x2="335" y1="20" y2="20" />
-              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="23">1.60M</text>
+              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="23">{chartYTicks[0]?.label || '100%'}</text>
               <line stroke="#ECE5DA" strokeDasharray="2 3" x1="35" x2="335" y1="55" y2="55" />
-              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="58">1.20M</text>
+              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="58">{chartYTicks[1]?.label || '75%'}</text>
               <line stroke="#ECE5DA" strokeDasharray="2 3" x1="35" x2="335" y1="91" y2="91" />
-              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="94">800K</text>
+              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="94">{chartYTicks[2]?.label || '50%'}</text>
               <line stroke="#ECE5DA" strokeDasharray="2 3" x1="35" x2="335" y1="126" y2="126" />
-              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="129">400K</text>
+              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="129">{chartYTicks[3]?.label || '25%'}</text>
               <line stroke="#DDD4C7" strokeWidth="1" x1="35" x2="335" y1="162" y2="162" />
               <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="165">0</text>
 
@@ -718,7 +763,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
               })}
 
               {seriesList.slice(0, 6).map((show) => {
-                const { pathD, points } = buildMobileChartGeometry(show.daily_series);
+                const { pathD, points } = buildMobileChartGeometry(show.daily_series, maxChartScale);
                 return (
                   <g key={show.slug}>
                     <path
@@ -749,13 +794,13 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
           <div className="hidden sm:block relative w-full overflow-hidden mt-1 mb-8">
             <svg className="w-full h-auto select-none chart-group" viewBox="0 0 1000 420">
               <line stroke="#ECE5DA" strokeDasharray="3 4" x1="75" x2="960" y1="40" y2="40" />
-              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="44">1.60M</text>
+              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="44">{chartYTicks[0]?.label || '100%'}</text>
               <line stroke="#ECE5DA" strokeDasharray="3 4" x1="75" x2="960" y1="115" y2="115" />
-              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="119">1.20M</text>
+              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="119">{chartYTicks[1]?.label || '75%'}</text>
               <line stroke="#ECE5DA" strokeDasharray="3 4" x1="75" x2="960" y1="190" y2="190" />
-              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="194">800K</text>
+              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="194">{chartYTicks[2]?.label || '50%'}</text>
               <line stroke="#ECE5DA" strokeDasharray="3 4" x1="75" x2="960" y1="265" y2="265" />
-              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="269">400K</text>
+              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="269">{chartYTicks[3]?.label || '25%'}</text>
               <line stroke="#DDD4C7" strokeWidth="1.25" x1="75" x2="960" y1="340" y2="340" />
               <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="344">0</text>
 
@@ -772,7 +817,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
               })}
 
               {seriesList.slice(0, 6).map((show) => {
-                const { pathD, points } = buildChartGeometry(show.daily_series);
+                const { pathD, points } = buildChartGeometry(show.daily_series, maxChartScale);
                 return (
                   <g key={show.slug}>
                     <path
@@ -803,10 +848,11 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
           <div className="pt-4 sm:pt-6 border-t border-stone-200/60 space-y-3 sm:space-y-4">
             <div className="flex items-center justify-between text-[11px] sm:text-xs mb-2 sm:mb-3 text-stone-500 font-medium">
               <span>Cumulative Period Totals ({chartRange})</span>
-              <span>Total Measured Households</span>
+              <span>Cumulative Engagement</span>
             </div>
-            {seriesList.slice(0, 3).map((show) => {
-              const pct = ((show.viewers_premiere_28d / 10000000) * 100).toFixed(1);
+            {topCumulativeShows.map((show) => {
+              const score = getCumulativeScore(show, chartRange);
+              const pct = Math.min(100, Math.max(2, Math.round((score / maxCumulativeScore) * 100)));
               return (
                 <div key={show.slug} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4">
                   <div className="flex items-center justify-between sm:w-44 shrink-0">
@@ -814,7 +860,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
                       {show.title}
                     </span>
                     <span className="sm:hidden text-xs font-medium text-stone-700 font-tabular">
-                      {show.viewers_premiere_28d.toLocaleString()}
+                      {score.toLocaleString()}
                     </span>
                   </div>
                   <div className="flex-1 bg-[#F1EAE0] h-2.5 sm:h-3 rounded-full overflow-hidden p-0.5">
@@ -824,7 +870,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
                     />
                   </div>
                   <span className="hidden sm:inline-block w-24 text-right text-xs md:text-sm font-medium text-stone-700 font-tabular">
-                    {show.viewers_premiere_28d.toLocaleString()}
+                    {score.toLocaleString()}
                   </span>
                 </div>
               );
@@ -872,7 +918,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
                   {knownScore.toLocaleString()}
                 </div>
                 <p className="text-[10px] sm:text-[11px] uppercase tracking-wider text-stone-400 font-medium mt-1">
-                  Household Viewers
+                  Engagement Index
                 </p>
               </div>
             </article>
@@ -907,7 +953,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
                       {challengerScore.toLocaleString()}
                     </div>
                     <p className="text-[10px] sm:text-[11px] uppercase tracking-wider text-stone-400 font-medium mt-1">
-                      Household Viewers
+                      Engagement Index
                     </p>
                   </>
                 ) : (
@@ -951,29 +997,10 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
             )}
           </div>
 
-          <div className="mt-6 sm:mt-8 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-stone-500">
-            <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-stone-400 mr-1">
-              Trivia Modes:
-            </span>
-            <button
-              onClick={() => setGuessMode('premieres')}
-              className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border ${
-                guessMode === 'premieres' ? 'bg-white font-semibold' : 'bg-white/60'
-              }`}
-            >
-              Global Premieres
-            </button>
-            <button
-              onClick={() => setGuessMode('finales')}
-              className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border ${
-                guessMode === 'finales' ? 'bg-white font-semibold' : 'bg-white/60'
-              }`}
-            >
-              Season Finales
-            </button>
+          <div className="mt-6 sm:mt-8 flex items-center justify-center">
             <button
               onClick={nextTriviaRound}
-              className="px-3 sm:px-4 py-1 sm:py-1.5 rounded-full bg-white/70 hover:bg-white border"
+              className="px-4 py-1.5 rounded-full bg-white/70 hover:bg-white border text-stone-600 text-[11px] sm:text-xs transition-colors"
             >
               Skip Show
             </button>
