@@ -6,7 +6,10 @@ use serde_json::json;
 use std::{cmp::Ordering, env, thread, time::Duration};
 
 #[derive(Parser)]
-#[command(name = "tv-arena-pipeline", about = "Rust Seeder & Nightly Scraper for TV Arena")]
+#[command(
+    name = "tv-arena-pipeline",
+    about = "Rust Seeder & Nightly Scraper for TV Arena"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -108,7 +111,8 @@ const CHART_PALETTE: [&str; 6] = [
 fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     let supabase_url = env::var("SUPABASE_URL").context("Missing SUPABASE_URL")?;
-    let supabase_key = env::var("SUPABASE_SERVICE_ROLE_KEY").context("Missing SUPABASE_SERVICE_ROLE_KEY")?;
+    let supabase_key =
+        env::var("SUPABASE_SERVICE_ROLE_KEY").context("Missing SUPABASE_SERVICE_ROLE_KEY")?;
 
     let cli = Cli::parse();
     match cli.command {
@@ -146,27 +150,12 @@ fn resolve_wiki_slug(title: &str, client: &ureq::Agent) -> Option<String> {
                         let desc = body
                             .get("description")
                             .and_then(|d| d.as_str())
-                            .unwrap_or("")
-                            .to_lowercase();
-                        let extract = body
-                            .get("extract")
-                            .and_then(|e| e.as_str())
-                            .unwrap_or("")
-                            .to_lowercase();
+                            .unwrap_or("");
+                        let extract = body.get("extract").and_then(|e| e.as_str()).unwrap_or("");
 
-                        let is_tv = slug.ends_with("_(TV_series)")
-                            || slug.ends_with("_(American_TV_series)")
-                            || desc.contains("television")
-                            || desc.contains("series")
-                            || desc.contains("sitcom")
-                            || desc.contains("drama")
-                            || extract.contains("television series")
-                            || extract.contains("tv series");
-
-                        if is_tv {
-                            if let Some(canonical) = body
-                                .pointer("/titles/canonical")
-                                .and_then(|c| c.as_str())
+                        if is_tv_description(desc, extract, &slug) {
+                            if let Some(canonical) =
+                                body.pointer("/titles/canonical").and_then(|c| c.as_str())
                             {
                                 return Some(canonical.to_string());
                             }
@@ -180,13 +169,52 @@ fn resolve_wiki_slug(title: &str, client: &ureq::Agent) -> Option<String> {
     None
 }
 
+pub fn is_tv_description(desc: &str, extract: &str, slug: &str) -> bool {
+    let desc_lower = desc.to_lowercase();
+    let extract_lower = extract.to_lowercase();
+
+    if slug.ends_with("_(TV_series)") || slug.ends_with("_(American_TV_series)") {
+        return true;
+    }
+
+    // Exclude novels, films, or albums unless television is explicitly stated
+    let is_non_tv = (desc_lower.contains("novel")
+        || desc_lower.contains("book")
+        || desc_lower.contains("film")
+        || desc_lower.contains("album")
+        || desc_lower.contains("video game"))
+        && !desc_lower.contains("television")
+        && !desc_lower.contains("tv series");
+
+    if is_non_tv {
+        return false;
+    }
+
+    desc_lower.contains("television")
+        || desc_lower.contains("tv series")
+        || desc_lower.contains("tv show")
+        || desc_lower.contains("sitcom")
+        || extract_lower.contains("television series")
+        || extract_lower.contains("tv series")
+        || extract_lower.contains("television drama series")
+        || extract_lower.contains("american television")
+}
+
 fn run_seed(csv_path: &str, limit: usize, supabase_url: &str, supabase_key: &str) -> Result<()> {
     let mut rdr = csv::Reader::from_path(csv_path).context("Failed to open Kaggle CSV")?;
     let mut candidates: Vec<KaggleRow> = Vec::new();
     let client = create_http_client();
 
     let major_nets = [
-        "Netflix", "HBO", "Apple TV", "Prime Video", "Amazon", "FX", "Hulu", "Disney+", "AMC",
+        "Netflix",
+        "HBO",
+        "Apple TV",
+        "Prime Video",
+        "Amazon",
+        "FX",
+        "Hulu",
+        "Disney+",
+        "AMC",
     ];
     let bad_genres = ["Talk", "News", "Reality", "Soap", "Kids"];
 
@@ -288,7 +316,10 @@ fn run_seed(csv_path: &str, limit: usize, supabase_url: &str, supabase_key: &str
 
 fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
     let client = create_http_client();
-    let list_url = format!("{}/rest/v1/series?select=*&order=viewers_premiere_28d.desc", supabase_url);
+    let list_url = format!(
+        "{}/rest/v1/series?select=*&order=viewers_premiere_28d.desc",
+        supabase_url
+    );
     let shows: Vec<SeriesRow> = client
         .get(&list_url)
         .set("apikey", supabase_key)
@@ -334,12 +365,13 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
             .call();
 
         let wiki_days: Option<Vec<WikiDay>> = match wiki_result {
-            Ok(r) if r.status() == 200 => r
-                .into_json::<WikiPageviews>()
-                .ok()
-                .and_then(|w| w.items),
+            Ok(r) if r.status() == 200 => r.into_json::<WikiPageviews>().ok().and_then(|w| w.items),
             Ok(r) => {
-                eprintln!("⚠️  Wiki returned status {} for '{}'", r.status(), show.title);
+                eprintln!(
+                    "⚠️  Wiki returned status {} for '{}'",
+                    r.status(),
+                    show.title
+                );
                 None
             }
             Err(e) => {
@@ -402,28 +434,66 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
             .as_ref()
             .map(|days| days.iter().map(|d| d.views).sum())
             .unwrap_or(0);
-        let (total_comments, total_upvotes) = reddit_stats.unwrap_or((0, 0));
 
-        let new_score = (total_wiki * 10) + (total_comments * 150) + (total_upvotes * 25);
+        // Carry forward previous Reddit metrics if Reddit 403/429 occurs, preventing wild artificial swings
+        let (total_comments, total_upvotes) = if let Some(stats) = reddit_stats {
+            stats
+        } else {
+            let prev_telemetry_url = format!(
+                "{}/rest/v1/series_daily_telemetry?series_id=eq.{}&order=recorded_date.desc&limit=1",
+                supabase_url, show_id
+            );
+            let prev_comments = client
+                .get(&prev_telemetry_url)
+                .set("apikey", supabase_key)
+                .set("Authorization", &format!("Bearer {}", supabase_key))
+                .call()
+                .ok()
+                .and_then(|r| r.into_json::<Vec<serde_json::Value>>().ok())
+                .and_then(|rows| rows.into_iter().next())
+                .and_then(|row| row.get("reddit_comments").and_then(|v| v.as_i64()));
 
-        // Day-zero delta calculation: if freshly seeded (viewers_premiere_28d == 0),
-        // compute delta across the 7-day window (Day 7 vs Day 1) instead of forcing 0.0%
-        let delta_pct = if show.viewers_premiere_28d > 0 {
-            let prev_score = show.viewers_premiere_28d;
-            let raw_delta = (((new_score - prev_score) as f64 / prev_score as f64) * 1000.0).round() / 10.0;
-            raw_delta.clamp(-99999.0, 99999.0)
+            if let Some(c) = prev_comments {
+                eprintln!(
+                    "ℹ️  Reddit throttled for '{}'; carrying forward last recorded comments ({})",
+                    show.title, c
+                );
+                (c * 7, 0)
+            } else {
+                (0, 0)
+            }
+        };
+
+        let new_score = compute_buzz_score(total_wiki, total_comments, total_upvotes);
+
+        // To handle same-day manual re-runs gracefully, compare against the previous day's telemetry
+        let prior_telemetry_url = format!(
+            "{}/rest/v1/series_daily_telemetry?series_id=eq.{}&recorded_date=lt.{}&order=recorded_date.desc&limit=1",
+            supabase_url, show_id, recorded_date
+        );
+        let prior_day_score = client
+            .get(&prior_telemetry_url)
+            .set("apikey", supabase_key)
+            .set("Authorization", &format!("Bearer {}", supabase_key))
+            .call()
+            .ok()
+            .and_then(|r| r.into_json::<Vec<serde_json::Value>>().ok())
+            .and_then(|rows| rows.into_iter().next())
+            .and_then(|row| row.get("daily_viewers").and_then(|v| v.as_i64()))
+            .map(|dv| dv * 7);
+
+        let delta_pct = if let Some(prior_score) = prior_day_score {
+            calculate_delta(new_score, prior_score)
+        } else if show.viewers_premiere_28d > 0 {
+            calculate_delta(new_score, show.viewers_premiere_28d)
         } else if let Some(ref days) = wiki_days {
             if days.len() >= 2 {
                 let first_day = days.first().map(|d| d.views).unwrap_or(0);
                 let last_day = days.last().map(|d| d.views).unwrap_or(0);
-                let first_est = (first_day * 10) + ((total_comments / 7) * 150) + ((total_upvotes / 7) * 25);
-                let last_est = (last_day * 10) + ((total_comments / 7) * 150) + ((total_upvotes / 7) * 25);
-                if first_est > 0 {
-                    let raw_delta = (((last_est - first_est) as f64 / first_est as f64) * 1000.0).round() / 10.0;
-                    raw_delta.clamp(-99999.0, 99999.0)
-                } else {
-                    0.0
-                }
+                let first_est =
+                    compute_buzz_score(first_day, total_comments / 7, total_upvotes / 7);
+                let last_est = compute_buzz_score(last_day, total_comments / 7, total_upvotes / 7);
+                calculate_delta(last_est, first_est)
             } else {
                 0.0
             }
@@ -448,14 +518,11 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
             continue;
         }
 
-        let telemetry_url = format!(
-            "{}/rest/v1/series_daily_telemetry?on_conflict=series_id,recorded_date",
-            supabase_url
-        );
-
-        // Upsert all 7 days of daily telemetry so frontend Charts tab has full 7-day curves immediately
+        // True batch upsert: send an array in a single POST request
+        let mut telemetry_batch = Vec::new();
         if let Some(ref days) = wiki_days {
-            for day in days {
+            let last_idx = days.len().saturating_sub(1);
+            for (i, day) in days.iter().enumerate() {
                 if day.timestamp.len() >= 8 {
                     let date_iso = format!(
                         "{}-{}-{}",
@@ -463,37 +530,49 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
                         &day.timestamp[4..6],
                         &day.timestamp[6..8]
                     );
-                    let daily_est = (day.views * 10)
-                        + ((total_comments / 7) * 150)
-                        + ((total_upvotes / 7) * 25);
+                    let is_latest = i == last_idx;
+                    // Apply current Reddit velocity to latest day; past days retain their pure Wiki views
+                    let daily_comments = if is_latest { total_comments / 7 } else { 0 };
+                    let daily_upvotes = if is_latest { total_upvotes / 7 } else { 0 };
+                    let daily_est = compute_buzz_score(day.views, daily_comments, daily_upvotes);
 
-                    let _ = client
-                        .post(&telemetry_url)
-                        .set("apikey", supabase_key)
-                        .set("Authorization", &format!("Bearer {}", supabase_key))
-                        .set("Prefer", "resolution=merge-duplicates")
-                        .send_json(json!({
-                            "series_id": show_id,
-                            "recorded_date": date_iso,
-                            "daily_viewers": daily_est,
-                            "wiki_views": day.views,
-                            "reddit_comments": total_comments / 7
-                        }));
+                    telemetry_batch.push(json!({
+                        "series_id": show_id,
+                        "recorded_date": date_iso,
+                        "daily_viewers": daily_est,
+                        "wiki_views": day.views,
+                        "reddit_comments": daily_comments
+                    }));
                 }
             }
         } else {
-            let _ = client
-                .post(&telemetry_url)
-                .set("apikey", supabase_key)
-                .set("Authorization", &format!("Bearer {}", supabase_key))
-                .set("Prefer", "resolution=merge-duplicates")
-                .send_json(json!({
-                    "series_id": show_id,
-                    "recorded_date": recorded_date,
-                    "daily_viewers": new_score / 7,
-                    "wiki_views": total_wiki,
-                    "reddit_comments": total_comments
-                }));
+            telemetry_batch.push(json!({
+                "series_id": show_id,
+                "recorded_date": recorded_date,
+                "daily_viewers": new_score / 7,
+                "wiki_views": total_wiki,
+                "reddit_comments": total_comments / 7
+            }));
+        }
+
+        let telemetry_url = format!(
+            "{}/rest/v1/series_daily_telemetry?on_conflict=series_id,recorded_date",
+            supabase_url
+        );
+        let telemetry_res = client
+            .post(&telemetry_url)
+            .set("apikey", supabase_key)
+            .set("Authorization", &format!("Bearer {}", supabase_key))
+            .set("Prefer", "resolution=merge-duplicates")
+            .send_json(serde_json::Value::Array(telemetry_batch));
+
+        if let Err(e) = telemetry_res {
+            eprintln!(
+                "❌ Failed batch recording daily telemetry for '{}': {}",
+                show.title, e
+            );
+            fetch_failures += 1;
+            continue;
         }
 
         updated_count += 1;
@@ -518,4 +597,62 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn compute_buzz_score(wiki_views: i64, reddit_comments: i64, reddit_upvotes: i64) -> i64 {
+    (wiki_views * 10) + (reddit_comments * 150) + (reddit_upvotes * 25)
+}
+
+pub fn calculate_delta(current: i64, previous: i64) -> f64 {
+    if previous > 0 {
+        let raw = (((current - previous) as f64 / previous as f64) * 1000.0).round() / 10.0;
+        raw.clamp(-99999.0, 99999.0)
+    } else {
+        0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_buzz_score() {
+        assert_eq!(compute_buzz_score(100, 10, 20), 1000 + 1500 + 500);
+        assert_eq!(compute_buzz_score(0, 0, 0), 0);
+    }
+
+    #[test]
+    fn test_calculate_delta() {
+        assert_eq!(calculate_delta(150, 100), 50.0);
+        assert_eq!(calculate_delta(50, 100), -50.0);
+        assert_eq!(calculate_delta(100, 100), 0.0);
+        assert_eq!(calculate_delta(100, 0), 0.0);
+    }
+
+    #[test]
+    fn test_is_tv_description() {
+        assert!(is_tv_description(
+            "American television series",
+            "Severance is an American science fiction psychological thriller television series",
+            "Severance"
+        ));
+        assert!(is_tv_description(
+            "Television sitcom",
+            "The Bear is a comedy drama series",
+            "The_Bear"
+        ));
+        assert!(is_tv_description("", "", "Severance_(TV_series)"));
+        // Negative tests
+        assert!(!is_tv_description(
+            "1998 novel by author",
+            "The book was released in 1998",
+            "Dark"
+        ));
+        assert!(!is_tv_description(
+            "2015 feature film",
+            "A film directed by...",
+            "Wednesday"
+        ));
+    }
 }
