@@ -13,3 +13,9 @@
     - **NEVER** push directly to `main` or `develop`.
     - **NEVER** execute force pushes (`--force` or `-f`).
     - Push operations are strictly restricted to opening pull requests upon explicit request.
+
+## Backend Integrity & No Masked Dummy Data
+
+- **No Synthesized / Masked Dummy Data:** Never inject fabricated, hardcoded mock/dummy datasets that simulate Supabase or any database/API without explicit user request.
+- **Explicit Connection & Empty States:** When Supabase credentials (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) are missing, or when tables contain 0 records, render a clear, honest setup/connection prompt or empty state rather than falling back to fake data.
+
