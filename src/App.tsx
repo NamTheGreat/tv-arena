@@ -1,18 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FALLBACK_SERIES, SeriesItem, supabase } from './lib/supabase';
+import { isSupabaseConfigured, SeriesItem, supabase } from './lib/supabase';
 import { buildChartGeometry, buildMobileChartGeometry } from './lib/svgMath';
 
 type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('arena');
-  const [seriesList, setSeriesList] = useState<SeriesItem[]>(FALLBACK_SERIES);
+  const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Arena 1v1 State
-  const [leftSlug, setLeftSlug] = useState('house-of-the-dragon');
-  const [rightSlug, setRightSlug] = useState('wednesday');
-  const [leftSearch, setLeftSearch] = useState('House of the Dragon');
-  const [rightSearch, setRightSearch] = useState('Wednesday');
+  const [leftSlug, setLeftSlug] = useState('');
+  const [rightSlug, setRightSlug] = useState('');
+  const [leftSearch, setLeftSearch] = useState('');
+  const [rightSearch, setRightSearch] = useState('');
   const [leftDropdownOpen, setLeftDropdownOpen] = useState(false);
   const [rightDropdownOpen, setRightDropdownOpen] = useState(false);
 
@@ -25,48 +27,88 @@ export default function App() {
 
   // Guess Trivia State
   const [guessMode, setGuessMode] = useState<'premieres' | 'finales'>('premieres');
-  const [knownIdx, setKnownIdx] = useState<number>(11); // Silo
-  const [challengerIdx, setChallengerIdx] = useState<number>(9); // Fallout
+  const [knownIdx, setKnownIdx] = useState<number>(0);
+  const [challengerIdx, setChallengerIdx] = useState<number>(1);
   const [revealed, setRevealed] = useState<boolean>(false);
   const [lastGuessCorrect, setLastGuessCorrect] = useState<boolean | null>(null);
-  const [streak, setStreak] = useState<number>(1);
+  const [streak, setStreak] = useState<number>(0);
   const [bestStreak, setBestStreak] = useState<number>(() => {
-    return Number(localStorage.getItem('tv_arena_best_streak') || '1');
+    return Number(localStorage.getItem('tv_arena_best_streak') || '0');
   });
 
   // Load live data from Supabase if configured
   useEffect(() => {
     async function loadFromSupabase() {
-      if (!supabase) return;
+      if (!supabase) {
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      setDbError(null);
       const { data, error } = await supabase
         .from('series')
         .select('*')
         .order('viewers_premiere_28d', { ascending: false });
-      if (!error && data && data.length > 0) {
-        const mapped: SeriesItem[] = data.map((row: any, i: number) => ({
-          ...row,
-          viewers_premiere_28d: Number(row.viewers_premiere_28d),
-          viewers_finale: Number(row.viewers_finale || row.viewers_premiere_28d * 1.15),
-          delta_pct: Number(row.delta_pct || 0),
-          daily_series: FALLBACK_SERIES[i % FALLBACK_SERIES.length].daily_series,
-        }));
-        setSeriesList(mapped);
+
+      if (error) {
+        setDbError(error.message);
+        setIsLoading(false);
+        return;
       }
+
+      if (data && data.length > 0) {
+        const { data: telemetryData } = await supabase
+          .from('series_daily_telemetry')
+          .select('series_id, daily_viewers, recorded_date')
+          .order('recorded_date', { ascending: true });
+
+        const telemetryMap = new Map<string, number[]>();
+        if (telemetryData) {
+          for (const row of telemetryData) {
+            const arr = telemetryMap.get(row.series_id) || [];
+            arr.push(Number(row.daily_viewers));
+            telemetryMap.set(row.series_id, arr);
+          }
+        }
+
+        const mapped: SeriesItem[] = data.map((row: any) => ({
+          ...row,
+          viewers_premiere_28d: Number(row.viewers_premiere_28d || 0),
+          viewers_finale: Number(row.viewers_finale || 0),
+          delta_pct: Number(row.delta_pct || 0),
+          daily_series: telemetryMap.get(row.id) || [],
+        }));
+
+        setSeriesList(mapped);
+        setLeftSlug(mapped[0].slug);
+        setLeftSearch(mapped[0].title);
+        if (mapped.length > 1) {
+          setRightSlug(mapped[1].slug);
+          setRightSearch(mapped[1].title);
+          setChallengerIdx(1);
+        }
+      }
+      setIsLoading(false);
     }
     loadFromSupabase();
   }, []);
 
   // Arena Contenders
-  const leftShow = useMemo(
-    () => seriesList.find((s) => s.slug === leftSlug) || seriesList[2],
-    [seriesList, leftSlug]
-  );
-  const rightShow = useMemo(
-    () => seriesList.find((s) => s.slug === rightSlug) || seriesList[1],
-    [seriesList, rightSlug]
-  );
+  const leftShow = useMemo(() => {
+    if (seriesList.length === 0) return null;
+    return seriesList.find((s) => s.slug === leftSlug) || seriesList[0];
+  }, [seriesList, leftSlug]);
+
+  const rightShow = useMemo(() => {
+    if (seriesList.length === 0) return null;
+    return (
+      seriesList.find((s) => s.slug === rightSlug) ||
+      (seriesList.length > 1 ? seriesList[1] : seriesList[0])
+    );
+  }, [seriesList, rightSlug]);
 
   const arenaStats = useMemo(() => {
+    if (!leftShow || !rightShow) return null;
     const total = Math.max(1, leftShow.viewers_premiere_28d + rightShow.viewers_premiere_28d);
     const leftPct = Number(((leftShow.viewers_premiere_28d / total) * 100).toFixed(1));
     const rightPct = Number((100 - leftPct).toFixed(1));
@@ -101,15 +143,22 @@ export default function App() {
   const maxLeaderboardViewers = rankedShows[0]?.viewers_premiere_28d || 1;
 
   // Guess Trivia Handlers
-  const knownShow = seriesList[knownIdx % seriesList.length];
-  const challengerShow = seriesList[challengerIdx % seriesList.length];
-  const knownScore =
-    guessMode === 'premieres' ? knownShow.viewers_premiere_28d : knownShow.viewers_finale;
-  const challengerScore =
-    guessMode === 'premieres' ? challengerShow.viewers_premiere_28d : challengerShow.viewers_finale;
+  const knownShow = seriesList.length > 0 ? seriesList[knownIdx % seriesList.length] : null;
+  const challengerShow =
+    seriesList.length > 0 ? seriesList[challengerIdx % seriesList.length] : null;
+  const knownScore = knownShow
+    ? guessMode === 'premieres'
+      ? knownShow.viewers_premiere_28d
+      : knownShow.viewers_finale
+    : 0;
+  const challengerScore = challengerShow
+    ? guessMode === 'premieres'
+      ? challengerShow.viewers_premiere_28d
+      : challengerShow.viewers_finale
+    : 0;
 
   const makeGuess = (choice: 'higher' | 'lower') => {
-    if (revealed) return;
+    if (revealed || !knownShow || !challengerShow) return;
     const isHigher = challengerScore >= knownScore;
     const correct = (choice === 'higher' && isHigher) || (choice === 'lower' && !isHigher);
     setRevealed(true);
@@ -127,6 +176,7 @@ export default function App() {
   };
 
   const nextTriviaRound = () => {
+    if (seriesList.length <= 1) return;
     const newKnown = challengerIdx;
     let nextChallenger = Math.floor(Math.random() * seriesList.length);
     if (nextChallenger === newKnown) {
@@ -137,6 +187,129 @@ export default function App() {
     setRevealed(false);
     setLastGuessCorrect(null);
   };
+
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
+        <header className="w-full text-center mb-5 sm:mb-8">
+          <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+            TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
+          </h1>
+          <p className="text-[10px] sm:text-xs uppercase tracking-[0.22em] sm:tracking-[0.24em] text-arena-muted font-semibold mt-1 sm:mt-1.5">
+            Global Viewership Intelligence
+          </p>
+        </header>
+
+        <main className="w-full max-w-2xl bg-[#FCFAF6] border border-[#E9E1D3] rounded-[28px] p-6 sm:p-10 shadow-soft-card flex flex-col items-center text-center">
+          <div className="w-12 h-12 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 text-xl font-semibold mb-4">
+            ⚡
+          </div>
+          <span className="text-[11px] uppercase tracking-wider font-semibold text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200 mb-3">
+            Database Not Connected
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-serif font-medium text-stone-900 mb-3">
+            Connect Supabase to Stream Telemetry
+          </h2>
+          <p className="text-xs sm:text-sm text-stone-600 max-w-md leading-relaxed mb-6">
+            Dummy mock data has been removed. Configure your Supabase credentials to view real streaming telemetry and intelligence.
+          </p>
+
+          <div className="w-full text-left bg-white border border-[#EBE4D8] rounded-2xl p-4 sm:p-5 mb-6 space-y-3 text-xs sm:text-sm text-stone-700">
+            <div className="font-semibold text-stone-900 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-[#EFE9DF] text-stone-800 text-xs flex items-center justify-center font-bold">1</span>
+              <span>Create or Open a Supabase Project</span>
+            </div>
+            <p className="text-xs text-stone-500 pl-7">
+              Head to <a href="https://supabase.com" target="_blank" rel="noreferrer" className="text-brand-terracotta underline">supabase.com</a> and create your database project.
+            </p>
+
+            <div className="font-semibold text-stone-900 flex items-center gap-2 pt-2 border-t border-stone-100">
+              <span className="w-5 h-5 rounded-full bg-[#EFE9DF] text-stone-800 text-xs flex items-center justify-center font-bold">2</span>
+              <span>Run Database Migration & Initial Seed</span>
+            </div>
+            <p className="text-xs text-stone-500 pl-7 font-mono bg-stone-50 p-2 rounded border border-stone-200">
+              supabase/schema.sql
+            </p>
+            <p className="text-xs text-stone-500 pl-7">
+              Execute <code className="text-stone-800 font-semibold">supabase/schema.sql</code> in the Supabase SQL Editor to initialize tables and seed data.
+            </p>
+
+            <div className="font-semibold text-stone-900 flex items-center gap-2 pt-2 border-t border-stone-100">
+              <span className="w-5 h-5 rounded-full bg-[#EFE9DF] text-stone-800 text-xs flex items-center justify-center font-bold">3</span>
+              <span>Set Environment Variables</span>
+            </div>
+            <p className="text-xs text-stone-500 pl-7">
+              Add your credentials to <code className="text-stone-800 font-semibold">.env</code> in your project root:
+            </p>
+            <pre className="text-[11px] font-mono bg-[#2B2623] text-stone-200 p-3 rounded-xl ml-7 overflow-x-auto">
+{`VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key`}
+            </pre>
+          </div>
+
+          <p className="text-xs text-stone-400">
+            Once configured, restart the Vite dev server to stream live series telemetry.
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
+        <header className="w-full text-center mb-8">
+          <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+            TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
+          </h1>
+        </header>
+        <main className="w-full max-w-md bg-[#FCFAF6] border border-[#E9E1D3] rounded-[28px] p-10 shadow-soft-card flex flex-col items-center text-center">
+          <div className="w-8 h-8 border-2 border-brand-terracotta border-t-transparent rounded-full animate-spin mb-4" />
+          <h2 className="text-lg font-serif font-medium text-stone-800">Connecting to Supabase...</h2>
+          <p className="text-xs text-stone-400 mt-1">Fetching live television series and telemetry</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (dbError) {
+    return (
+      <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
+        <header className="w-full text-center mb-8">
+          <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+            TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
+          </h1>
+        </header>
+        <main className="w-full max-w-md bg-rose-50 border border-rose-200 rounded-[28px] p-8 text-center">
+          <span className="text-xs uppercase tracking-wider font-bold text-rose-800 bg-rose-100 px-3 py-1 rounded-full">
+            Database Query Error
+          </span>
+          <p className="text-xs text-rose-700 mt-3 font-mono">{dbError}</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (seriesList.length === 0 || !leftShow || !rightShow || !arenaStats) {
+    return (
+      <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
+        <header className="w-full text-center mb-8">
+          <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+            TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
+          </h1>
+        </header>
+        <main className="w-full max-w-md bg-[#FCFAF6] border border-[#E9E1D3] rounded-[28px] p-8 shadow-soft-card text-center">
+          <span className="text-xs uppercase tracking-wider font-semibold text-stone-500 bg-stone-100 px-3 py-1 rounded-full">
+            0 Series Found
+          </span>
+          <h2 className="text-xl font-serif font-medium text-stone-900 mt-3 mb-2">Database Table Empty</h2>
+          <p className="text-xs text-stone-500 leading-relaxed">
+            Your Supabase connection is active, but the <code className="font-semibold">series</code> table contains no records. Execute <code className="font-semibold">supabase/schema.sql</code> or run the Rust ingestion pipeline (<code className="font-semibold">cargo run -- ingest</code>) to populate show data.
+          </p>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
@@ -690,9 +863,9 @@ export default function App() {
                   </span>
                 </div>
                 <h2 className="text-2xl sm:text-3xl md:text-4xl font-serif font-medium text-stone-900">
-                  {knownShow.title}
+                  {knownShow?.title}
                 </h2>
-                <p className="text-xs text-stone-400 font-medium mt-1">{knownShow.network}</p>
+                <p className="text-xs text-stone-400 font-medium mt-1">{knownShow?.network}</p>
               </div>
               <div className="mt-8 sm:mt-14 pt-4 border-t border-stone-100/80 font-tabular">
                 <div className="text-3xl sm:text-4xl md:text-[42px] font-serif font-medium text-stone-900">
@@ -722,9 +895,9 @@ export default function App() {
                   </span>
                 </div>
                 <h2 className="text-2xl sm:text-3xl md:text-4xl font-serif font-medium text-stone-900">
-                  {challengerShow.title}
+                  {challengerShow?.title}
                 </h2>
-                <p className="text-xs text-stone-400 font-medium mt-1">{challengerShow.network}</p>
+                <p className="text-xs text-stone-400 font-medium mt-1">{challengerShow?.network}</p>
               </div>
 
               <div className="mt-8 sm:mt-14 pt-4 border-t border-stone-100/80 font-tabular">
@@ -772,7 +945,7 @@ export default function App() {
                   lastGuessCorrect ? 'text-emerald-600' : 'text-rose-600'
                 }`}
               >
-                {lastGuessCorrect ? 'Correct.' : 'Wrong.'} {challengerShow.title} drew{' '}
+                {lastGuessCorrect ? 'Correct.' : 'Wrong.'} {challengerShow?.title} drew{' '}
                 {challengerScore.toLocaleString()}.
               </div>
             )}
