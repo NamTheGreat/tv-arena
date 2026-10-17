@@ -44,7 +44,8 @@ pub fn run_sync(config: &Config) -> Result<()> {
     for show in &shows {
         let Some(show_id) = &show.id else { continue };
 
-        let wiki_days = fetch_wiki_days(&client, &show.wiki_slug, &start_str, &end_str, &show.title);
+        let wiki_days =
+            fetch_wiki_days(&client, &show.wiki_slug, &start_str, &end_str, &show.title);
         let reddit_stats = fetch_reddit_stats(&client, &show.reddit_query, &show.title);
 
         // If both sources failed or throttled, DO NOT store fake 0s. Skip this show and retain previous valid telemetry.
@@ -79,6 +80,15 @@ pub fn run_sync(config: &Config) -> Result<()> {
         };
 
         let new_score = compute_buzz_score(total_wiki, total_comments, total_upvotes);
+
+        // Guard against overwriting existing valid scores if upstream fetch returned 0
+        if new_score == 0 && show.viewers_premiere_28d > 0 {
+            eprintln!(
+                "⚠️  Calculated 0 buzz score for '{}'; skipping patch to protect existing score ({})",
+                show.title, show.viewers_premiere_28d
+            );
+            continue;
+        }
 
         // To handle same-day manual re-runs gracefully, compare against the previous day's telemetry
         let prior_day_score = fetch_prior_day_score(&client, config, show_id, &recorded_date);
