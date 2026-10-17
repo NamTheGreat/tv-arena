@@ -33,16 +33,6 @@ export default function App() {
   // Charts State
   const [chartRange, setChartRange] = useState<ChartRange>('7D');
 
-  // Guess Trivia State
-  const [knownIdx, setKnownIdx] = useState<number>(0);
-  const [challengerIdx, setChallengerIdx] = useState<number>(1);
-  const [revealed, setRevealed] = useState<boolean>(false);
-  const [lastGuessCorrect, setLastGuessCorrect] = useState<boolean | null>(null);
-  const [streak, setStreak] = useState<number>(0);
-  const [bestStreak, setBestStreak] = useState<number>(() => {
-    return Number(localStorage.getItem('tv_arena_best_streak') || '0');
-  });
-
   // Load live data from Supabase if configured
   useEffect(() => {
     async function loadFromSupabase() {
@@ -106,7 +96,6 @@ export default function App() {
         if (mapped.length > 1) {
           setRightSlug(mapped[1].slug);
           setRightSearch(mapped[1].title);
-          setChallengerIdx(1);
         }
       }
       setIsLoading(false);
@@ -179,44 +168,6 @@ export default function App() {
   }, [seriesList, platformFilter, genreFilter]);
 
   const maxLeaderboardViewers = rankedShows[0]?.viewers_premiere_28d || 1;
-
-  // Guess Trivia Handlers
-  const knownShow = seriesList.length > 0 ? seriesList[knownIdx % seriesList.length] : null;
-  const challengerShow =
-    seriesList.length > 0 ? seriesList[challengerIdx % seriesList.length] : null;
-  const knownScore = knownShow ? knownShow.viewers_premiere_28d : 0;
-  const challengerScore = challengerShow ? challengerShow.viewers_premiere_28d : 0;
-
-  const makeGuess = (choice: 'higher' | 'lower') => {
-    if (revealed || !knownShow || !challengerShow) return;
-    const isHigher = challengerScore >= knownScore;
-    const correct = (choice === 'higher' && isHigher) || (choice === 'lower' && !isHigher);
-    setRevealed(true);
-    setLastGuessCorrect(correct);
-    if (correct) {
-      const nextStreak = streak + 1;
-      setStreak(nextStreak);
-      if (nextStreak > bestStreak) {
-        setBestStreak(nextStreak);
-        localStorage.setItem('tv_arena_best_streak', String(nextStreak));
-      }
-    } else {
-      setStreak(0);
-    }
-  };
-
-  const nextTriviaRound = () => {
-    if (seriesList.length <= 1) return;
-    const newKnown = challengerIdx;
-    let nextChallenger = Math.floor(Math.random() * seriesList.length);
-    if (nextChallenger === newKnown) {
-      nextChallenger = (newKnown + 1) % seriesList.length;
-    }
-    setKnownIdx(newKnown);
-    setChallengerIdx(nextChallenger);
-    setRevealed(false);
-    setLastGuessCorrect(null);
-  };
 
   if (!isSupabaseConfigured) {
     return <DatabaseStatusCard type="unconfigured" />;
@@ -350,18 +301,7 @@ export default function App() {
 
       {/* SCREEN 4: GUESS TRIVIA */}
       {activeTab === 'guess' && (
-        <TriviaGame
-          knownShow={knownShow}
-          challengerShow={challengerShow}
-          knownScore={knownScore}
-          challengerScore={challengerScore}
-          streak={streak}
-          bestStreak={bestStreak}
-          revealed={revealed}
-          lastGuessCorrect={lastGuessCorrect}
-          onMakeGuess={makeGuess}
-          onNextRound={nextTriviaRound}
-        />
+        <TriviaGame seriesList={seriesList} />
       )}
 
       {/* Shared Trending Battles Footer */}

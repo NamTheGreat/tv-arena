@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 
 interface GameOverModalProps {
   isOpen: boolean;
+  mode?: 'endless' | 'daily';
   streak: number;
   bestStreak: number;
   knownTitle: string;
@@ -14,6 +15,7 @@ interface GameOverModalProps {
 
 export function GameOverModal({
   isOpen,
+  mode = 'endless',
   streak,
   bestStreak,
   knownTitle,
@@ -26,9 +28,15 @@ export function GameOverModal({
 
   if (!isOpen) return null;
 
-  // Generate Wordle-style emoji string: 🟩 for correct, 🟥 for final strike
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isDaily = mode === 'daily';
+  const correctCount = guessHistory.filter(Boolean).length;
+
+  // Generate Wordle-style emoji string: 🟩 for correct, 🟥 for strike
   const emojiGrid = guessHistory.map((g) => (g ? '🟩' : '🟥')).join('') || '🟥';
-  const shareText = `TV Arena 📺🔥\nStreak: ${streak} in a row!\n${emojiGrid}\nhttps://tv-arena.pages.dev`;
+  const shareText = isDaily
+    ? `TV Arena Daily Run #${todayStr} 📺🎯\nScore: ${correctCount}/10\n${emojiGrid}\nhttps://tv-arena.pages.dev`
+    : `TV Arena 📺🔥\nStreak: ${streak} in a row!\n${emojiGrid}\nhttps://tv-arena.pages.dev`;
 
   const handleShare = async () => {
     try {
@@ -61,19 +69,29 @@ export function GameOverModal({
           ✕
         </button>
 
-        <span className="text-3xl mb-2">💥</span>
-        <h2 className="text-2xl font-serif font-bold text-arena-charcoal">Run Ended!</h2>
+        <span className="text-3xl mb-2">{isDaily ? '🎯' : '💥'}</span>
+        <h2 className="text-2xl font-serif font-bold text-arena-charcoal">
+          {isDaily ? 'Daily Run Complete!' : 'Run Ended!'}
+        </h2>
         <p className="text-xs text-arena-muted mt-1">
-          Fell to: <span className="font-semibold text-stone-700">{knownTitle}</span> vs{' '}
-          <span className="font-semibold text-stone-700">{challengerTitle}</span>
+          {isDaily ? (
+            <span>Daily 10 Challenge Finished</span>
+          ) : (
+            <span>
+              Fell to: <span className="font-semibold text-stone-700">{knownTitle}</span> vs{' '}
+              <span className="font-semibold text-stone-700">{challengerTitle}</span>
+            </span>
+          )}
         </p>
 
         <div className="grid grid-cols-2 gap-3 w-full my-5">
           <div className="bg-stone-100/80 rounded-2xl p-3">
             <span className="text-[10px] uppercase font-bold tracking-wider text-arena-muted block">
-              Final Streak
+              {isDaily ? 'Daily Score' : 'Final Streak'}
             </span>
-            <span className="text-3xl font-serif font-bold text-rose-600">{streak}</span>
+            <span className="text-3xl font-serif font-bold text-rose-600">
+              {isDaily ? `${correctCount}/10` : streak}
+            </span>
           </div>
           <div className="bg-stone-100/80 rounded-2xl p-3">
             <span className="text-[10px] uppercase font-bold tracking-wider text-arena-muted block">
@@ -101,7 +119,7 @@ export function GameOverModal({
             onClick={onPlayAgain}
             className="w-full py-2.5 rounded-full bg-arena-terracotta hover:bg-arena-terracottaHover text-white font-semibold text-xs tracking-wider uppercase transition-colors shadow-sm"
           >
-            Play Again
+            {isDaily ? 'Replay Daily Run' : 'Play Again'}
           </button>
         </div>
       </div>
