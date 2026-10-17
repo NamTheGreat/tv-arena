@@ -520,6 +520,15 @@ fn run_sync(supabase_url: &str, supabase_key: &str) -> Result<()> {
 
         let new_score = compute_buzz_score(total_wiki, total_comments, total_upvotes);
 
+        // Guard against overwriting existing valid scores if upstream fetch returned 0
+        if new_score == 0 && show.viewers_premiere_28d > 0 {
+            eprintln!(
+                "⚠️  Calculated 0 buzz score for '{}'; skipping patch to protect existing score ({})",
+                show.title, show.viewers_premiere_28d
+            );
+            continue;
+        }
+
         // To handle same-day manual re-runs gracefully, compare against the previous day's telemetry
         let prior_telemetry_url = format!(
             "{}/rest/v1/series_daily_telemetry?series_id=eq.{}&recorded_date=lt.{}&order=recorded_date.desc&limit=1",
