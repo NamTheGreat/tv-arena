@@ -109,7 +109,9 @@ const CHART_PALETTE: [&str; 6] = [
 ];
 
 fn main() -> Result<()> {
-    // Attempt loading from current directory (.env) and parent directory (../.env)
+    // Attempt loading .env.local first (local Docker dev), then fallback to .env
+    dotenvy::from_filename(".env.local").ok();
+    dotenvy::from_filename("../.env.local").ok();
     dotenvy::dotenv().ok();
     dotenvy::from_filename("../.env").ok();
 
