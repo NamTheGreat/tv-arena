@@ -23,6 +23,15 @@ enum Commands {
     },
     /// Nightly: Fetch 7d Wikipedia + Reddit telemetry and update Supabase scores
     Sync,
+    /// Weekly: Fetch trending TV shows from TMDB API and auto-ingest breakout hits
+    Trending {
+        #[arg(short = 'p', long, default_value_t = 30.0)]
+        min_popularity: f64,
+        #[arg(short = 'v', long, default_value_t = 100.0)]
+        min_votes: f64,
+        #[arg(short, long, default_value_t = 10)]
+        limit: usize,
+    },
 }
 
 fn main() -> Result<()> {
@@ -32,6 +41,11 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Seed { csv, limit } => commands::seed::run_seed(&csv, limit, &config)?,
         Commands::Sync => commands::sync::run_sync(&config)?,
+        Commands::Trending {
+            min_popularity,
+            min_votes,
+            limit,
+        } => commands::trending::run_trending_sync(&config, min_popularity, min_votes, limit)?,
     }
 
     Ok(())

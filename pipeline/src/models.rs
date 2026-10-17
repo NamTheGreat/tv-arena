@@ -75,3 +75,50 @@ pub struct RedditPost {
     pub num_comments: i64,
     pub score: i64,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct TmdbTrendingResponse {
+    pub page: Option<i32>,
+    #[serde(default)]
+    pub results: Vec<TmdbTvShow>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TmdbTvShow {
+    pub id: i32,
+    pub name: String,
+    pub original_name: Option<String>,
+    pub overview: Option<String>,
+    pub first_air_date: Option<String>,
+    #[serde(default)]
+    pub popularity: f64,
+    #[serde(default)]
+    pub vote_average: f64,
+    #[serde(default)]
+    pub vote_count: f64,
+    #[serde(default)]
+    pub genre_ids: Vec<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TmdbTvDetail {
+    pub id: i32,
+    pub name: String,
+    pub first_air_date: Option<String>,
+    #[serde(default)]
+    pub networks: Vec<TmdbNetwork>,
+    #[serde(default)]
+    pub genres: Vec<TmdbGenre>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TmdbNetwork {
+    pub id: i32,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TmdbGenre {
+    pub id: i32,
+    pub name: String,
+}
