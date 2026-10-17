@@ -1,26 +1,15 @@
-name: TV Arena Rust Telemetry & Ingestion
+name: TV Arena Nightly Rust Sync
 
 on:
   schedule:
-    - cron: '0 6 * * *'       # Nightly 06:00 UTC telemetry sync
-    - cron: '0 8 * * 1'       # Weekly Monday 08:00 UTC TMDB trending discovery
+    - cron: '0 6 * * *'
   workflow_dispatch:
-    inputs:
-      action:
-        description: 'Action to run (sync, trending, or both)'
-        required: true
-        default: 'sync'
-        type: choice
-        options:
-          - sync
-          - trending
-          - both
 
 permissions:
   contents: read
 
 jobs:
-  pipeline-jobs:
+  sync-telemetry:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -48,16 +37,7 @@ jobs:
         with:
           workspaces: "./pipeline -> target"
 
-      - name: Run Weekly TMDB Trending Discovery
-        if: github.event.schedule == '0 8 * * 1' || inputs.action == 'trending' || inputs.action == 'both'
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-        run: cargo run --release -- trending --min-popularity 30.0 --limit 10
-
       - name: Run Nightly Telemetry Sync
-        if: github.event.schedule == '0 6 * * *' || inputs.action == 'sync' || inputs.action == 'both' || (github.event_name == 'workflow_dispatch' && !inputs.action)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

@@ -65,19 +65,11 @@ export function ArenaContenders({
               className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm focus:border-arena-terracotta focus:ring-0 outline-none"
             />
             {leftDropdownOpen && (
-              <div className="absolute z-30 mt-2 w-full max-h-64 overflow-y-auto bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card divide-y divide-arena-border/30">
-                {(() => {
-                  const filtered = seriesList.filter((s) =>
-                    s.title.toLowerCase().includes(leftSearch.toLowerCase())
-                  );
-                  if (filtered.length === 0) {
-                    return (
-                      <div className="px-4 py-3 text-xs font-sans text-arena-muted italic text-center">
-                        No series matching "{leftSearch}"
-                      </div>
-                    );
-                  }
-                  return filtered.slice(0, 10).map((s) => (
+              <div className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden">
+                {seriesList
+                  .filter((s) => s.title.toLowerCase().includes(leftSearch.toLowerCase()))
+                  .slice(0, 6)
+                  .map((s) => (
                     <button
                       key={s.slug}
                       type="button"
@@ -85,13 +77,12 @@ export function ArenaContenders({
                         onSelectLeftShow(s);
                         setLeftDropdownOpen(false);
                       }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-arena-cream flex items-center justify-between text-sm font-serif transition-colors"
+                      className="w-full text-left px-4 py-2.5 hover:bg-arena-cream flex items-center justify-between text-sm font-serif"
                     >
                       <span className="font-semibold">{s.title}</span>
                       <span className="text-xs font-sans text-arena-muted">{s.network}</span>
                     </button>
-                  ));
-                })()}
+                  ))}
               </div>
             )}
           </div>
@@ -121,19 +112,11 @@ export function ArenaContenders({
               className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm focus:border-arena-sage focus:ring-0 outline-none"
             />
             {rightDropdownOpen && (
-              <div className="absolute z-30 mt-2 w-full max-h-64 overflow-y-auto bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card divide-y divide-arena-border/30">
-                {(() => {
-                  const filtered = seriesList.filter((s) =>
-                    s.title.toLowerCase().includes(rightSearch.toLowerCase())
-                  );
-                  if (filtered.length === 0) {
-                    return (
-                      <div className="px-4 py-3 text-xs font-sans text-arena-muted italic text-center">
-                        No series matching "{rightSearch}"
-                      </div>
-                    );
-                  }
-                  return filtered.slice(0, 10).map((s) => (
+              <div className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden">
+                {seriesList
+                  .filter((s) => s.title.toLowerCase().includes(rightSearch.toLowerCase()))
+                  .slice(0, 6)
+                  .map((s) => (
                     <button
                       key={s.slug}
                       type="button"
@@ -141,13 +124,12 @@ export function ArenaContenders({
                         onSelectRightShow(s);
                         setRightDropdownOpen(false);
                       }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-arena-cream flex items-center justify-between text-sm font-serif transition-colors"
+                      className="w-full text-left px-4 py-2.5 hover:bg-arena-cream flex items-center justify-between text-sm font-serif"
                     >
                       <span className="font-semibold">{s.title}</span>
                       <span className="text-xs font-sans text-arena-muted">{s.network}</span>
                     </button>
-                  ));
-                })()}
+                  ))}
               </div>
             )}
           </div>
