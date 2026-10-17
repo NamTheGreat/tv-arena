@@ -1,4 +1,4 @@
-# 📺 TV Arena — Global Viewership Intelligence
+# 📺 TV Arena — Global TV Engagement Intelligence
 
 <div align="center">
 
@@ -8,7 +8,7 @@
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-DEA584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 
-**A high-performance entertainment analytics platform and battleground comparing worldwide streaming viewership metrics across major networks and flagship television franchises.**
+**A high-performance entertainment analytics platform and battleground comparing worldwide television engagement metrics across major networks and flagship television franchises.**
 
 </div>
 
@@ -52,11 +52,11 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 
 ### 1. ⚔️ The Arena (1v1 Head-to-Head Comparison)
 - Interactive contender selector with live search filtering and swap capabilities.
-- Dynamic tug-of-war bar visualizing viewership splits between any two series.
+- Dynamic tug-of-war bar visualizing engagement splits between any two series.
 - Instant differential calculation showing absolute volume and percentage margins.
 
 ### 2. 🏆 Global Leaderboard
-- Real-time ranking of top television properties by measured premiere window households (28 days).
+- Real-time ranking of top television properties by measured 7-day engagement index.
 - Platform filtering (Netflix, HBO, Apple TV+, Prime Video, Hulu, Disney+, etc.) and genre isolation.
 - Visual proportional telemetry bars and trend indicators (`▲ Up`, `▼ Down`, `Steady`).
 
@@ -65,9 +65,9 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 - Multi-series telemetry curves with interactive hover states and 7-day retrospective data points.
 - Cumulative period volume bars comparing market footprints.
 
-### 4. 🎯 Higher / Lower Viewership Trivia
+### 4. 🎯 Higher / Lower Engagement Trivia
 - Engaging interactive game pitting known benchmark series against challenger shows.
-- Tests player intuition across **Global Premieres** and **Season Finales**.
+- Tests player intuition comparing 7-day engagement index performance.
 - Streak counting with browser `localStorage` best-score persistence and instant answer feedback.
 
 ---
@@ -78,7 +78,7 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 .
 ├── .github/
 │   └── workflows/
-│       └── nightly-sync.yml      # GitHub Actions daily automated cron pipeline
+│       └── nightly-sync.yml      # GitHub Actions daily automated cron pipeline (06:00 UTC)
 ├── .env.example                  # Environment configuration template
 ├── .gitignore                    # Comprehensive multi-language ignore rules
 ├── index.html                    # Single Page Application HTML entrypoint
@@ -93,7 +93,7 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 │   ├── index.css                 # Custom background gradients & utility classes
 │   ├── vite-env.d.ts             # Vite client environment typing
 │   └── lib/
-│       ├── supabase.ts           # Supabase client & fallback catalog (12 flagship shows)
+│       ├── supabase.ts           # Supabase client & connection configuration
 │       └── svgMath.ts            # Mathematical coordinate transformations for SVG lines
 ├── supabase/
 │   └── schema.sql                # Complete PostgreSQL schema, indexes, RLS, and seed data
@@ -110,7 +110,7 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 ### Prerequisites
 - **Node.js**: v18.0.0 or higher (v20+ recommended)
 - **Rust**: 1.85.0 or higher with Cargo
-- **Supabase Account**: (Optional, application includes an integrated 12-series offline catalog)
+- **Supabase Account**: Required for real streaming telemetry and PostgreSQL storage
 
 ---
 
@@ -131,7 +131,7 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
    VITE_SUPABASE_URL=https://your-project-id.supabase.co
    VITE_SUPABASE_ANON_KEY=your-public-anon-key
    ```
-   *(Note: If left empty, the application automatically uses the offline flagship catalog seamlessly).*
+   *(Note: When unconfigured, the application presents a clear connection guide rather than masking missing infrastructure with fake data).*
 
 3. **Install dependencies:**
    ```bash
@@ -199,7 +199,7 @@ cd pipeline
 
 ## ⚙️ Automated Nightly Sync (CI/CD)
 
-The repository includes a GitHub Actions workflow in [`.github/workflows/nightly-sync.yml`](.github/workflows/nightly-sync.yml) that executes daily at midnight UTC (`0 0 * * *`).
+The repository includes a GitHub Actions workflow in [`.github/workflows/nightly-sync.yml`](.github/workflows/nightly-sync.yml) that executes daily at 06:00 UTC (`0 6 * * *`).
 
 To enable:
 1. Navigate to your GitHub repository **Settings > Secrets and variables > Actions**.

@@ -1,18 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FALLBACK_SERIES, SeriesItem, supabase } from './lib/supabase';
-import { buildChartGeometry } from './lib/svgMath';
+import { isSupabaseConfigured, SeriesItem, supabase } from './lib/supabase';
+import {
+  buildChartGeometry,
+  buildMobileChartGeometry,
+  calculateNiceMaxScale,
+  formatMetricNumber,
+  sampleDailyValues,
+} from './lib/svgMath';
 
 type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('arena');
-  const [seriesList, setSeriesList] = useState<SeriesItem[]>(FALLBACK_SERIES);
+  const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Arena 1v1 State
-  const [leftSlug, setLeftSlug] = useState('house-of-the-dragon');
-  const [rightSlug, setRightSlug] = useState('wednesday');
-  const [leftSearch, setLeftSearch] = useState('House of the Dragon');
-  const [rightSearch, setRightSearch] = useState('Wednesday');
+  const [leftSlug, setLeftSlug] = useState('');
+  const [rightSlug, setRightSlug] = useState('');
+  const [leftSearch, setLeftSearch] = useState('');
+  const [rightSearch, setRightSearch] = useState('');
   const [leftDropdownOpen, setLeftDropdownOpen] = useState(false);
   const [rightDropdownOpen, setRightDropdownOpen] = useState(false);
 
@@ -24,49 +32,102 @@ export default function App() {
   const [chartRange, setChartRange] = useState<'7D' | '30D' | '90D' | 'All-Time'>('7D');
 
   // Guess Trivia State
-  const [guessMode, setGuessMode] = useState<'premieres' | 'finales'>('premieres');
-  const [knownIdx, setKnownIdx] = useState<number>(11); // Silo
-  const [challengerIdx, setChallengerIdx] = useState<number>(9); // Fallout
+  const [knownIdx, setKnownIdx] = useState<number>(0);
+  const [challengerIdx, setChallengerIdx] = useState<number>(1);
   const [revealed, setRevealed] = useState<boolean>(false);
   const [lastGuessCorrect, setLastGuessCorrect] = useState<boolean | null>(null);
-  const [streak, setStreak] = useState<number>(1);
+  const [streak, setStreak] = useState<number>(0);
   const [bestStreak, setBestStreak] = useState<number>(() => {
-    return Number(localStorage.getItem('tv_arena_best_streak') || '1');
+    return Number(localStorage.getItem('tv_arena_best_streak') || '0');
   });
 
   // Load live data from Supabase if configured
   useEffect(() => {
     async function loadFromSupabase() {
-      if (!supabase) return;
+      if (!supabase) {
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      setDbError(null);
       const { data, error } = await supabase
         .from('series')
         .select('*')
         .order('viewers_premiere_28d', { ascending: false });
-      if (!error && data && data.length > 0) {
-        const mapped: SeriesItem[] = data.map((row: any, i: number) => ({
-          ...row,
-          viewers_premiere_28d: Number(row.viewers_premiere_28d),
-          viewers_finale: Number(row.viewers_finale || row.viewers_premiere_28d * 1.15),
-          delta_pct: Number(row.delta_pct || 0),
-          daily_series: FALLBACK_SERIES[i % FALLBACK_SERIES.length].daily_series,
-        }));
-        setSeriesList(mapped);
+
+      if (error) {
+        setDbError(error.message);
+        setIsLoading(false);
+        return;
       }
+
+      if (data && data.length > 0) {
+        // Query recent telemetry (last 90 days) scoped to top charted/cumulative shows to respect Supabase row limits
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        const startDateStr = ninetyDaysAgo.toISOString().split('T')[0];
+        const chartedIds = data.slice(0, 10).map((s: any) => s.id);
+
+        const { data: telemetryData } = await supabase
+          .from('series_daily_telemetry')
+          .select('series_id, daily_viewers, recorded_date')
+          .in('series_id', chartedIds)
+          .gte('recorded_date', startDateStr)
+          .order('recorded_date', { ascending: true });
+
+        const telemetryValuesMap = new Map<string, number[]>();
+        const telemetryDatesMap = new Map<string, string[]>();
+        if (telemetryData) {
+          for (const row of telemetryData) {
+            const arr = telemetryValuesMap.get(row.series_id) || [];
+            arr.push(Number(row.daily_viewers));
+            telemetryValuesMap.set(row.series_id, arr);
+
+            const dateArr = telemetryDatesMap.get(row.series_id) || [];
+            dateArr.push(String(row.recorded_date));
+            telemetryDatesMap.set(row.series_id, dateArr);
+          }
+        }
+
+        const mapped: SeriesItem[] = data.map((row: any) => ({
+          ...row,
+          viewers_premiere_28d: Number(row.viewers_premiere_28d || 0),
+          viewers_finale: Number(row.viewers_finale || 0),
+          delta_pct: Number(row.delta_pct || 0),
+          daily_series: telemetryValuesMap.get(row.id) || [],
+          daily_dates: telemetryDatesMap.get(row.id) || [],
+        }));
+
+        setSeriesList(mapped);
+        setLeftSlug(mapped[0].slug);
+        setLeftSearch(mapped[0].title);
+        if (mapped.length > 1) {
+          setRightSlug(mapped[1].slug);
+          setRightSearch(mapped[1].title);
+          setChallengerIdx(1);
+        }
+      }
+      setIsLoading(false);
     }
     loadFromSupabase();
   }, []);
 
   // Arena Contenders
-  const leftShow = useMemo(
-    () => seriesList.find((s) => s.slug === leftSlug) || seriesList[2],
-    [seriesList, leftSlug]
-  );
-  const rightShow = useMemo(
-    () => seriesList.find((s) => s.slug === rightSlug) || seriesList[1],
-    [seriesList, rightSlug]
-  );
+  const leftShow = useMemo(() => {
+    if (seriesList.length === 0) return null;
+    return seriesList.find((s) => s.slug === leftSlug) || seriesList[0];
+  }, [seriesList, leftSlug]);
+
+  const rightShow = useMemo(() => {
+    if (seriesList.length === 0) return null;
+    return (
+      seriesList.find((s) => s.slug === rightSlug) ||
+      (seriesList.length > 1 ? seriesList[1] : seriesList[0])
+    );
+  }, [seriesList, rightSlug]);
 
   const arenaStats = useMemo(() => {
+    if (!leftShow || !rightShow) return null;
     const total = Math.max(1, leftShow.viewers_premiere_28d + rightShow.viewers_premiere_28d);
     const leftPct = Number(((leftShow.viewers_premiere_28d / total) * 100).toFixed(1));
     const rightPct = Number((100 - leftPct).toFixed(1));
@@ -90,26 +151,141 @@ export default function App() {
     }
   };
 
+  // Available platforms and genres dynamically derived from dataset
+  const availablePlatforms = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of seriesList) {
+      if (s.network) set.add(s.network);
+    }
+    return ['ALL', ...Array.from(set)];
+  }, [seriesList]);
+
+  const availableGenres = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of seriesList) {
+      if (s.genre_group) set.add(s.genre_group);
+    }
+    return ['ALL', ...Array.from(set)];
+  }, [seriesList]);
+
   // Leaderboard filtered list
   const rankedShows = useMemo(() => {
     return [...seriesList]
       .filter((s) => (platformFilter === 'ALL' ? true : s.network === platformFilter))
-      .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group.includes('Sci-Fi')))
+      .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group === genreFilter))
       .sort((a, b) => b.viewers_premiere_28d - a.viewers_premiere_28d);
   }, [seriesList, platformFilter, genreFilter]);
 
   const maxLeaderboardViewers = rankedShows[0]?.viewers_premiere_28d || 1;
 
+  // Dynamic X-Axis labels responding to chosen time range with real calendar dates
+  const xAxisLabels = useMemo(() => {
+    const formatShortDate = (dateStrOrObj: string | Date): string => {
+      if (typeof dateStrOrObj === 'string') {
+        const parts = dateStrOrObj.split('-');
+        if (parts.length === 3) {
+          return `${Number(parts[1])}/${Number(parts[2])}`;
+        }
+      }
+      const d = new Date(dateStrOrObj);
+      return `${d.getMonth() + 1}/${d.getDate()}`;
+    };
+
+    const referenceShow = seriesList.find((s) => s.daily_dates && s.daily_dates.length > 0);
+    const rawDates = referenceShow?.daily_dates || [];
+
+    const days =
+      chartRange === '7D'
+        ? 7
+        : chartRange === '30D'
+        ? 30
+        : chartRange === '90D'
+        ? 90
+        : Math.max(7, rawDates.length);
+
+    if (rawDates.length > 0) {
+      const windowDates = rawDates.slice(-days);
+      if (windowDates.length <= 7) {
+        const labels: string[] = [];
+        const missingCount = 7 - windowDates.length;
+        const firstDate = new Date(windowDates[0] + 'T00:00:00Z');
+        for (let i = missingCount; i > 0; i--) {
+          const d = new Date(firstDate);
+          d.setUTCDate(d.getUTCDate() - i);
+          labels.push(formatShortDate(d));
+        }
+        for (const ds of windowDates) {
+          labels.push(formatShortDate(ds));
+        }
+        return labels;
+      } else {
+        const bucketSize = windowDates.length / 7;
+        const labels: string[] = [];
+        for (let b = 0; b < 7; b++) {
+          const idx = Math.min(windowDates.length - 1, Math.floor(b * bucketSize));
+          labels.push(formatShortDate(windowDates[idx]));
+        }
+        return labels;
+      }
+    }
+
+    const labels: string[] = [];
+    const now = new Date();
+    const stepDays = chartRange === '7D' ? 1 : chartRange === '30D' ? 5 : chartRange === '90D' ? 15 : 20;
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i * stepDays);
+      labels.push(formatShortDate(d));
+    }
+    return labels;
+  }, [seriesList, chartRange]);
+
+  // Dynamic Chart Scale & Y-Axis Ticks
+  const chartSeries = useMemo(() => seriesList.slice(0, 6), [seriesList]);
+  const { maxChartScale, chartYTicks } = useMemo(() => {
+    let maxVal = 0;
+    for (const s of chartSeries) {
+      const sampled = sampleDailyValues(s.daily_series, chartRange);
+      for (const v of sampled) {
+        if (v > maxVal) maxVal = v;
+      }
+    }
+    const niceMax = calculateNiceMaxScale(maxVal);
+
+    const ticks = [
+      { pct: 1.0, val: niceMax, label: formatMetricNumber(niceMax) },
+      { pct: 0.75, val: Math.round(niceMax * 0.75), label: formatMetricNumber(Math.round(niceMax * 0.75)) },
+      { pct: 0.50, val: Math.round(niceMax * 0.50), label: formatMetricNumber(Math.round(niceMax * 0.50)) },
+      { pct: 0.25, val: Math.round(niceMax * 0.25), label: formatMetricNumber(Math.round(niceMax * 0.25)) },
+      { pct: 0, val: 0, label: '0' },
+    ];
+    return { maxChartScale: niceMax, chartYTicks: ticks };
+  }, [chartSeries, chartRange]);
+
+  const getCumulativeScore = (show: SeriesItem, range: '7D' | '30D' | '90D' | 'All-Time'): number => {
+    const days = range === '7D' ? 7 : range === '30D' ? 30 : range === '90D' ? 90 : show.daily_series.length;
+    const slice = show.daily_series.slice(-days);
+    if (slice.length > 0) {
+      return slice.reduce((sum, v) => sum + v, 0);
+    }
+    return show.viewers_premiere_28d;
+  };
+
+  const topCumulativeShows = useMemo(() => seriesList.slice(0, 3), [seriesList]);
+  const maxCumulativeScore = useMemo(() => {
+    const scores = topCumulativeShows.map((s) => getCumulativeScore(s, chartRange));
+    return Math.max(...scores, 1);
+  }, [topCumulativeShows, chartRange]);
+
   // Guess Trivia Handlers
-  const knownShow = seriesList[knownIdx % seriesList.length];
-  const challengerShow = seriesList[challengerIdx % seriesList.length];
-  const knownScore =
-    guessMode === 'premieres' ? knownShow.viewers_premiere_28d : knownShow.viewers_finale;
-  const challengerScore =
-    guessMode === 'premieres' ? challengerShow.viewers_premiere_28d : challengerShow.viewers_finale;
+  const knownShow = seriesList.length > 0 ? seriesList[knownIdx % seriesList.length] : null;
+  const challengerShow =
+    seriesList.length > 0 ? seriesList[challengerIdx % seriesList.length] : null;
+  const knownScore = knownShow ? knownShow.viewers_premiere_28d : 0;
+  const challengerScore = challengerShow ? challengerShow.viewers_premiere_28d : 0;
 
   const makeGuess = (choice: 'higher' | 'lower') => {
-    if (revealed) return;
+    if (revealed || !knownShow || !challengerShow) return;
     const isHigher = challengerScore >= knownScore;
     const correct = (choice === 'higher' && isHigher) || (choice === 'lower' && !isHigher);
     setRevealed(true);
@@ -127,6 +303,7 @@ export default function App() {
   };
 
   const nextTriviaRound = () => {
+    if (seriesList.length <= 1) return;
     const newKnown = challengerIdx;
     let nextChallenger = Math.floor(Math.random() * seriesList.length);
     if (nextChallenger === newKnown) {
@@ -138,26 +315,149 @@ export default function App() {
     setLastGuessCorrect(null);
   };
 
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
+        <header className="w-full text-center mb-5 sm:mb-8">
+          <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+            TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
+          </h1>
+          <p className="text-[10px] sm:text-xs uppercase tracking-[0.22em] sm:tracking-[0.24em] text-arena-muted font-semibold mt-1 sm:mt-1.5">
+            Global TV Engagement Intelligence
+          </p>
+        </header>
+
+        <main className="w-full max-w-2xl bg-[#FCFAF6] border border-[#E9E1D3] rounded-[28px] p-6 sm:p-10 shadow-soft-card flex flex-col items-center text-center">
+          <div className="w-12 h-12 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 text-xl font-semibold mb-4">
+            ⚡
+          </div>
+          <span className="text-[11px] uppercase tracking-wider font-semibold text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200 mb-3">
+            Database Not Connected
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-serif font-medium text-stone-900 mb-3">
+            Connect Supabase to Stream Telemetry
+          </h2>
+          <p className="text-xs sm:text-sm text-stone-600 max-w-md leading-relaxed mb-6">
+            Dummy mock data has been removed. Configure your Supabase credentials to view real streaming telemetry and intelligence.
+          </p>
+
+          <div className="w-full text-left bg-white border border-[#EBE4D8] rounded-2xl p-4 sm:p-5 mb-6 space-y-3 text-xs sm:text-sm text-stone-700">
+            <div className="font-semibold text-stone-900 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-[#EFE9DF] text-stone-800 text-xs flex items-center justify-center font-bold">1</span>
+              <span>Create or Open a Supabase Project</span>
+            </div>
+            <p className="text-xs text-stone-500 pl-7">
+              Head to <a href="https://supabase.com" target="_blank" rel="noreferrer" className="text-brand-terracotta underline">supabase.com</a> and create your database project.
+            </p>
+
+            <div className="font-semibold text-stone-900 flex items-center gap-2 pt-2 border-t border-stone-100">
+              <span className="w-5 h-5 rounded-full bg-[#EFE9DF] text-stone-800 text-xs flex items-center justify-center font-bold">2</span>
+              <span>Run Database Migration & Initial Seed</span>
+            </div>
+            <p className="text-xs text-stone-500 pl-7 font-mono bg-stone-50 p-2 rounded border border-stone-200">
+              supabase/schema.sql
+            </p>
+            <p className="text-xs text-stone-500 pl-7">
+              Execute <code className="text-stone-800 font-semibold">supabase/schema.sql</code> in the Supabase SQL Editor to initialize tables and seed data.
+            </p>
+
+            <div className="font-semibold text-stone-900 flex items-center gap-2 pt-2 border-t border-stone-100">
+              <span className="w-5 h-5 rounded-full bg-[#EFE9DF] text-stone-800 text-xs flex items-center justify-center font-bold">3</span>
+              <span>Set Environment Variables</span>
+            </div>
+            <p className="text-xs text-stone-500 pl-7">
+              Add your credentials to <code className="text-stone-800 font-semibold">.env</code> in your project root:
+            </p>
+            <pre className="text-[11px] font-mono bg-[#2B2623] text-stone-200 p-3 rounded-xl ml-7 overflow-x-auto">
+{`VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key`}
+            </pre>
+          </div>
+
+          <p className="text-xs text-stone-400">
+            Once configured, restart the Vite dev server to stream live series telemetry.
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
+        <header className="w-full text-center mb-8">
+          <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+            TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
+          </h1>
+        </header>
+        <main className="w-full max-w-md bg-[#FCFAF6] border border-[#E9E1D3] rounded-[28px] p-10 shadow-soft-card flex flex-col items-center text-center">
+          <div className="w-8 h-8 border-2 border-brand-terracotta border-t-transparent rounded-full animate-spin mb-4" />
+          <h2 className="text-lg font-serif font-medium text-stone-800">Connecting to Supabase...</h2>
+          <p className="text-xs text-stone-400 mt-1">Fetching live television series and telemetry</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (dbError) {
+    return (
+      <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
+        <header className="w-full text-center mb-8">
+          <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+            TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
+          </h1>
+        </header>
+        <main className="w-full max-w-md bg-rose-50 border border-rose-200 rounded-[28px] p-8 text-center">
+          <span className="text-xs uppercase tracking-wider font-bold text-rose-800 bg-rose-100 px-3 py-1 rounded-full">
+            Database Query Error
+          </span>
+          <p className="text-xs text-rose-700 mt-3 font-mono">{dbError}</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (seriesList.length === 0 || !leftShow || !rightShow || !arenaStats) {
+    return (
+      <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
+        <header className="w-full text-center mb-8">
+          <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+            TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
+          </h1>
+        </header>
+        <main className="w-full max-w-md bg-[#FCFAF6] border border-[#E9E1D3] rounded-[28px] p-8 shadow-soft-card text-center">
+          <span className="text-xs uppercase tracking-wider font-semibold text-stone-500 bg-stone-100 px-3 py-1 rounded-full">
+            0 Series Found
+          </span>
+          <h2 className="text-xl font-serif font-medium text-stone-900 mt-3 mb-2">Database Table Empty</h2>
+          <p className="text-xs text-stone-500 leading-relaxed">
+            Your Supabase connection is active, but the <code className="font-semibold">series</code> table contains no records. Execute <code className="font-semibold">supabase/schema.sql</code> or run the Rust ingestion pipeline (<code className="font-semibold">cargo run -- seed</code> or <code className="font-semibold">cargo run -- sync</code>) to populate show data.
+          </p>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
       {/* Shared Brand Header */}
-      <header className="w-full text-center mb-6 sm:mb-8">
-        <h1 className="text-4xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+      <header className="w-full text-center mb-5 sm:mb-8">
+        <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
           TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
         </h1>
-        <p className="text-xs uppercase tracking-[0.24em] text-arena-muted font-semibold mt-1.5">
-          Global Viewership Intelligence
+        <p className="text-[10px] sm:text-xs uppercase tracking-[0.22em] sm:tracking-[0.24em] text-arena-muted font-semibold mt-1 sm:mt-1.5">
+          Global TV Engagement Intelligence
         </p>
       </header>
 
       {/* Shared Navigation Pill */}
-      <nav aria-label="Main Navigation" className="mb-10 sm:mb-12">
-        <div className="inline-flex items-center bg-white/85 backdrop-blur-md p-1.5 rounded-full border border-arena-border shadow-nav-pill">
+      <nav aria-label="Main Navigation" className="mb-6 sm:mb-12">
+        <div className="inline-flex items-center bg-white/85 backdrop-blur-md p-1 sm:p-1.5 rounded-full border border-arena-border shadow-nav-pill">
           {(['leaderboard', 'arena', 'charts', 'guess'] as TabKey[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-5 sm:px-6 py-2 text-xs font-semibold tracking-wider uppercase rounded-full transition-all duration-200 ${
+              className={`px-3 sm:px-6 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold tracking-wider uppercase rounded-full transition-all duration-200 ${
                 activeTab === tab
                   ? 'text-white bg-arena-terracotta shadow-pill'
                   : 'text-arena-muted hover:text-arena-charcoal'
@@ -175,8 +475,8 @@ export default function App() {
       {activeTab === 'arena' && (
         <div className="w-full max-w-3xl flex flex-col items-center">
           {/* Search & Contender Selector */}
-          <section className="w-full mb-8">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative items-center">
+          <section className="w-full mb-5 sm:mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-4 relative items-center">
               {/* Left Input */}
               <div className="relative w-full">
                 <input
@@ -189,7 +489,7 @@ export default function App() {
                     setLeftDropdownOpen(true);
                   }}
                   placeholder="Type a series..."
-                  className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-base font-serif px-5 py-3.5 rounded-2xl shadow-sm focus:border-arena-terracotta focus:ring-0 outline-none"
+                  className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm focus:border-arena-terracotta focus:ring-0 outline-none"
                 />
                 {leftDropdownOpen && (
                   <div className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden">
@@ -242,7 +542,7 @@ export default function App() {
                     setRightDropdownOpen(true);
                   }}
                   placeholder="Type a series..."
-                  className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-base font-serif px-5 py-3.5 rounded-2xl shadow-sm focus:border-arena-sage focus:ring-0 outline-none"
+                  className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm focus:border-arena-sage focus:ring-0 outline-none"
                 />
                 {rightDropdownOpen && (
                   <div className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden">
@@ -271,59 +571,59 @@ export default function App() {
           </section>
 
           {/* Main Comparison Card */}
-          <main className="w-full bg-arena-surface border border-arena-border rounded-3xl p-6 sm:p-10 shadow-soft-card">
-            <div className="flex items-center justify-between pb-6 mb-6 border-b border-arena-border/60 text-xs">
+          <main className="w-full bg-arena-surface border border-arena-border rounded-3xl p-5 sm:p-10 shadow-soft-card">
+            <div className="flex items-center justify-between pb-4 sm:pb-6 mb-4 sm:mb-6 border-b border-arena-border/60 text-xs">
               <div className="flex items-center space-x-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="font-medium text-arena-muted uppercase tracking-wider text-[11px]">
-                  Metric: Global Premieres (First 28 Days)
+                <span className="font-medium text-arena-muted uppercase tracking-wider text-[10px] sm:text-[11px]">
+                  Metric: 7-Day Engagement Index
                 </span>
               </div>
-              <div className="bg-arena-cream px-2.5 py-1 rounded-full border border-arena-border/80 text-arena-muted text-[11px] font-medium">
-                Season 1
+              <div className="bg-arena-cream px-2.5 py-1 rounded-full border border-arena-border/80 text-arena-muted text-[10px] sm:text-[11px] font-medium">
+                7-Day Window
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 items-end relative mb-6">
-              <div className="text-left pr-4">
-                <span className="block text-[11px] uppercase tracking-wider font-semibold text-arena-muted mb-1.5">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 items-end relative mb-4 sm:mb-6">
+              <div className="text-left pr-2 sm:pr-4">
+                <span className="block text-[10px] sm:text-[11px] uppercase tracking-wider font-semibold text-arena-muted mb-1 sm:mb-1.5">
                   {leftShow.network}
                 </span>
-                <h2 className="text-2xl sm:text-3xl md:text-4xl font-serif font-bold text-arena-charcoal leading-tight">
+                <h2 className="text-xl sm:text-3xl md:text-4xl font-serif font-bold text-arena-charcoal leading-tight">
                   {leftShow.title}
                 </h2>
               </div>
-              <div className="absolute left-1/2 bottom-2 -translate-x-1/2 text-arena-muted/80 font-serif italic text-lg sm:text-xl select-none">
+              <div className="absolute left-1/2 bottom-1 sm:bottom-2 -translate-x-1/2 text-arena-muted/80 font-serif italic text-base sm:text-xl select-none">
                 vs
               </div>
-              <div className="text-right pl-4">
-                <span className="block text-[11px] uppercase tracking-wider font-semibold text-arena-muted mb-1.5">
+              <div className="text-right pl-2 sm:pl-4">
+                <span className="block text-[10px] sm:text-[11px] uppercase tracking-wider font-semibold text-arena-muted mb-1 sm:mb-1.5">
                   {rightShow.network}
                 </span>
-                <h2 className="text-2xl sm:text-3xl md:text-4xl font-serif font-bold text-arena-charcoal leading-tight">
+                <h2 className="text-xl sm:text-3xl md:text-4xl font-serif font-bold text-arena-charcoal leading-tight">
                   {rightShow.title}
                 </h2>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 items-center mb-6 pt-2 border-t border-arena-border/40 font-tabular">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 items-center mb-4 sm:mb-6 pt-2 border-t border-arena-border/40 font-tabular">
               <div className="text-left">
-                <div className="text-3xl sm:text-4xl md:text-5xl font-serif font-semibold">
+                <div className="text-2xl sm:text-4xl md:text-5xl font-serif font-semibold">
                   {leftShow.viewers_premiere_28d.toLocaleString()}
                 </div>
-                <div className="text-xs text-arena-muted font-medium mt-1.5">Household Viewers</div>
+                <div className="text-[11px] sm:text-xs text-arena-muted font-medium mt-1 sm:mt-1.5">Engagement Index</div>
               </div>
               <div className="text-right">
-                <div className="text-3xl sm:text-4xl md:text-5xl font-serif font-semibold">
+                <div className="text-2xl sm:text-4xl md:text-5xl font-serif font-semibold">
                   {rightShow.viewers_premiere_28d.toLocaleString()}
                 </div>
-                <div className="text-xs text-arena-muted font-medium mt-1.5">Household Viewers</div>
+                <div className="text-[11px] sm:text-xs text-arena-muted font-medium mt-1 sm:mt-1.5">Engagement Index</div>
               </div>
             </div>
 
             {/* Tug of War Bar */}
-            <div className="w-full my-6">
-              <div className="w-full h-3.5 sm:h-4 bg-arena-cream rounded-full overflow-hidden p-0.5 flex items-stretch border border-arena-border/70 shadow-inner">
+            <div className="w-full my-4 sm:my-6">
+              <div className="w-full h-3 sm:h-4 bg-arena-cream rounded-full overflow-hidden p-0.5 flex items-stretch border border-arena-border/70 shadow-inner">
                 <div
                   className="h-full rounded-l-full transition-all duration-700 ease-out bg-arena-terracotta"
                   style={{ width: `${arenaStats.leftPct}%` }}
@@ -337,7 +637,7 @@ export default function App() {
             </div>
 
             {/* Winner Footer */}
-            <footer className="flex flex-col sm:flex-row items-center justify-between pt-4 border-t border-arena-border/50 text-sm gap-2">
+            <footer className="flex items-center justify-between pt-3 sm:pt-4 border-t border-arena-border/50 text-xs sm:text-sm gap-2">
               <div className="flex items-center space-x-2">
                 <span className="flex h-2 w-2 relative">
                   <span
@@ -351,11 +651,11 @@ export default function App() {
                     }`}
                   />
                 </span>
-                <p className="font-serif font-semibold text-lg sm:text-xl text-arena-charcoal leading-none">
+                <p className="font-serif font-semibold text-base sm:text-xl text-arena-charcoal leading-none">
                   {arenaStats.winner.title} leads
                 </p>
               </div>
-              <div className="text-xs sm:text-sm font-medium font-tabular text-arena-muted flex items-center">
+              <div className="text-[11px] sm:text-sm font-medium font-tabular text-arena-muted flex items-center">
                 <span className="text-arena-charcoal font-semibold">
                   {arenaStats.diff.toLocaleString()}
                 </span>
@@ -378,31 +678,58 @@ export default function App() {
           SCREEN 2: LEADERBOARD
          =================================================================== */}
       {activeTab === 'leaderboard' && (
-        <main className="w-full max-w-4xl bg-white/90 backdrop-blur-xl rounded-[32px] p-6 sm:p-10 shadow-card border border-[#EFEAE2]/90">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#F2ECE3]">
-            <div className="flex items-center space-x-2.5">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-brand-terracotta" />
-              <span className="text-xs uppercase tracking-wider font-semibold text-[#665D53]">
-                Metric: Global Premieres (First 28 Days)
+        <main className="w-full max-w-4xl bg-white/90 backdrop-blur-xl rounded-[28px] sm:rounded-[32px] p-4 sm:p-10 shadow-card border border-[#EFEAE2]/90">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-[#F2ECE3]">
+            <div className="flex items-center space-x-2 sm:space-x-2.5">
+              <span className="inline-block w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full bg-brand-terracotta" />
+              <span className="text-[10px] sm:text-xs uppercase tracking-wider font-semibold text-[#665D53]">
+                Metric: 7-Day Engagement Index
               </span>
             </div>
-            <div className="flex items-center flex-wrap gap-2 text-xs">
-              <button
-                onClick={() => setPlatformFilter(platformFilter === 'ALL' ? 'Netflix' : 'ALL')}
-                className="bg-[#F6F1EA] text-[#3D372E] px-3.5 py-1.5 rounded-full font-medium border border-[#E9E2D5]"
-              >
-                {platformFilter === 'ALL' ? 'All Platforms' : platformFilter}
-              </button>
-              <button
-                onClick={() => setGenreFilter(genreFilter === 'ALL' ? 'SCI-FI' : 'ALL')}
-                className="bg-white text-[#786E63] px-3.5 py-1.5 rounded-full font-medium border border-[#E9E2D5]"
-              >
-                {genreFilter === 'ALL' ? 'All Genres' : 'Drama & Sci-Fi'}
-              </button>
+            <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
+              <div className="relative">
+                <select
+                  value={platformFilter}
+                  onChange={(e) => setPlatformFilter(e.target.value)}
+                  className="appearance-none bg-[#F6F1EA] hover:bg-[#EFE8DD] text-[#3D372E] pl-3 pr-7 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors cursor-pointer outline-none focus:border-brand-terracotta"
+                  aria-label="Filter by Platform"
+                >
+                  {availablePlatforms.map((p) => (
+                    <option key={p} value={p}>
+                      Platform: {p === 'ALL' ? 'All Platforms' : p}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-[#786E63]">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+
+              <div className="relative">
+                <select
+                  value={genreFilter}
+                  onChange={(e) => setGenreFilter(e.target.value)}
+                  className="appearance-none bg-white hover:bg-stone-50 text-[#786E63] pl-3 pr-7 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors cursor-pointer outline-none focus:border-brand-terracotta"
+                  aria-label="Filter by Genre"
+                >
+                  {availableGenres.map((g) => (
+                    <option key={g} value={g}>
+                      Genre: {g === 'ALL' ? 'All Genres' : g}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-[#786E63]">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="mt-4 divide-y divide-[#F7F3ED]/75">
+          <div className="mt-3 sm:mt-4 divide-y divide-[#F7F3ED]/75">
             {rankedShows.map((show, idx) => {
               const rank = idx + 1;
               const widthPct = Math.round((show.viewers_premiere_28d / maxLeaderboardViewers) * 100);
@@ -413,7 +740,7 @@ export default function App() {
                 <article
                   key={show.slug}
                   onClick={() => selectTrendingBattle(show.slug, rankedShows[(idx + 1) % rankedShows.length].slug)}
-                  className={`ranking-row cursor-pointer relative overflow-hidden rounded-2xl py-3.5 px-3 sm:px-4 my-1.5 ${
+                  className={`ranking-row cursor-pointer relative overflow-hidden rounded-2xl py-2.5 sm:py-3.5 px-3 sm:px-4 my-1 sm:my-1.5 ${
                     rank === 1
                       ? 'bg-[#FBF7F0]/40 border border-[#F3ECE0]/80'
                       : 'hover:bg-[#FBF8F2] border border-transparent hover:border-[#EFE8DD]'
@@ -425,10 +752,10 @@ export default function App() {
                     }`}
                     style={{ width: `${widthPct}%` }}
                   />
-                  <div className="relative z-10 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 sm:gap-5 min-w-0">
+                  <div className="relative z-10 flex items-center justify-between gap-3 sm:gap-4">
+                    <div className="flex items-center gap-3 sm:gap-5 min-w-0">
                       <div
-                        className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-semibold text-sm shrink-0 ${
+                        className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-semibold text-xs sm:text-sm shrink-0 ${
                           rank === 1
                             ? 'bg-brand-terracotta text-white shadow-sm'
                             : 'bg-[#EFEAE1] text-[#696155]'
@@ -437,24 +764,24 @@ export default function App() {
                         {rank}
                       </div>
                       <div className="min-w-0">
-                        <h2 className="font-serif text-lg sm:text-xl text-[#1E1A17] font-medium tracking-tight truncate">
+                        <h2 className="font-serif text-base sm:text-xl text-[#1E1A17] font-medium tracking-tight truncate">
                           {show.title}
                         </h2>
-                        <p className="text-xs text-[#8A8175] font-medium mt-0.5">{show.network}</p>
+                        <p className="text-[11px] sm:text-xs text-[#8A8175] font-medium mt-0.5">{show.network}</p>
                       </div>
                     </div>
 
                     <div className="text-right shrink-0 font-tabular">
-                      <div className="font-serif text-lg sm:text-xl font-medium text-[#1E1A17]">
+                      <div className="font-serif text-base sm:text-xl font-medium text-[#1E1A17]">
                         {show.viewers_premiere_28d.toLocaleString()}
                       </div>
                       {isSteady ? (
-                        <div className="text-[11px] sm:text-xs font-medium text-[#A3998D] mt-0.5">
+                        <div className="text-[10px] sm:text-xs font-medium text-[#A3998D] mt-0.5">
                           Steady
                         </div>
                       ) : (
                         <div
-                          className={`text-[11px] sm:text-xs font-semibold flex items-center justify-end space-x-1 mt-0.5 ${
+                          className={`text-[10px] sm:text-xs font-semibold flex items-center justify-end space-x-1 mt-0.5 ${
                             isUp ? 'text-brand-success' : 'text-brand-danger'
                           }`}
                         >
@@ -475,25 +802,25 @@ export default function App() {
           SCREEN 3: CHARTS (SVG Multi-Series Telemetry)
          =================================================================== */}
       {activeTab === 'charts' && (
-        <section className="w-full max-w-5xl bg-[#FFFDF9]/95 backdrop-blur-md rounded-3xl p-6 sm:p-8 lg:p-10 shadow-soft border border-[#EDE5DA]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-stone-200/60">
+        <section className="w-full max-w-5xl bg-[#FFFDF9]/95 backdrop-blur-md rounded-3xl p-5 sm:p-8 lg:p-10 shadow-soft border border-[#EDE5DA]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-stone-200/60">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-brand-terracotta" />
-                <span className="text-xs font-semibold tracking-widest uppercase text-stone-500">
-                  Metric: Daily Active Household Viewers
+                <span className="text-[10px] sm:text-xs font-semibold tracking-widest uppercase text-stone-500">
+                  Metric: Daily Engagement Index
                 </span>
               </div>
-              <p className="text-xs text-stone-400 mt-1">
-                Real-time syndicated streaming telemetry across primary global markets
+              <p className="text-[10px] sm:text-xs text-stone-400 mt-0.5 sm:mt-1">
+                Daily synthesized telemetry across Wikipedia pageviews &amp; Reddit discussion metrics
               </p>
             </div>
-            <div className="inline-flex items-center bg-[#F3EFE9] p-1 rounded-full text-xs font-medium border border-[#E7DFD5]">
+            <div className="self-end sm:self-auto inline-flex items-center bg-[#F3EFE9] p-0.5 sm:p-1 rounded-full text-[10px] sm:text-xs font-medium border border-[#E7DFD5]">
               {(['7D', '30D', '90D', 'All-Time'] as const).map((r) => (
                 <button
                   key={r}
                   onClick={() => setChartRange(r)}
-                  className={`px-3.5 py-1 rounded-full transition-colors ${
+                  className={`px-2.5 sm:px-3.5 py-0.5 sm:py-1 rounded-full transition-colors ${
                     chartRange === r
                       ? 'bg-white text-stone-800 shadow-sm font-semibold'
                       : 'text-stone-500 hover:text-stone-900'
@@ -506,11 +833,11 @@ export default function App() {
           </div>
 
           {/* Legend */}
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 pt-6 pb-6 text-xs font-medium text-stone-600">
+          <div className="flex flex-wrap items-center justify-start sm:justify-center gap-x-3.5 sm:gap-x-6 gap-y-1.5 sm:gap-y-2.5 pt-4 sm:pt-6 pb-4 sm:pb-6 text-[10.5px] sm:text-xs font-medium text-stone-600">
             {seriesList.slice(0, 6).map((s) => (
-              <div key={s.slug} className="flex items-center gap-2">
+              <div key={s.slug} className="flex items-center gap-1.5 sm:gap-2">
                 <span
-                  className="w-3 h-3 rounded-full"
+                  className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full"
                   style={{ backgroundColor: s.chart_color }}
                 />
                 <span className="text-stone-800 font-medium">{s.title}</span>
@@ -518,24 +845,79 @@ export default function App() {
             ))}
           </div>
 
-          {/* Dynamic 1000x420 SVG Chart */}
-          <div className="relative w-full overflow-hidden mt-1 mb-8">
+          {/* Mobile SVG (viewBox="0 0 340 185") */}
+          <div className="block sm:hidden relative w-full overflow-hidden mt-1 mb-6">
+            <svg className="w-full h-auto select-none chart-group" viewBox="0 0 340 185">
+              <line stroke="#ECE5DA" strokeDasharray="2 3" x1="35" x2="335" y1="20" y2="20" />
+              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="23">{chartYTicks[0]?.label || '100%'}</text>
+              <line stroke="#ECE5DA" strokeDasharray="2 3" x1="35" x2="335" y1="55" y2="55" />
+              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="58">{chartYTicks[1]?.label || '75%'}</text>
+              <line stroke="#ECE5DA" strokeDasharray="2 3" x1="35" x2="335" y1="91" y2="91" />
+              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="94">{chartYTicks[2]?.label || '50%'}</text>
+              <line stroke="#ECE5DA" strokeDasharray="2 3" x1="35" x2="335" y1="126" y2="126" />
+              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="129">{chartYTicks[3]?.label || '25%'}</text>
+              <line stroke="#DDD4C7" strokeWidth="1" x1="35" x2="335" y1="162" y2="162" />
+              <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="165">0</text>
+
+              {xAxisLabels.map((label, idx) => {
+                const x = 35 + idx * 49;
+                return (
+                  <g key={label + idx}>
+                    <line stroke="#F4EDE4" x1={x} x2={x} y1="20" y2="162" />
+                    <text fill="#999083" fontSize="8.5" textAnchor="middle" x={x} y="176">
+                      {label}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {seriesList.slice(0, 6).map((show) => {
+                const sampled = sampleDailyValues(show.daily_series, chartRange);
+                const { pathD, points } = buildMobileChartGeometry(sampled, maxChartScale);
+                return (
+                  <g key={show.slug}>
+                    <path
+                      className="chart-line"
+                      d={pathD}
+                      fill="none"
+                      stroke={show.chart_color}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                    />
+                    {points.map((pt, i) => (
+                      <circle
+                        key={i}
+                        cx={pt.x}
+                        cy={pt.y}
+                        fill={show.chart_color}
+                        r={i === 6 ? 3.5 : 2.5}
+                      />
+                    ))}
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+
+          {/* Desktop SVG (viewBox="0 0 1000 420") */}
+          <div className="hidden sm:block relative w-full overflow-hidden mt-1 mb-8">
             <svg className="w-full h-auto select-none chart-group" viewBox="0 0 1000 420">
               <line stroke="#ECE5DA" strokeDasharray="3 4" x1="75" x2="960" y1="40" y2="40" />
-              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="44">1.60M</text>
+              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="44">{chartYTicks[0]?.label || '100%'}</text>
               <line stroke="#ECE5DA" strokeDasharray="3 4" x1="75" x2="960" y1="115" y2="115" />
-              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="119">1.20M</text>
+              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="119">{chartYTicks[1]?.label || '75%'}</text>
               <line stroke="#ECE5DA" strokeDasharray="3 4" x1="75" x2="960" y1="190" y2="190" />
-              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="194">800K</text>
+              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="194">{chartYTicks[2]?.label || '50%'}</text>
               <line stroke="#ECE5DA" strokeDasharray="3 4" x1="75" x2="960" y1="265" y2="265" />
-              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="269">400K</text>
+              <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="269">{chartYTicks[3]?.label || '25%'}</text>
               <line stroke="#DDD4C7" strokeWidth="1.25" x1="75" x2="960" y1="340" y2="340" />
               <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="344">0</text>
 
-              {['-6d', '-5d', '-4d', '-3d', '-2d', '-1d', 'now'].map((label, idx) => {
+              {xAxisLabels.map((label, idx) => {
                 const x = 85 + idx * 145;
                 return (
-                  <g key={label}>
+                  <g key={label + idx}>
                     <line stroke="#F4EDE4" x1={x} x2={x} y1="40" y2="340" />
                     <text fill="#999083" fontSize="12" textAnchor="middle" x={x} y="375">
                       {label}
@@ -545,7 +927,8 @@ export default function App() {
               })}
 
               {seriesList.slice(0, 6).map((show) => {
-                const { pathD, points } = buildChartGeometry(show.daily_series);
+                const sampled = sampleDailyValues(show.daily_series, chartRange);
+                const { pathD, points } = buildChartGeometry(sampled, maxChartScale);
                 return (
                   <g key={show.slug}>
                     <path
@@ -573,26 +956,32 @@ export default function App() {
           </div>
 
           {/* Cumulative Horizontal Volume Bars */}
-          <div className="pt-6 border-t border-stone-200/60 space-y-4">
-            <div className="flex items-center justify-between text-xs mb-3 text-stone-500 font-medium">
+          <div className="pt-4 sm:pt-6 border-t border-stone-200/60 space-y-3 sm:space-y-4">
+            <div className="flex items-center justify-between text-[11px] sm:text-xs mb-2 sm:mb-3 text-stone-500 font-medium">
               <span>Cumulative Period Totals ({chartRange})</span>
-              <span>Total Measured Households</span>
+              <span>Cumulative Engagement</span>
             </div>
-            {seriesList.slice(0, 3).map((show) => {
-              const pct = ((show.viewers_premiere_28d / 10000000) * 100).toFixed(1);
+            {topCumulativeShows.map((show) => {
+              const score = getCumulativeScore(show, chartRange);
+              const pct = Math.min(100, Math.max(2, Math.round((score / maxCumulativeScore) * 100)));
               return (
-                <div key={show.slug} className="flex items-center gap-4">
-                  <span className="w-44 text-sm md:text-base font-medium text-stone-800 shrink-0 font-serif">
-                    {show.title}
-                  </span>
-                  <div className="flex-1 bg-[#F1EAE0] h-3 rounded-full overflow-hidden p-0.5">
+                <div key={show.slug} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4">
+                  <div className="flex items-center justify-between sm:w-44 shrink-0">
+                    <span className="text-sm md:text-base font-medium text-stone-800 font-serif">
+                      {show.title}
+                    </span>
+                    <span className="sm:hidden text-xs font-medium text-stone-700 font-tabular">
+                      {score.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex-1 bg-[#F1EAE0] h-2.5 sm:h-3 rounded-full overflow-hidden p-0.5">
                     <div
                       className="h-full bg-[#C66A3D] rounded-full transition-all duration-500"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <span className="w-24 text-right text-xs md:text-sm font-medium text-stone-700 font-tabular">
-                    {show.viewers_premiere_28d.toLocaleString()}
+                  <span className="hidden sm:inline-block w-24 text-right text-xs md:text-sm font-medium text-stone-700 font-tabular">
+                    {score.toLocaleString()}
                   </span>
                 </div>
               );
@@ -605,8 +994,8 @@ export default function App() {
           SCREEN 4: GUESS TRIVIA
          =================================================================== */}
       {activeTab === 'guess' && (
-        <main className="w-full max-w-3xl mx-auto py-4">
-          <div className="flex items-center justify-center space-x-6 mb-7 text-xs font-medium tracking-[0.2em] uppercase text-stone-500">
+        <main className="w-full max-w-3xl mx-auto py-2 sm:py-4">
+          <div className="flex items-center justify-center space-x-6 mb-5 sm:mb-7 text-xs font-medium tracking-[0.2em] uppercase text-stone-500">
             <div className="flex items-center space-x-2">
               <span>Streak</span>
               <span className="font-serif text-base text-stone-900 font-bold">{streak}</span>
@@ -618,11 +1007,11 @@ export default function App() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 md:gap-7 items-stretch">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 md:gap-7 items-stretch">
             {/* Left Card: KNOWN */}
-            <article className="bg-[#F8FAF6]/90 backdrop-blur-sm rounded-[28px] p-7 md:p-8 border border-stone-200/70 shadow-soft-card flex flex-col justify-between">
+            <article className="bg-[#F8FAF6]/90 backdrop-blur-sm rounded-[24px] sm:rounded-[28px] p-5 sm:p-7 md:p-8 border border-stone-200/70 shadow-soft-card flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <span className="text-[10px] tracking-[0.22em] uppercase font-bold text-stone-400">
                     Known
                   </span>
@@ -630,25 +1019,25 @@ export default function App() {
                     Benchmark
                   </span>
                 </div>
-                <h2 className="text-3xl md:text-4xl font-serif font-medium text-stone-900">
-                  {knownShow.title}
+                <h2 className="text-2xl sm:text-3xl md:text-4xl font-serif font-medium text-stone-900">
+                  {knownShow?.title}
                 </h2>
-                <p className="text-xs text-stone-400 font-medium mt-1">{knownShow.network}</p>
+                <p className="text-xs text-stone-400 font-medium mt-1">{knownShow?.network}</p>
               </div>
-              <div className="mt-14 pt-4 border-t border-stone-100/80 font-tabular">
-                <div className="text-4xl sm:text-[42px] font-serif font-medium text-stone-900">
+              <div className="mt-8 sm:mt-14 pt-4 border-t border-stone-100/80 font-tabular">
+                <div className="text-3xl sm:text-4xl md:text-[42px] font-serif font-medium text-stone-900">
                   {knownScore.toLocaleString()}
                 </div>
-                <p className="text-[11px] uppercase tracking-wider text-stone-400 font-medium mt-1">
-                  Household Viewers
+                <p className="text-[10px] sm:text-[11px] uppercase tracking-wider text-stone-400 font-medium mt-1">
+                  Engagement Index
                 </p>
               </div>
             </article>
 
             {/* Right Card: CHALLENGER */}
-            <article className="bg-[#F8FAF6]/90 backdrop-blur-sm rounded-[28px] p-7 md:p-8 border border-stone-200/70 shadow-soft-card flex flex-col justify-between">
+            <article className="bg-[#F8FAF6]/90 backdrop-blur-sm rounded-[24px] sm:rounded-[28px] p-5 sm:p-7 md:p-8 border border-stone-200/70 shadow-soft-card flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <span className="text-[10px] tracking-[0.22em] uppercase font-bold text-stone-400">
                     Challenger
                   </span>
@@ -662,33 +1051,33 @@ export default function App() {
                     {revealed ? 'Revealed' : 'Guess Now'}
                   </span>
                 </div>
-                <h2 className="text-3xl md:text-4xl font-serif font-medium text-stone-900">
-                  {challengerShow.title}
+                <h2 className="text-2xl sm:text-3xl md:text-4xl font-serif font-medium text-stone-900">
+                  {challengerShow?.title}
                 </h2>
-                <p className="text-xs text-stone-400 font-medium mt-1">{challengerShow.network}</p>
+                <p className="text-xs text-stone-400 font-medium mt-1">{challengerShow?.network}</p>
               </div>
 
-              <div className="mt-14 pt-4 border-t border-stone-100/80 font-tabular">
+              <div className="mt-8 sm:mt-14 pt-4 border-t border-stone-100/80 font-tabular">
                 {revealed ? (
                   <>
-                    <div className="text-4xl sm:text-[42px] font-serif font-medium text-stone-900">
+                    <div className="text-3xl sm:text-4xl md:text-[42px] font-serif font-medium text-stone-900">
                       {challengerScore.toLocaleString()}
                     </div>
-                    <p className="text-[11px] uppercase tracking-wider text-stone-400 font-medium mt-1">
-                      Household Viewers
+                    <p className="text-[10px] sm:text-[11px] uppercase tracking-wider text-stone-400 font-medium mt-1">
+                      Engagement Index
                     </p>
                   </>
                 ) : (
-                  <div className="flex gap-3">
+                  <div className="flex gap-2.5 sm:gap-3">
                     <button
                       onClick={() => makeGuess('higher')}
-                      className="flex-1 py-3 rounded-2xl bg-brand-terracotta text-white text-xs font-semibold uppercase tracking-wider hover:bg-brand-terracottaHover transition"
+                      className="flex-1 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-brand-terracotta text-white text-xs font-semibold uppercase tracking-wider hover:bg-brand-terracottaHover transition"
                     >
                       ▲ Higher
                     </button>
                     <button
                       onClick={() => makeGuess('lower')}
-                      className="flex-1 py-3 rounded-2xl bg-stone-200 text-stone-800 text-xs font-semibold uppercase tracking-wider hover:bg-stone-300 transition"
+                      className="flex-1 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-stone-200 text-stone-800 text-xs font-semibold uppercase tracking-wider hover:bg-stone-300 transition"
                     >
                       ▼ Lower
                     </button>
@@ -699,49 +1088,30 @@ export default function App() {
           </div>
 
           {/* Next Button & Feedback */}
-          <div className="mt-8 flex flex-col items-center">
+          <div className="mt-6 sm:mt-8 flex flex-col items-center">
             <button
               onClick={nextTriviaRound}
-              className="inline-flex items-center justify-center px-10 py-3 rounded-full bg-brand-terracotta text-white font-medium text-sm tracking-widest uppercase shadow-pill hover:bg-brand-terracottaHover transition-all"
+              className="inline-flex items-center justify-center px-8 sm:px-10 py-2.5 sm:py-3 rounded-full bg-brand-terracotta text-white font-medium text-xs sm:text-sm tracking-widest uppercase shadow-pill hover:bg-brand-terracottaHover transition-all"
             >
               <span>Next</span>
               <span className="ml-2">→</span>
             </button>
             {revealed && (
               <div
-                className={`mt-4 text-xs sm:text-[13px] font-medium ${
+                className={`mt-3 sm:mt-4 text-xs sm:text-[13px] font-medium ${
                   lastGuessCorrect ? 'text-emerald-600' : 'text-rose-600'
                 }`}
               >
-                {lastGuessCorrect ? 'Correct.' : 'Wrong.'} {challengerShow.title} drew{' '}
+                {lastGuessCorrect ? 'Correct.' : 'Wrong.'} {challengerShow?.title} drew{' '}
                 {challengerScore.toLocaleString()}.
               </div>
             )}
           </div>
 
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-2 text-xs text-stone-500">
-            <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-stone-400 mr-1">
-              Trivia Modes:
-            </span>
-            <button
-              onClick={() => setGuessMode('premieres')}
-              className={`px-4 py-1.5 rounded-full border ${
-                guessMode === 'premieres' ? 'bg-white font-semibold' : 'bg-white/60'
-              }`}
-            >
-              Global Premieres
-            </button>
-            <button
-              onClick={() => setGuessMode('finales')}
-              className={`px-4 py-1.5 rounded-full border ${
-                guessMode === 'finales' ? 'bg-white font-semibold' : 'bg-white/60'
-              }`}
-            >
-              Season Finales
-            </button>
+          <div className="mt-6 sm:mt-8 flex items-center justify-center">
             <button
               onClick={nextTriviaRound}
-              className="px-4 py-1.5 rounded-full bg-white/70 hover:bg-white border"
+              className="px-4 py-1.5 rounded-full bg-white/70 hover:bg-white border text-stone-600 text-[11px] sm:text-xs transition-colors"
             >
               Skip Show
             </button>
@@ -750,23 +1120,23 @@ export default function App() {
       )}
 
       {/* Shared Trending Battles Footer */}
-      <footer className="mt-10 flex flex-wrap items-center justify-center gap-2 text-xs text-arena-muted">
-        <span className="text-[11px] uppercase tracking-wider font-semibold">Trending Battles:</span>
+      <footer className="mt-8 sm:mt-10 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 text-xs text-arena-muted">
+        <span className="text-[10px] sm:text-[11px] uppercase tracking-wider font-semibold">Trending Battles:</span>
         <button
           onClick={() => selectTrendingBattle('the-last-of-us', 'fallout')}
-          className="px-3.5 py-1.5 bg-white/70 hover:bg-white rounded-full border border-arena-border transition-colors"
+          className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-white/70 hover:bg-white rounded-full border border-arena-border transition-colors text-[11px] sm:text-xs"
         >
           The Last of Us vs Fallout
         </button>
         <button
           onClick={() => selectTrendingBattle('succession', 'the-bear')}
-          className="px-3.5 py-1.5 bg-white/70 hover:bg-white rounded-full border border-arena-border transition-colors"
+          className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-white/70 hover:bg-white rounded-full border border-arena-border transition-colors text-[11px] sm:text-xs"
         >
           Succession vs The Bear
         </button>
         <button
           onClick={() => selectTrendingBattle('severance', 'silo')}
-          className="px-3.5 py-1.5 bg-white/70 hover:bg-white rounded-full border border-arena-border transition-colors"
+          className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 bg-white/70 hover:bg-white rounded-full border border-arena-border transition-colors text-[11px] sm:text-xs"
         >
           Severance vs Silo
         </button>

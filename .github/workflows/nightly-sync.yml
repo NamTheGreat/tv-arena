@@ -2,8 +2,11 @@ name: TV Arena Nightly Rust Sync
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 6 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   sync-telemetry:
@@ -12,9 +15,25 @@ jobs:
       run:
         working-directory: ./pipeline
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate Secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error::Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY GitHub repository secret."
+            echo "Configure them under GitHub repository Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: "./pipeline -> target"
 
