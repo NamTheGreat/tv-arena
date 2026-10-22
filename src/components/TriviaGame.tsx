@@ -16,6 +16,7 @@ interface TriviaGameProps {
   lastGuessCorrect: boolean | null;
   onMakeGuess: (choice: 'higher' | 'lower') => void;
   onNextRound: () => void;
+  onViewLeaderboard?: () => void;
 }
 
 export function TriviaGame({
@@ -29,11 +30,20 @@ export function TriviaGame({
   lastGuessCorrect,
   onMakeGuess,
   onNextRound,
+  onViewLeaderboard,
 }: TriviaGameProps) {
   const displayedScore = useCountUp(challengerScore, 900, revealed);
   const [isSliding, setIsSliding] = useState(false);
   const [isGameOverModalOpen, setIsGameOverModalOpen] = useState(false);
   const [guessHistory, setGuessHistory] = useState<boolean[]>([]);
+  const [recordedFinalStreak, setRecordedFinalStreak] = useState(0);
+
+  // Preserve streak before reset so Game Over modal shows actual run achieved
+  useEffect(() => {
+    if (streak > 0) {
+      setRecordedFinalStreak(streak);
+    }
+  }, [streak]);
 
   // Trigger milestone confetti on streak multiples of 5
   useEffect(() => {
@@ -70,6 +80,7 @@ export function TriviaGame({
   const handlePlayAgain = () => {
     setIsGameOverModalOpen(false);
     setGuessHistory([]);
+    setRecordedFinalStreak(0);
     onNextRound();
   };
 
@@ -223,13 +234,16 @@ export function TriviaGame({
       {/* Wordle-Style Game Over Modal */}
       <GameOverModal
         isOpen={isGameOverModalOpen}
-        streak={streak}
+        streak={recordedFinalStreak}
         bestStreak={bestStreak}
         knownTitle={knownShow?.title || 'Unknown'}
         challengerTitle={challengerShow?.title || 'Unknown'}
+        knownScore={knownScore}
+        challengerScore={challengerScore}
         guessHistory={guessHistory}
         onPlayAgain={handlePlayAgain}
         onClose={() => setIsGameOverModalOpen(false)}
+        onViewLeaderboard={onViewLeaderboard}
       />
     </main>
   );

@@ -330,6 +330,7 @@ export default function App() {
           lastGuessCorrect={lastGuessCorrect}
           onMakeGuess={makeGuess}
           onNextRound={nextTriviaRound}
+          onViewLeaderboard={() => setActiveTab('leaderboard')}
         />
       )}
 
