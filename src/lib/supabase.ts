@@ -13,6 +13,8 @@ export interface SeriesItem {
   delta_pct: number;
   daily_series: number[];
   daily_dates?: string[];
+  is_breakout?: boolean;
+  breakout_reason?: string;
 }
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
