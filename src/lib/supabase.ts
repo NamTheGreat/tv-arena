@@ -1,5 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
+export interface SeriesEvent {
+  id?: number;
+  series_id: string;
+  event_date: string;
+  kind: 'premiere' | 'finale' | 'season_premiere' | 'season_finale';
+  label: string;
+  source?: string;
+}
+
 export interface SeriesItem {
   id: string;
   slug: string;
@@ -13,6 +22,7 @@ export interface SeriesItem {
   delta_pct: number;
   daily_series: number[];
   daily_dates?: string[];
+  events?: SeriesEvent[];
 }
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';

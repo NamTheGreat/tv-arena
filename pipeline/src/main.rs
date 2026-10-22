@@ -23,6 +23,8 @@ enum Commands {
     },
     /// Nightly: Fetch 7d Wikipedia + Reddit telemetry and update Supabase scores
     Sync,
+    /// Weekly: Fetch premiere/finale episode dates from TMDb and upsert series events
+    Events,
 }
 
 fn main() -> Result<()> {
@@ -32,6 +34,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Seed { csv, limit } => commands::seed::run_seed(&csv, limit, &config)?,
         Commands::Sync => commands::sync::run_sync(&config)?,
+        Commands::Events => commands::events::run_events(&config)?,
     }
 
     Ok(())

@@ -3,6 +3,7 @@ import { SeriesItem } from '../lib/supabase';
 import {
   buildChartGeometry,
   buildMobileChartGeometry,
+  calculateEventX,
   calculateNiceMaxScale,
   formatMetricNumber,
   sampleDailyValues,
@@ -120,6 +121,67 @@ export function TrajectoryChart({
     return Math.max(...scores, 1);
   }, [topCumulativeShows, chartRange]);
 
+  const { chartStartDate, chartEndDate } = useMemo(() => {
+    const referenceShow = seriesList.find((s) => s.daily_dates && s.daily_dates.length > 0);
+    const rawDates = referenceShow?.daily_dates || [];
+    const days =
+      chartRange === '7D'
+        ? 7
+        : chartRange === '30D'
+        ? 30
+        : chartRange === '90D'
+        ? 90
+        : Math.max(7, rawDates.length);
+
+    if (rawDates.length > 0) {
+      const windowDates = rawDates.slice(-days);
+      return {
+        chartStartDate: windowDates[0],
+        chartEndDate: windowDates[windowDates.length - 1],
+      };
+    }
+
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() - (days - 1));
+    return {
+      chartStartDate: start.toISOString().split('T')[0],
+      chartEndDate: now.toISOString().split('T')[0],
+    };
+  }, [seriesList, chartRange]);
+
+  const activeEvents = useMemo(() => {
+    const eventsWithCoords: Array<{
+      id: string;
+      title: string;
+      color: string;
+      label: string;
+      date: string;
+      xDesktop: number;
+      xMobile: number;
+    }> = [];
+
+    for (const show of seriesList.slice(0, 6)) {
+      if (!show.events) continue;
+      for (const ev of show.events) {
+        const xD = calculateEventX(ev.event_date, chartStartDate, chartEndDate, false);
+        const xM = calculateEventX(ev.event_date, chartStartDate, chartEndDate, true);
+        if (xD !== null && xM !== null) {
+          eventsWithCoords.push({
+            id: `${show.slug}-${ev.kind}-${ev.event_date}`,
+            title: show.title,
+            color: show.chart_color,
+            label: ev.label,
+            date: ev.event_date,
+            xDesktop: xD,
+            xMobile: xM,
+          });
+        }
+      }
+    }
+    return eventsWithCoords;
+  }, [seriesList, chartStartDate, chartEndDate]);
+
   return (
     <section className="w-full max-w-5xl bg-[#FFFDF9]/95 backdrop-blur-md rounded-3xl p-5 sm:p-8 lg:p-10 shadow-soft border border-[#EDE5DA]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-stone-200/60">
@@ -190,6 +252,23 @@ export function TrajectoryChart({
             );
           })}
 
+          {/* Milestone Event Annotations (Collapsed to vertical markers on Mobile) */}
+          {activeEvents.map((ev) => (
+            <g key={ev.id} role="img" aria-label={`${ev.title}: ${ev.label} (${ev.date})`}>
+              <line
+                stroke={ev.color}
+                strokeDasharray="2 3"
+                strokeWidth="1.25"
+                strokeOpacity="0.85"
+                x1={ev.xMobile}
+                x2={ev.xMobile}
+                y1="16"
+                y2="162"
+              />
+              <circle cx={ev.xMobile} cy="16" r="3" fill={ev.color} stroke="#FFFFFF" strokeWidth="1" />
+            </g>
+          ))}
+
           {seriesList.slice(0, 6).map((show) => {
             const sampled = sampleDailyValues(show.daily_series, chartRange);
             const { pathD, points } = buildMobileChartGeometry(sampled, maxChartScale);
@@ -244,6 +323,43 @@ export function TrajectoryChart({
               </g>
             );
           })}
+
+          {/* Milestone Event Annotations (Dashed vertical lines with accessible pill badges) */}
+          {activeEvents.map((ev) => (
+            <g key={ev.id} role="img" aria-label={`${ev.title}: ${ev.label} (${ev.date})`}>
+              <line
+                stroke={ev.color}
+                strokeDasharray="3 4"
+                strokeWidth="1.5"
+                strokeOpacity="0.85"
+                x1={ev.xDesktop}
+                x2={ev.xDesktop}
+                y1="32"
+                y2="340"
+              />
+              <rect
+                x={ev.xDesktop - 44}
+                y="14"
+                width="88"
+                height="18"
+                rx="4"
+                fill="#FFFFFF"
+                stroke={ev.color}
+                strokeWidth="1.2"
+                className="shadow-sm"
+              />
+              <text
+                x={ev.xDesktop}
+                y="26.5"
+                fill="#1E1A17"
+                fontSize="9"
+                fontWeight="600"
+                textAnchor="middle"
+              >
+                {ev.label}
+              </text>
+            </g>
+          ))}
 
           {seriesList.slice(0, 6).map((show) => {
             const sampled = sampleDailyValues(show.daily_series, chartRange);
