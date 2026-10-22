@@ -48,10 +48,19 @@ export default function App() {
       }
       setIsLoading(true);
       setDbError(null);
-      const { data, error } = await supabase
-        .from('series')
-        .select('*')
-        .order('viewers_premiere_28d', { ascending: false });
+      // Query authoritative SQL leaderboard view with fallback to series table
+      let { data, error } = await supabase
+        .from('series_leaderboard')
+        .select('*');
+
+      if (error || !data || data.length === 0) {
+        const fallback = await supabase
+          .from('series')
+          .select('*')
+          .order('viewers_premiere_28d', { ascending: false });
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) {
         setDbError(error.message);
@@ -66,19 +75,30 @@ export default function App() {
         const startDateStr = ninetyDaysAgo.toISOString().split('T')[0];
         const chartedIds = data.slice(0, 10).map((s: any) => s.id);
 
-        const { data: telemetryData } = await supabase
-          .from('series_daily_telemetry')
-          .select('series_id, daily_viewers, recorded_date')
+        // Query dynamic daily scores view with fallback to raw telemetry
+        let { data: telemetryData } = await supabase
+          .from('series_daily_scores')
+          .select('series_id, daily_score, recorded_date')
           .in('series_id', chartedIds)
           .gte('recorded_date', startDateStr)
           .order('recorded_date', { ascending: true });
+
+        if (!telemetryData || telemetryData.length === 0) {
+          const fallbackTelemetry = await supabase
+            .from('series_daily_telemetry')
+            .select('series_id, daily_viewers, recorded_date')
+            .in('series_id', chartedIds)
+            .gte('recorded_date', startDateStr)
+            .order('recorded_date', { ascending: true });
+          telemetryData = fallbackTelemetry.data as any;
+        }
 
         const telemetryValuesMap = new Map<string, number[]>();
         const telemetryDatesMap = new Map<string, string[]>();
         if (telemetryData) {
           for (const row of telemetryData) {
             const arr = telemetryValuesMap.get(row.series_id) || [];
-            arr.push(Number(row.daily_viewers));
+            arr.push(Number((row as any).daily_score ?? (row as any).daily_viewers ?? 0));
             telemetryValuesMap.set(row.series_id, arr);
 
             const dateArr = telemetryDatesMap.get(row.series_id) || [];
@@ -89,7 +109,9 @@ export default function App() {
 
         const mapped: SeriesItem[] = data.map((row: any) => ({
           ...row,
-          viewers_premiere_28d: Number(row.viewers_premiere_28d || 0),
+          viewers_premiere_28d: Number(
+            row.current_7d_score ?? row.buzz_score ?? row.viewers_premiere_28d ?? 0
+          ),
           viewers_finale: Number(row.viewers_finale || 0),
           delta_pct: Number(row.delta_pct || 0),
           daily_series: telemetryValuesMap.get(row.id) || [],

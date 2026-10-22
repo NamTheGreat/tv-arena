@@ -141,7 +141,8 @@ pub fn run_sync(config: &Config) -> Result<()> {
                         "recorded_date": date_iso,
                         "daily_viewers": daily_est,
                         "wiki_views": day.views,
-                        "reddit_comments": daily_comments
+                        "reddit_comments": daily_comments,
+                        "reddit_upvotes": daily_upvotes
                     }));
                 }
             }
@@ -151,7 +152,8 @@ pub fn run_sync(config: &Config) -> Result<()> {
                 "recorded_date": recorded_date,
                 "daily_viewers": new_score / 7,
                 "wiki_views": total_wiki,
-                "reddit_comments": total_comments / 7
+                "reddit_comments": total_comments / 7,
+                "reddit_upvotes": total_upvotes / 7
             }));
         }
 

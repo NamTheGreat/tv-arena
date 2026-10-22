@@ -53,6 +53,27 @@ mod tests {
     }
 
     #[test]
+    fn test_compute_buzz_score_matches_sql_weights() {
+        // SQL formula from score_weights (id=1):
+        // (wiki_views * 10) + (reddit_comments * 150) + (reddit_upvotes * 25)
+        let wiki_weight = 10;
+        let comment_weight = 150;
+        let upvote_weight = 25;
+
+        let wiki_views = 25_000;
+        let reddit_comments = 180;
+        let reddit_upvotes = 420;
+
+        let sql_result = (wiki_views * wiki_weight)
+            + (reddit_comments * comment_weight)
+            + (reddit_upvotes * upvote_weight);
+
+        let rust_result = compute_buzz_score(wiki_views, reddit_comments, reddit_upvotes);
+        assert_eq!(rust_result, sql_result);
+        assert_eq!(rust_result, 287_500);
+    }
+
+    #[test]
     fn test_calculate_delta() {
         assert_eq!(calculate_delta(150, 100), 50.0);
         assert_eq!(calculate_delta(50, 100), -50.0);
