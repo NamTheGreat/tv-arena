@@ -7,12 +7,15 @@ import { ChartRange, TrajectoryChart } from './components/TrajectoryChart';
 import { TriviaGame } from './components/TriviaGame';
 import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { AuthModal } from './components/AuthModal';
+import { UserProfileDropdown } from './components/UserProfileDropdown';
+import { MethodologyModal } from './components/MethodologyModal';
 
 type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess';
 
 export default function App() {
   const { user, signOut } = useAuth();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('arena');
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
@@ -235,36 +238,21 @@ export default function App() {
   }
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
-      {/* Shared Brand Header & User Auth Bar */}
-      <header className="w-full text-center mb-5 sm:mb-8 relative">
-        <div className="w-full flex justify-end mb-2">
-          {user ? (
-            <div className="inline-flex items-center gap-2 bg-white/80 border border-arena-border px-3 py-1 rounded-full text-xs text-arena-charcoal shadow-sm">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-medium max-w-[140px] truncate">
-                {user.email?.split('@')[0]}
-              </span>
-              <button
-                type="button"
-                onClick={() => signOut()}
-                className="text-arena-muted hover:text-arena-terracotta text-[10px] uppercase font-semibold ml-1 transition-colors"
-              >
-                Log out
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsAuthModalOpen(true)}
-              className="inline-flex items-center gap-1.5 bg-white/80 border border-arena-border hover:border-arena-terracotta px-3 py-1 rounded-full text-xs text-arena-charcoal shadow-sm transition-colors"
-            >
-              <span className="w-2 h-2 rounded-full bg-stone-300" />
-              <span className="font-medium">Sign In</span>
-            </button>
-          )}
-        </div>
+    <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal relative">
+      {/* Top Profile Icon & Dropdown Navigation */}
+      <div className="absolute top-6 right-4 sm:top-8 sm:right-8 md:top-10 md:right-12 z-30" data-purpose="user-navigation">
+        <UserProfileDropdown
+          user={user}
+          bestStreak={bestStreak}
+          onSelectTab={setActiveTab}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
+          onSignOut={signOut}
+          onOpenMethodology={() => setIsMethodologyOpen(true)}
+        />
+      </div>
 
+      {/* Shared Brand Header */}
+      <header className="w-full text-center mb-5 sm:mb-8">
         <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
           TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
         </h1>
@@ -388,6 +376,10 @@ export default function App() {
       </footer>
 
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <MethodologyModal
+        isOpen={isMethodologyOpen}
+        onClose={() => setIsMethodologyOpen(false)}
+      />
     </div>
   );
 }
