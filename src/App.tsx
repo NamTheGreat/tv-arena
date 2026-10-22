@@ -36,6 +36,9 @@ export default function App() {
   // Charts State
   const [chartRange, setChartRange] = useState<ChartRange>('7D');
 
+  // Guess Best Streak from local storage for User Profile Header
+  const bestStreak = Number(localStorage.getItem('tv_arena_best_streak') || '0');
+
   // Load live data from Supabase if configured
   useEffect(() => {
     async function loadFromSupabase() {
@@ -289,7 +292,10 @@ export default function App() {
 
       {/* SCREEN 4: GUESS TRIVIA */}
       {activeTab === 'guess' && (
-        <TriviaGame seriesList={seriesList} />
+        <TriviaGame
+          seriesList={seriesList}
+          onViewLeaderboard={() => setActiveTab('leaderboard')}
+        />
       )}
 
       {/* Shared Trending Battles Footer */}
