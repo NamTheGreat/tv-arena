@@ -1,7 +1,9 @@
+// ponytail: zero-dependency share modal with navigator.clipboard, Wordle-style emoji grid, and daily run metrics
 import React, { useState } from 'react';
 
 interface GameOverModalProps {
   isOpen: boolean;
+  mode?: 'endless' | 'daily';
   streak: number;
   bestStreak: number;
   knownTitle: string;
@@ -16,6 +18,7 @@ interface GameOverModalProps {
 
 export function GameOverModal({
   isOpen,
+  mode = 'endless',
   streak,
   bestStreak,
   knownTitle,
@@ -32,6 +35,10 @@ export function GameOverModal({
 
   if (!isOpen) return null;
 
+  const isDaily = mode === 'daily';
+  const todayStr = new Date().toISOString().split('T')[0];
+  const correctCount = guessHistory.filter(Boolean).length;
+
   // Calculate actual missed margin if telemetry scores are provided
   const diff =
     typeof knownScore === 'number' && typeof challengerScore === 'number'
@@ -44,7 +51,9 @@ export function GameOverModal({
       ? guessHistory.map((g) => (g ? '🟩' : '🟥')).join('')
       : '🟥';
 
-  const shareText = `TV Arena 📺🔥\nStreak: ${streak} pts!\nFell on ${knownTitle} vs ${challengerTitle}\n${emojiGrid}\nhttps://tv-arena.pages.dev`;
+  const shareText = isDaily
+    ? `TV Arena Daily Run #${todayStr} 📺🎯\nScore: ${correctCount}/10\n${emojiGrid}\nhttps://tv-arena.pages.dev`
+    : `TV Arena 📺🔥\nStreak: ${streak} pts!\nFell on ${knownTitle} vs ${challengerTitle}\n${emojiGrid}\nhttps://tv-arena.pages.dev`;
 
   const handleShare = async () => {
     try {
@@ -84,24 +93,32 @@ export function GameOverModal({
 
         {/* Title in Editorial Serif */}
         <h1 className="font-serif text-[32px] leading-tight font-medium tracking-tight text-arena-ink mb-2">
-          Run Ended
+          {isDaily ? 'Daily Run Complete' : 'Run Ended'}
         </h1>
 
-        {/* Fall context statement */}
+        {/* Fall context / Run summary statement */}
         <p className="text-[13.5px] text-arena-muted font-normal leading-relaxed mb-7 max-w-[290px] mx-auto">
-          Fell on <span className="font-medium text-arena-ink">{knownTitle}</span> vs{' '}
-          <span className="font-medium text-arena-ink">{challengerTitle}</span>
+          {isDaily ? (
+            <span>Daily 10 Challenge Finished ({correctCount}/10 correct)</span>
+          ) : (
+            <span>
+              Fell on <span className="font-medium text-arena-ink">{knownTitle}</span> vs{' '}
+              <span className="font-medium text-arena-ink">{challengerTitle}</span>
+            </span>
+          )}
         </p>
 
         {/* Stats Matrix Card */}
         <div className="grid grid-cols-2 gap-3 p-2 bg-[#fcfaf7] rounded-2xl border border-arena-border/70 mb-7">
-          {/* Final Streak Stat */}
+          {/* Final Streak / Daily Score Stat */}
           <div className="bg-white rounded-xl py-4 px-3 border border-arena-border/50 shadow-pill flex flex-col items-center">
             <span className="text-[10.5px] font-semibold uppercase tracking-wider text-arena-faint mb-1">
-              Final Streak
+              {isDaily ? 'Daily Score' : 'Final Streak'}
             </span>
             <div className="flex items-baseline gap-1">
-              <span className="font-serif text-3xl font-semibold text-arena-ink">{streak}</span>
+              <span className="font-serif text-3xl font-semibold text-arena-ink">
+                {isDaily ? `${correctCount}/10` : streak}
+              </span>
               <span className="text-xs text-arena-faint">pts</span>
             </div>
           </div>
@@ -123,7 +140,9 @@ export function GameOverModal({
         {/* Mini Progress / Run Summary Indicator */}
         <div className="flex items-center justify-center mb-7">
           <span className="text-[12px] text-arena-muted font-medium">
-            {diff !== null
+            {isDaily
+              ? "Completed today's 10-match daily challenge"
+              : diff !== null
               ? `Missed by ${diff.toLocaleString()} viewership index`
               : 'Telemetry variance decided the match'}
           </span>
@@ -150,7 +169,7 @@ export function GameOverModal({
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
               />
             </svg>
-            Play Again
+            {isDaily ? 'Replay Daily Run' : 'Play Again'}
           </button>
 
           {/* Secondary Action */}
@@ -213,7 +232,9 @@ export function GameOverModal({
 
           {showFormula && (
             <p className="text-[11px] text-arena-muted bg-[#fcfaf7] p-2 rounded-lg border border-arena-border/60 max-w-xs mt-1 animate-in fade-in">
-              Each correct Higher/Lower guess adds 1 pt to your streak. A single miss concludes the run.
+              {isDaily
+                ? "Daily challenges present 10 deterministic head-to-head pairs. Score counts the total number of correct guesses."
+                : "Each correct Higher/Lower guess adds 1 pt to your streak. A single miss concludes the run."}
             </p>
           )}
         </div>
