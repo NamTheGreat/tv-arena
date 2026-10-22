@@ -1,14 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { isSupabaseConfigured, SeriesItem, supabase } from './lib/supabase';
+import { useAuth } from './lib/auth';
 import { ArenaContenders, ArenaStats } from './components/ArenaContenders';
 import { LeaderboardTable } from './components/LeaderboardTable';
 import { ChartRange, TrajectoryChart } from './components/TrajectoryChart';
 import { TriviaGame } from './components/TriviaGame';
 import { DatabaseStatusCard } from './components/DatabaseStatusCard';
+import { AuthModal } from './components/AuthModal';
+import { UserProfileDropdown } from './components/UserProfileDropdown';
+import { MethodologyModal } from './components/MethodologyModal';
 
 type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess';
 
 export default function App() {
+  const { user, signOut } = useAuth();
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('arena');
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
@@ -29,15 +36,8 @@ export default function App() {
   // Charts State
   const [chartRange, setChartRange] = useState<ChartRange>('7D');
 
-  // Guess Trivia State
-  const [knownIdx, setKnownIdx] = useState<number>(0);
-  const [challengerIdx, setChallengerIdx] = useState<number>(1);
-  const [revealed, setRevealed] = useState<boolean>(false);
-  const [lastGuessCorrect, setLastGuessCorrect] = useState<boolean | null>(null);
-  const [streak, setStreak] = useState<number>(0);
-  const [bestStreak, setBestStreak] = useState<number>(() => {
-    return Number(localStorage.getItem('tv_arena_best_streak') || '0');
-  });
+  // Guess Best Streak from local storage for User Profile Header
+  const bestStreak = Number(localStorage.getItem('tv_arena_best_streak') || '0');
 
   // Load live data from Supabase if configured
   useEffect(() => {
@@ -102,7 +102,6 @@ export default function App() {
         if (mapped.length > 1) {
           setRightSlug(mapped[1].slug);
           setRightSearch(mapped[1].title);
-          setChallengerIdx(1);
         }
       }
       setIsLoading(false);
@@ -176,44 +175,6 @@ export default function App() {
 
   const maxLeaderboardViewers = rankedShows[0]?.viewers_premiere_28d || 1;
 
-  // Guess Trivia Handlers
-  const knownShow = seriesList.length > 0 ? seriesList[knownIdx % seriesList.length] : null;
-  const challengerShow =
-    seriesList.length > 0 ? seriesList[challengerIdx % seriesList.length] : null;
-  const knownScore = knownShow ? knownShow.viewers_premiere_28d : 0;
-  const challengerScore = challengerShow ? challengerShow.viewers_premiere_28d : 0;
-
-  const makeGuess = (choice: 'higher' | 'lower') => {
-    if (revealed || !knownShow || !challengerShow) return;
-    const isHigher = challengerScore >= knownScore;
-    const correct = (choice === 'higher' && isHigher) || (choice === 'lower' && !isHigher);
-    setRevealed(true);
-    setLastGuessCorrect(correct);
-    if (correct) {
-      const nextStreak = streak + 1;
-      setStreak(nextStreak);
-      if (nextStreak > bestStreak) {
-        setBestStreak(nextStreak);
-        localStorage.setItem('tv_arena_best_streak', String(nextStreak));
-      }
-    } else {
-      setStreak(0);
-    }
-  };
-
-  const nextTriviaRound = () => {
-    if (seriesList.length <= 1) return;
-    const newKnown = challengerIdx;
-    let nextChallenger = Math.floor(Math.random() * seriesList.length);
-    if (nextChallenger === newKnown) {
-      nextChallenger = (newKnown + 1) % seriesList.length;
-    }
-    setKnownIdx(newKnown);
-    setChallengerIdx(nextChallenger);
-    setRevealed(false);
-    setLastGuessCorrect(null);
-  };
-
   if (!isSupabaseConfigured) {
     return <DatabaseStatusCard type="unconfigured" />;
   }
@@ -231,7 +192,19 @@ export default function App() {
   }
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
+    <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal relative">
+      {/* Top Profile Icon & Dropdown Navigation */}
+      <div className="absolute top-6 right-4 sm:top-8 sm:right-8 md:top-10 md:right-12 z-30" data-purpose="user-navigation">
+        <UserProfileDropdown
+          user={user}
+          bestStreak={bestStreak}
+          onSelectTab={setActiveTab}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
+          onSignOut={signOut}
+          onOpenMethodology={() => setIsMethodologyOpen(true)}
+        />
+      </div>
+
       {/* Shared Brand Header */}
       <header className="w-full text-center mb-5 sm:mb-8">
         <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
@@ -320,16 +293,8 @@ export default function App() {
       {/* SCREEN 4: GUESS TRIVIA */}
       {activeTab === 'guess' && (
         <TriviaGame
-          knownShow={knownShow}
-          challengerShow={challengerShow}
-          knownScore={knownScore}
-          challengerScore={challengerScore}
-          streak={streak}
-          bestStreak={bestStreak}
-          revealed={revealed}
-          lastGuessCorrect={lastGuessCorrect}
-          onMakeGuess={makeGuess}
-          onNextRound={nextTriviaRound}
+          seriesList={seriesList}
+          onViewLeaderboard={() => setActiveTab('leaderboard')}
         />
       )}
 
@@ -355,6 +320,12 @@ export default function App() {
           Severance vs Silo
         </button>
       </footer>
+
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <MethodologyModal
+        isOpen={isMethodologyOpen}
+        onClose={() => setIsMethodologyOpen(false)}
+      />
     </div>
   );
 }
