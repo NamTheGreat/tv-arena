@@ -51,7 +51,7 @@ export default function App() {
       const { data, error } = await supabase
         .from('series')
         .select('*')
-        .order('viewers_premiere_28d', { ascending: false });
+        .order('buzz_score', { ascending: false });
 
       if (error) {
         setDbError(error.message);
@@ -68,7 +68,7 @@ export default function App() {
 
         const { data: telemetryData } = await supabase
           .from('series_daily_telemetry')
-          .select('series_id, daily_viewers, recorded_date')
+          .select('series_id, daily_score, recorded_date')
           .in('series_id', chartedIds)
           .gte('recorded_date', startDateStr)
           .order('recorded_date', { ascending: true });
@@ -78,7 +78,7 @@ export default function App() {
         if (telemetryData) {
           for (const row of telemetryData) {
             const arr = telemetryValuesMap.get(row.series_id) || [];
-            arr.push(Number(row.daily_viewers));
+            arr.push(Number(row.daily_score));
             telemetryValuesMap.set(row.series_id, arr);
 
             const dateArr = telemetryDatesMap.get(row.series_id) || [];
@@ -89,8 +89,7 @@ export default function App() {
 
         const mapped: SeriesItem[] = data.map((row: any) => ({
           ...row,
-          viewers_premiere_28d: Number(row.viewers_premiere_28d || 0),
-          viewers_finale: Number(row.viewers_finale || 0),
+          buzz_score: Number(row.buzz_score || 0),
           delta_pct: Number(row.delta_pct || 0),
           daily_series: telemetryValuesMap.get(row.id) || [],
           daily_dates: telemetryDatesMap.get(row.id) || [],
@@ -125,14 +124,14 @@ export default function App() {
 
   const arenaStats: ArenaStats | null = useMemo(() => {
     if (!leftShow || !rightShow) return null;
-    const total = Math.max(1, leftShow.viewers_premiere_28d + rightShow.viewers_premiere_28d);
-    const leftPct = Number(((leftShow.viewers_premiere_28d / total) * 100).toFixed(1));
+    const total = Math.max(1, leftShow.buzz_score + rightShow.buzz_score);
+    const leftPct = Number(((leftShow.buzz_score / total) * 100).toFixed(1));
     const rightPct = Number((100 - leftPct).toFixed(1));
-    const leftLeads = leftShow.viewers_premiere_28d >= rightShow.viewers_premiere_28d;
+    const leftLeads = leftShow.buzz_score >= rightShow.buzz_score;
     const winner = leftLeads ? leftShow : rightShow;
     const loser = leftLeads ? rightShow : leftShow;
-    const diff = Math.abs(leftShow.viewers_premiere_28d - rightShow.viewers_premiere_28d);
-    const diffPct = ((diff / Math.max(1, loser.viewers_premiere_28d)) * 100).toFixed(1);
+    const diff = Math.abs(leftShow.buzz_score - rightShow.buzz_score);
+    const diffPct = ((diff / Math.max(1, loser.buzz_score)) * 100).toFixed(1);
     return { leftPct, rightPct, leftLeads, winner, diff, diffPct };
   }, [leftShow, rightShow]);
 
@@ -170,10 +169,10 @@ export default function App() {
     return [...seriesList]
       .filter((s) => (platformFilter === 'ALL' ? true : s.network === platformFilter))
       .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group === genreFilter))
-      .sort((a, b) => b.viewers_premiere_28d - a.viewers_premiere_28d);
+      .sort((a, b) => b.buzz_score - a.buzz_score);
   }, [seriesList, platformFilter, genreFilter]);
 
-  const maxLeaderboardViewers = rankedShows[0]?.viewers_premiere_28d || 1;
+  const maxLeaderboardViewers = rankedShows[0]?.buzz_score || 1;
 
   if (!isSupabaseConfigured) {
     return <DatabaseStatusCard type="unconfigured" />;

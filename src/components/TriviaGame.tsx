@@ -89,8 +89,8 @@ export function TriviaGame({ seriesList, onViewLeaderboard }: TriviaGameProps) {
   // Current shows
   const knownShow = activeDeck[knownIdx % Math.max(1, activeDeck.length)] || null;
   const challengerShow = activeDeck[challengerIdx % Math.max(1, activeDeck.length)] || null;
-  const knownScore = knownShow?.viewers_premiere_28d || 0;
-  const challengerScore = challengerShow?.viewers_premiere_28d || 0;
+  const knownScore = knownShow?.buzz_score || 0;
+  const challengerScore = challengerShow?.buzz_score || 0;
 
   // Nailbiter difficulty multiplier (within 8% gap)
   const isNailbiter = useMemo(() => {

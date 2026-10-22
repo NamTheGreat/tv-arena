@@ -26,7 +26,7 @@ pub struct SeriesRow {
     pub wiki_slug: String,
     pub reddit_query: String,
     #[serde(default)]
-    pub viewers_premiere_28d: i64,
+    pub buzz_score: i64,
     #[serde(default)]
     pub delta_pct: f64,
 }
