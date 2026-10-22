@@ -5,6 +5,7 @@
 - **Branching Model (Gitflow):**
   - **Day-to-day work:** All feature, chore, and fix branches (`feat/*`, `chore/*`, `fix/*`) target **`dev`**.
   - **Production Releases:** Staged periodically from `dev` → `main`.
+- **Independent Feature Branching Invariant:** When instructed to implement multiple features across separate branches (e.g., "do these with separate branches"), each branch MUST be created independently from the base branch (`dev`), unless the user explicitly requests stacked/dependent branches. Never branch a new feature off another unmerged feature branch, as this pollutes diffs with unrelated code.
 - **Stay on the User's Active Branch:** When instructed to commit or push, execute directly on the current checked-out branch. NEVER unilaterally switch branches or create a new branch unless explicitly instructed (e.g., "create a new branch").
 - **Explicit Commits Only:** Never execute `git commit` unless explicitly and directly requested in the user's most recent prompt. Always keep commits surgical and minimal.
 - **Strict PR Invariant:** NEVER raise, open, or draft a Pull Request unless the user explicitly and verbatim requests it (e.g., "raise PR", "open PR", "create PR"). Phrases like "commit to github", "push", or "save to github" mean commit and/or push ONLY—NEVER open a PR.
@@ -14,7 +15,7 @@
 - **Push Invariants:**
   - **NEVER** push directly to `main` (production). Pushing directly to `dev` is allowed when the user explicitly requests to commit/push on dev.
   - **NEVER** execute force pushes (`--force` or `-f`).
-  - Push operations are allowed when the user explicitly says "commit to github", "push", or explicitly requests a PR.
+  - **Verbatim Push Authorization Only:** Maintenance, cleanup, refactoring, differentiation, or bug-fix requests (such as "fix this", "clean it up", "differentiate them", "update the branch") authorize LOCAL commits/changes only. NEVER execute `git push` unless the user's prompt explicitly and verbatim commands a push (e.g., "push", "push to origin", "commit to github", "raise PR"). In all other cases, remote pushes must be handled manually by the user.
 
 ## Automated PR Triage & Review Workflow ("Do the PRs")
 

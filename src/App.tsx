@@ -1,14 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { isSupabaseConfigured, SeriesItem, supabase } from './lib/supabase';
+import { useAuth } from './lib/auth';
 import { ArenaContenders, ArenaStats } from './components/ArenaContenders';
 import { LeaderboardTable } from './components/LeaderboardTable';
 import { ChartRange, TrajectoryChart } from './components/TrajectoryChart';
 import { TriviaGame } from './components/TriviaGame';
 import { DatabaseStatusCard } from './components/DatabaseStatusCard';
+import { AuthModal } from './components/AuthModal';
+import { UserProfileDropdown } from './components/UserProfileDropdown';
+import { MethodologyModal } from './components/MethodologyModal';
 
 type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess';
 
 export default function App() {
+  const { user, signOut } = useAuth();
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('arena');
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
@@ -231,7 +238,19 @@ export default function App() {
   }
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
+    <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal relative">
+      {/* Top Profile Icon & Dropdown Navigation */}
+      <div className="absolute top-6 right-4 sm:top-8 sm:right-8 md:top-10 md:right-12 z-30" data-purpose="user-navigation">
+        <UserProfileDropdown
+          user={user}
+          bestStreak={bestStreak}
+          onSelectTab={setActiveTab}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
+          onSignOut={signOut}
+          onOpenMethodology={() => setIsMethodologyOpen(true)}
+        />
+      </div>
+
       {/* Shared Brand Header */}
       <header className="w-full text-center mb-5 sm:mb-8">
         <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
@@ -355,6 +374,12 @@ export default function App() {
           Severance vs Silo
         </button>
       </footer>
+
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+      <MethodologyModal
+        isOpen={isMethodologyOpen}
+        onClose={() => setIsMethodologyOpen(false)}
+      />
     </div>
   );
 }
