@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { isSupabaseConfigured, SeriesItem, supabase } from './lib/supabase';
 import { useAuth } from './lib/auth';
-import { ArenaContenders, ArenaStats } from './components/ArenaContenders';
+import { ArenaContenders } from './components/ArenaContenders';
+import { ArenaStats, computeArenaStats } from './lib/svgMath';
 import { LeaderboardTable } from './components/LeaderboardTable';
 import { ChartRange, TrajectoryChart } from './components/TrajectoryChart';
 import { TriviaGame } from './components/TriviaGame';
@@ -125,15 +126,7 @@ export default function App() {
 
   const arenaStats: ArenaStats | null = useMemo(() => {
     if (!leftShow || !rightShow) return null;
-    const total = Math.max(1, leftShow.viewers_premiere_28d + rightShow.viewers_premiere_28d);
-    const leftPct = Number(((leftShow.viewers_premiere_28d / total) * 100).toFixed(1));
-    const rightPct = Number((100 - leftPct).toFixed(1));
-    const leftLeads = leftShow.viewers_premiere_28d >= rightShow.viewers_premiere_28d;
-    const winner = leftLeads ? leftShow : rightShow;
-    const loser = leftLeads ? rightShow : leftShow;
-    const diff = Math.abs(leftShow.viewers_premiere_28d - rightShow.viewers_premiere_28d);
-    const diffPct = ((diff / Math.max(1, loser.viewers_premiere_28d)) * 100).toFixed(1);
-    return { leftPct, rightPct, leftLeads, winner, diff, diffPct };
+    return computeArenaStats(leftShow, rightShow);
   }, [leftShow, rightShow]);
 
   const selectTrendingBattle = (aSlug: string, bSlug: string) => {

@@ -1,7 +1,43 @@
+import { SeriesItem } from './supabase';
+
 export interface SvgPoint {
   x: number;
   y: number;
   value: number;
+}
+
+export interface ArenaStats {
+  leftPct: number;
+  rightPct: number;
+  leftLeads: boolean;
+  winner: SeriesItem;
+  diff: number;
+  diffPct: string;
+}
+
+export function computeArenaStats(leftShow: SeriesItem, rightShow: SeriesItem): ArenaStats {
+  const total = Math.max(1, leftShow.viewers_premiere_28d + rightShow.viewers_premiere_28d);
+  const leftPct = Number(((leftShow.viewers_premiere_28d / total) * 100).toFixed(1));
+  const rightPct = Number((100 - leftPct).toFixed(1));
+  const leftLeads = leftShow.viewers_premiere_28d >= rightShow.viewers_premiere_28d;
+  const winner = leftLeads ? leftShow : rightShow;
+  const loser = leftLeads ? rightShow : leftShow;
+  const diff = Math.abs(leftShow.viewers_premiere_28d - rightShow.viewers_premiere_28d);
+  const diffPct = ((diff / Math.max(1, loser.viewers_premiere_28d)) * 100).toFixed(1);
+  return { leftPct, rightPct, leftLeads, winner, diff, diffPct };
+}
+
+export function calculateDelta(current: number, previous: number): number {
+  if (previous <= 0) return 0.0;
+  const raw = Math.round(((current - previous) / previous) * 1000) / 10;
+  return Math.max(-99999, Math.min(99999, raw));
+}
+
+export function getTierCategory(score: number): 'Flagship' | 'Breakout' | 'Mid-Tier' | 'Developing' {
+  if (score >= 5_000_000) return 'Flagship';
+  if (score >= 1_000_000) return 'Breakout';
+  if (score >= 200_000) return 'Mid-Tier';
+  return 'Developing';
 }
 
 export function formatMetricNumber(val: number): string {

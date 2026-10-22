@@ -1,5 +1,15 @@
 use crate::models::RedditListing;
 
+pub fn parse_reddit_listing(json_str: &str) -> Option<(i64, i64)> {
+    serde_json::from_str::<RedditListing>(json_str)
+        .ok()
+        .map(|l| {
+            let c: i64 = l.data.children.iter().map(|p| p.data.num_comments).sum();
+            let u: i64 = l.data.children.iter().map(|p| p.data.score).sum();
+            (c, u)
+        })
+}
+
 pub fn fetch_reddit_stats(
     client: &ureq::Agent,
     reddit_query: &str,
@@ -19,11 +29,10 @@ pub fn fetch_reddit_stats(
         .call();
 
     match reddit_result {
-        Ok(r) if r.status() == 200 => r.into_json::<RedditListing>().ok().map(|l| {
-            let c: i64 = l.data.children.iter().map(|p| p.data.num_comments).sum();
-            let u: i64 = l.data.children.iter().map(|p| p.data.score).sum();
-            (c, u)
-        }),
+        Ok(r) if r.status() == 200 => {
+            let body = r.into_string().ok()?;
+            parse_reddit_listing(&body)
+        }
         Ok(r) => {
             eprintln!("⚠️  Reddit returned HTTP {} for '{}'", r.status(), title);
             None

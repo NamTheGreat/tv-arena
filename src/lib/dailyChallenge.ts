@@ -1,3 +1,17 @@
+export const LAUNCH_DATE = '2026-10-15';
+
+export function getTodayDateString(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+export function getDailyChallengeNumber(dateStr?: string): number {
+  const target = new Date(dateStr || getTodayDateString());
+  const launch = new Date(LAUNCH_DATE);
+  const diffTime = target.getTime() - launch.getTime();
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  return Math.max(1, diffDays + 1);
+}
+
 // ponytail: deterministic 30-line Mulberry32 PRNG for Wordle-style daily seed
 export function getDailySeed(dateStr?: string): number {
   const d = dateStr || new Date().toISOString().split('T')[0];
@@ -34,8 +48,4 @@ export function generateDailyMatchupIndices(listLength: number, totalRounds: num
   }
 
   return indices;
-}
-
-export function getTodayDateString(): string {
-  return new Date().toISOString().split('T')[0];
 }
