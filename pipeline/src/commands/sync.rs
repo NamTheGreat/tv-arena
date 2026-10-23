@@ -84,10 +84,10 @@ pub fn run_sync(config: &Config) -> Result<()> {
         let new_score = compute_buzz_score(total_wiki, total_comments, total_upvotes);
 
         // Guard against overwriting existing valid scores if upstream fetch returned 0
-        if new_score == 0 && show.viewers_premiere_28d > 0 {
+        if new_score == 0 && show.buzz_score > 0 {
             eprintln!(
                 "⚠️  Calculated 0 buzz score for '{}'; skipping patch to protect existing score ({})",
-                show.title, show.viewers_premiere_28d
+                show.title, show.buzz_score
             );
             continue;
         }
@@ -97,8 +97,8 @@ pub fn run_sync(config: &Config) -> Result<()> {
 
         let delta_pct = if let Some(prior_score) = prior_day_score {
             calculate_delta(new_score, prior_score)
-        } else if show.viewers_premiere_28d > 0 {
-            calculate_delta(new_score, show.viewers_premiere_28d)
+        } else if show.buzz_score > 0 {
+            calculate_delta(new_score, show.buzz_score)
         } else if let Some(ref days) = wiki_days {
             if days.len() >= 2 {
                 let first_day = days.first().map(|d| d.views).unwrap_or(0);
@@ -141,7 +141,7 @@ pub fn run_sync(config: &Config) -> Result<()> {
                     telemetry_batch.push(json!({
                         "series_id": show_id,
                         "recorded_date": date_iso,
-                        "daily_viewers": daily_est,
+                        "daily_score": daily_est,
                         "wiki_views": day.views,
                         "reddit_comments": daily_comments
                     }));
@@ -151,7 +151,7 @@ pub fn run_sync(config: &Config) -> Result<()> {
             telemetry_batch.push(json!({
                 "series_id": show_id,
                 "recorded_date": recorded_date,
-                "daily_viewers": new_score / 7,
+                "daily_score": new_score / 7,
                 "wiki_views": total_wiki,
                 "reddit_comments": total_comments / 7
             }));

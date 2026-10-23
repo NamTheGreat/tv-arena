@@ -111,7 +111,7 @@ export function TrajectoryChart({
     if (slice.length > 0) {
       return slice.reduce((sum, v) => sum + v, 0);
     }
-    return show.viewers_premiere_28d;
+    return show.buzz_score;
   };
 
   const topCumulativeShows = useMemo(() => seriesList.slice(0, 3), [seriesList]);
@@ -166,7 +166,7 @@ export function TrajectoryChart({
           <div key={s.slug} className="flex items-center gap-1.5 sm:gap-2">
             <span
               className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full"
-              style={{ backgroundColor: s.chart_color }}
+              style={{ backgroundColor: s.chart_color || '#C66A3D' }}
             />
             <span className="text-stone-800 font-medium">{s.title}</span>
             {s.is_breakout && (
@@ -210,13 +210,14 @@ export function TrajectoryChart({
           {seriesList.slice(0, 6).map((show) => {
             const sampled = sampleDailyValues(show.daily_series, chartRange);
             const { pathD, points } = buildMobileChartGeometry(sampled, maxChartScale);
+            const color = show.chart_color || '#C66A3D';
             return (
               <g key={show.slug}>
                 <path
                   className="chart-line"
                   d={pathD}
                   fill="none"
-                  stroke={show.chart_color}
+                  stroke={color}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth="2"
@@ -226,7 +227,7 @@ export function TrajectoryChart({
                     key={i}
                     cx={pt.x}
                     cy={pt.y}
-                    fill={show.chart_color}
+                    fill={color}
                     r={i === 6 ? 3.5 : 2.5}
                   />
                 ))}
@@ -265,13 +266,14 @@ export function TrajectoryChart({
           {seriesList.slice(0, 6).map((show) => {
             const sampled = sampleDailyValues(show.daily_series, chartRange);
             const { pathD, points } = buildChartGeometry(sampled, maxChartScale);
+            const color = show.chart_color || '#C66A3D';
             return (
               <g key={show.slug}>
                 <path
                   className="chart-line"
                   d={pathD}
                   fill="none"
-                  stroke={show.chart_color}
+                  stroke={color}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth="2.5"
@@ -281,7 +283,7 @@ export function TrajectoryChart({
                     key={i}
                     cx={pt.x}
                     cy={pt.y}
-                    fill={show.chart_color}
+                    fill={color}
                     r={i === 6 ? 4.5 : 3.5}
                   />
                 ))}
