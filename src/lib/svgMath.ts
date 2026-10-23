@@ -16,14 +16,14 @@ export interface ArenaStats {
 }
 
 export function computeArenaStats(leftShow: SeriesItem, rightShow: SeriesItem): ArenaStats {
-  const total = Math.max(1, leftShow.viewers_premiere_28d + rightShow.viewers_premiere_28d);
-  const leftPct = Number(((leftShow.viewers_premiere_28d / total) * 100).toFixed(1));
+  const total = Math.max(1, leftShow.buzz_score + rightShow.buzz_score);
+  const leftPct = Number(((leftShow.buzz_score / total) * 100).toFixed(1));
   const rightPct = Number((100 - leftPct).toFixed(1));
-  const leftLeads = leftShow.viewers_premiere_28d >= rightShow.viewers_premiere_28d;
+  const leftLeads = leftShow.buzz_score >= rightShow.buzz_score;
   const winner = leftLeads ? leftShow : rightShow;
   const loser = leftLeads ? rightShow : leftShow;
-  const diff = Math.abs(leftShow.viewers_premiere_28d - rightShow.viewers_premiere_28d);
-  const diffPct = ((diff / Math.max(1, loser.viewers_premiere_28d)) * 100).toFixed(1);
+  const diff = Math.abs(leftShow.buzz_score - rightShow.buzz_score);
+  const diffPct = ((diff / Math.max(1, loser.buzz_score)) * 100).toFixed(1);
   return { leftPct, rightPct, leftLeads, winner, diff, diffPct };
 }
 

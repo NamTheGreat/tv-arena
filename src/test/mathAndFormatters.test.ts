@@ -13,29 +13,35 @@ import { SeriesItem } from '../lib/supabase';
 
 const mockShowA: SeriesItem = {
   id: 'show-a-id',
+  tmdb_id: 100,
   slug: 'severance',
   title: 'Severance',
   network: 'Apple TV+',
   genre_group: 'Drama & Sci-Fi',
   release_years: '2024–2025',
   chart_color: '#C66A3D',
-  viewers_premiere_28d: 1_200_000,
-  viewers_finale: 0,
+  wiki_slug: 'Severance_(TV_series)',
+  reddit_query: 'subreddit:SeveranceAppleTVPlus',
+  buzz_score: 1_200_000,
   delta_pct: 12.5,
+  updated_at: null,
   daily_series: [100000, 120000, 150000, 180000, 200000, 220000, 230000],
 };
 
 const mockShowB: SeriesItem = {
   id: 'show-b-id',
+  tmdb_id: 101,
   slug: 'the-bear',
   title: 'The Bear',
   network: 'FX / Hulu',
   genre_group: 'Comedy & Drama',
   release_years: '2024–2025',
   chart_color: '#5C828C',
-  viewers_premiere_28d: 800_000,
-  viewers_finale: 0,
+  wiki_slug: 'The_Bear_(TV_series)',
+  reddit_query: 'subreddit:TheBear',
+  buzz_score: 800_000,
   delta_pct: -5.2,
+  updated_at: null,
   daily_series: [70000, 75000, 80000, 85000, 90000, 95000, 100000],
 };
 

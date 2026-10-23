@@ -175,13 +175,13 @@ export function ArenaContenders({
         <div className="grid grid-cols-2 gap-3 sm:gap-4 items-center mb-4 sm:mb-6 pt-2 border-t border-arena-border/40 font-tabular">
           <div className="text-left">
             <div className="text-2xl sm:text-4xl md:text-5xl font-serif font-semibold">
-              {leftShow.viewers_premiere_28d.toLocaleString()}
+              {leftShow.buzz_score.toLocaleString()}
             </div>
             <div className="text-[11px] sm:text-xs text-arena-muted font-medium mt-1 sm:mt-1.5">Engagement Index</div>
           </div>
           <div className="text-right">
             <div className="text-2xl sm:text-4xl md:text-5xl font-serif font-semibold">
-              {rightShow.viewers_premiere_28d.toLocaleString()}
+              {rightShow.buzz_score.toLocaleString()}
             </div>
             <div className="text-[11px] sm:text-xs text-arena-muted font-medium mt-1 sm:mt-1.5">Engagement Index</div>
           </div>

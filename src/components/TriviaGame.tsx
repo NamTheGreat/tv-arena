@@ -12,9 +12,14 @@ type DeckFilter = 'all' | 'streaming' | 'classics' | 'scifi';
 interface TriviaGameProps {
   seriesList: SeriesItem[];
   onViewLeaderboard?: () => void;
+  onOpenLearnToPlay?: () => void;
 }
 
-export function TriviaGame({ seriesList, onViewLeaderboard }: TriviaGameProps) {
+export function TriviaGame({
+  seriesList,
+  onViewLeaderboard,
+  onOpenLearnToPlay,
+}: TriviaGameProps) {
   const [gameMode, setGameMode] = useState<GameMode>('endless');
   const [deckFilter, setDeckFilter] = useState<DeckFilter>('all');
 
@@ -89,8 +94,8 @@ export function TriviaGame({ seriesList, onViewLeaderboard }: TriviaGameProps) {
   // Current shows
   const knownShow = activeDeck[knownIdx % Math.max(1, activeDeck.length)] || null;
   const challengerShow = activeDeck[challengerIdx % Math.max(1, activeDeck.length)] || null;
-  const knownScore = knownShow?.viewers_premiere_28d || 0;
-  const challengerScore = challengerShow?.viewers_premiere_28d || 0;
+  const knownScore = knownShow?.buzz_score || 0;
+  const challengerScore = challengerShow?.buzz_score || 0;
 
   // Nailbiter difficulty multiplier (within 8% gap)
   const isNailbiter = useMemo(() => {
@@ -210,7 +215,7 @@ export function TriviaGame({ seriesList, onViewLeaderboard }: TriviaGameProps) {
   }
 
   return (
-    <main className="w-full max-w-3xl mx-auto py-2 sm:py-4 overflow-hidden">
+    <main className="w-full max-w-3xl mx-auto pt-2 pb-1 sm:pt-4 sm:pb-2 overflow-hidden">
       {/* Mode & Deck Filter Selector Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-5 sm:mb-6">
         {/* Game Mode Pill */}
@@ -399,8 +404,8 @@ export function TriviaGame({ seriesList, onViewLeaderboard }: TriviaGameProps) {
       </div>
 
       {/* Controls & Feedback */}
-      <div className="mt-6 sm:mt-8 flex flex-col items-center">
-        {revealed && (
+      {revealed && (
+        <div className="mt-4 flex flex-col items-center">
           <button
             type="button"
             onClick={advanceToNextRound}
@@ -409,21 +414,18 @@ export function TriviaGame({ seriesList, onViewLeaderboard }: TriviaGameProps) {
             <span>Next Round</span>
             <span className="ml-2">→</span>
           </button>
-        )}
-
-        {revealed && (
           <div
-            className={`mt-3 sm:mt-4 text-xs sm:text-[13px] font-medium ${
+            className={`mt-2 text-xs sm:text-[13px] font-medium ${
               lastGuessCorrect ? 'text-emerald-600' : 'text-rose-600'
             }`}
           >
             {lastGuessCorrect ? 'Correct!' : 'Wrong.'} {challengerShow?.title} drew{' '}
             {challengerScore.toLocaleString()} engagement.
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="mt-4 flex items-center justify-center">
+      <div className="mt-2.5 flex items-center justify-center">
         <button
           type="button"
           onClick={advanceToNextRound}

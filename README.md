@@ -209,6 +209,29 @@ To enable:
 
 ---
 
+## ⚡ Cloudflare Pages & Dynamic OpenGraph Battle Cards
+
+TV Arena uses Cloudflare Pages Functions to serve edge-rendered OpenGraph metadata and dynamic battle cards for social sharing:
+
+### Edge Endpoints:
+- `/arena/:a/:b`: Server-side injects dynamic OG and Twitter metadata into `index.html` (e.g. `The Boys vs Fallout | TV Arena Battle`) while preserving full Single-Page-Application client capabilities.
+- `/og/:a/:b`: Generates an on-the-fly 1200x630 battle card PNG using `workers-og` featuring both contender titles, live 7-day buzz scores, and an engagement momentum bar.
+
+### Cloudflare Environment Variables:
+Configure these in **Cloudflare Pages > Settings > Environment variables**:
+- `VITE_SUPABASE_URL` / `SUPABASE_URL`: Your Supabase project URL (e.g. `https://xyz.supabase.co`).
+- `VITE_SUPABASE_ANON_KEY` / `SUPABASE_ANON_KEY`: Your Supabase public anonymous API key.
+
+### Local Edge Function Testing:
+```bash
+npm run build
+npx wrangler pages dev dist --port 8788
+curl -s -A "Twitterbot" http://localhost:8788/arena/the-boys/fallout
+curl -s http://localhost:8788/og/the-boys/fallout | file -
+```
+
+---
+
 ## 🎨 Design System
 
 - **Color Palette**:

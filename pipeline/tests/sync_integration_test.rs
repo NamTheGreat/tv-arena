@@ -45,7 +45,7 @@ fn test_sync_full_run_against_mock_server() {
         when.method(GET)
             .path("/rest/v1/series")
             .query_param("select", "*")
-            .query_param("order", "viewers_premiere_28d.desc");
+            .query_param("order", "buzz_score.desc");
         then.status(200).json_body(json!([
             {
                 "id": "11111111-1111-1111-1111-111111111111",
@@ -58,7 +58,7 @@ fn test_sync_full_run_against_mock_server() {
                 "chart_color": "#C66A3D",
                 "wiki_slug": "Severance_(TV_series)",
                 "reddit_query": "Severance",
-                "viewers_premiere_28d": 100000,
+                "buzz_score": 100000,
                 "delta_pct": 0.0
             }
         ]));
@@ -77,7 +77,7 @@ fn test_sync_full_run_against_mock_server() {
         when.method("PATCH")
             .path("/rest/v1/series")
             .query_param("id", "eq.11111111-1111-1111-1111-111111111111")
-            .json_body_partial(r#"{"viewers_premiere_28d": 950000}"#);
+            .json_body_partial(r#"{"buzz_score": 950000}"#);
         then.status(200).json_body(json!({}));
     });
 
