@@ -9,7 +9,7 @@ import {
 } from 'react-router-dom';
 import { isSupabaseConfigured, SeriesItem, supabase } from './lib/supabase';
 import { useAuth } from './lib/auth';
-import { ArenaStats } from './components/ArenaContenders';
+import { ArenaStats, computeArenaStats } from './lib/svgMath';
 import { ChartRange } from './components/TrajectoryChart';
 import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
@@ -153,18 +153,7 @@ function ArenaRouteWrapper({ seriesList }: { seriesList: SeriesItem[] }) {
 
   const arenaStats: ArenaStats | null = useMemo(() => {
     if (!leftShow || !rightShow) return null;
-    const scoreA = Number(leftShow.buzz_score || 0);
-    const scoreB = Number(rightShow.buzz_score || 0);
-    const total = Math.max(1, scoreA + scoreB);
-    const leftPct = Number(((scoreA / total) * 100).toFixed(1));
-    const rightPct = Number((100 - leftPct).toFixed(1));
-    const leftLeads = scoreA >= scoreB;
-    const winner = leftLeads ? leftShow : rightShow;
-    const loser = leftLeads ? rightShow : leftShow;
-    const loserScore = Number(loser.buzz_score || 0);
-    const diff = Math.abs(scoreA - scoreB);
-    const diffPct = `${((diff / Math.max(1, loserScore)) * 100).toFixed(1)}%`;
-    return { leftPct, rightPct, leftLeads, winner, diff, diffPct };
+    return computeArenaStats(leftShow, rightShow);
   }, [leftShow, rightShow]);
 
   if (!leftShow || !rightShow || !arenaStats) {
@@ -308,10 +297,19 @@ export default function App() {
       }
       setIsLoading(true);
       setDbError(null);
-      const { data, error } = await supabase
-        .from('series')
-        .select('*')
-        .order('buzz_score', { ascending: false });
+      // Query authoritative SQL leaderboard view with fallback to series table
+      let { data, error } = await (supabase as any)
+        .from('series_leaderboard')
+        .select('*');
+
+      if (error || !data || data.length === 0) {
+        const fallback = await supabase
+          .from('series')
+          .select('*')
+          .order('buzz_score', { ascending: false });
+        data = fallback.data as any;
+        error = fallback.error;
+      }
 
       if (error) {
         setDbError(error.message);
@@ -325,19 +323,30 @@ export default function App() {
         const startDateStr = ninetyDaysAgo.toISOString().split('T')[0];
         const chartedIds = data.slice(0, 10).map((s: any) => s.id);
 
-        const { data: telemetryData } = await supabase
-          .from('series_daily_telemetry')
+        // Query dynamic daily scores view with fallback to raw telemetry
+        let { data: telemetryData } = await (supabase as any)
+          .from('series_daily_scores')
           .select('series_id, daily_score, recorded_date')
           .in('series_id', chartedIds)
           .gte('recorded_date', startDateStr)
           .order('recorded_date', { ascending: true });
+
+        if (!telemetryData || telemetryData.length === 0) {
+          const fallbackTelemetry = await supabase
+            .from('series_daily_telemetry')
+            .select('series_id, daily_score, recorded_date')
+            .in('series_id', chartedIds)
+            .gte('recorded_date', startDateStr)
+            .order('recorded_date', { ascending: true });
+          telemetryData = fallbackTelemetry.data as any;
+        }
 
         const telemetryValuesMap = new Map<string, number[]>();
         const telemetryDatesMap = new Map<string, string[]>();
         if (telemetryData) {
           for (const row of telemetryData) {
             const arr = telemetryValuesMap.get(row.series_id) || [];
-            arr.push(Number(row.daily_score));
+            arr.push(Number(row.daily_score ?? 0));
             telemetryValuesMap.set(row.series_id, arr);
 
             const dateArr = telemetryDatesMap.get(row.series_id) || [];
@@ -348,9 +357,11 @@ export default function App() {
 
         const mapped: SeriesItem[] = data.map((row: any) => ({
           ...row,
-          buzz_score: Number(row.buzz_score || 0),
+          buzz_score: Number(
+            row.current_7d_score ?? row.buzz_score ?? 0
+          ),
           delta_pct: Number(row.delta_pct || 0),
-          daily_series: telemetryValuesMap.get(row.id) || [Number(row.buzz_score || 0)],
+          daily_series: telemetryValuesMap.get(row.id) || [Number(row.current_7d_score ?? row.buzz_score ?? 0)],
           daily_dates: telemetryDatesMap.get(row.id) || [],
         }));
 
@@ -360,6 +371,7 @@ export default function App() {
     }
     loadFromSupabase();
   }, []);
+
 
   // Available platforms and genres dynamically derived from dataset
   const availablePlatforms = useMemo(() => {

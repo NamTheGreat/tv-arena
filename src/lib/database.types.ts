@@ -120,7 +120,7 @@ export type Database = {
           duration_ms?: number | null
         }
         Update: {
-          id?: string
+          id?: number
           started_at?: string
           completed_at?: string | null
           status?: string
@@ -131,6 +131,30 @@ export type Database = {
           reddit_failures?: number | null
           error_log?: string | null
           duration_ms?: number | null
+        }
+        Relationships: []
+      }
+      score_weights: {
+        Row: {
+          id: number
+          wiki_weight: number
+          comment_weight: number
+          upvote_weight: number
+          updated_at: string | null
+        }
+        Insert: {
+          id?: number
+          wiki_weight?: number
+          comment_weight?: number
+          upvote_weight?: number
+          updated_at?: string | null
+        }
+        Update: {
+          id?: number
+          wiki_weight?: number
+          comment_weight?: number
+          upvote_weight?: number
+          updated_at?: string | null
         }
         Relationships: []
       }

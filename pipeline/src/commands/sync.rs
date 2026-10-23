@@ -4,26 +4,35 @@ use serde_json::json;
 use std::{thread, time::Duration, time::Instant};
 
 use crate::clients::http::create_http_client;
-use crate::clients::reddit::fetch_reddit_stats;
 use crate::clients::supabase::{
     batch_record_daily_telemetry, create_sync_run, fetch_prev_reddit_comments,
     fetch_prior_day_score, fetch_series, patch_series_score, update_sync_run, SyncRunUpdate,
 };
-use crate::clients::wikipedia::fetch_wiki_days;
+use crate::clients::{HttpTelemetryFetcher, TelemetryFetcher};
 use crate::config::Config;
 use crate::engine::scoring::{calculate_delta, compute_buzz_score};
 
 pub fn run_sync(config: &Config) -> Result<()> {
     let client = create_http_client();
+    let fetcher = HttpTelemetryFetcher { client: &client };
+    run_sync_with_fetcher(config, &client, &fetcher)?;
+    Ok(())
+}
+
+pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
+    config: &Config,
+    client: &ureq::Agent,
+    fetcher: &F,
+) -> Result<usize> {
     let start_time = Instant::now();
-    let shows = fetch_series(&client, config)?;
+    let shows = fetch_series(client, config)?;
 
     if shows.is_empty() {
         println!("ℹ️  No series found in Supabase. Run 'cargo run -- seed' or execute 'supabase/schema.sql' to initialize show records.");
-        return Ok(());
+        return Ok(0);
     }
 
-    let run_id = create_sync_run(&client, config, shows.len());
+    let run_id = create_sync_run(client, config, shows.len());
 
     // Use yesterday as the end boundary so completed Wikimedia day dumps are guaranteed published
     let now = Utc::now();
@@ -50,9 +59,8 @@ pub fn run_sync(config: &Config) -> Result<()> {
     for show in &shows {
         let Some(show_id) = &show.id else { continue };
 
-        let wiki_days =
-            fetch_wiki_days(&client, &show.wiki_slug, &start_str, &end_str, &show.title);
-        let reddit_stats = fetch_reddit_stats(&client, &show.reddit_query, &show.title);
+        let wiki_days = fetcher.fetch_wiki_days(&show.wiki_slug, &start_str, &end_str, &show.title);
+        let reddit_stats = fetcher.fetch_reddit_stats(&show.reddit_query, &show.title);
 
         if wiki_days.is_none() {
             wiki_failures += 1;
@@ -82,7 +90,7 @@ pub fn run_sync(config: &Config) -> Result<()> {
         let (total_comments, total_upvotes) = if let Some(stats) = reddit_stats {
             stats
         } else {
-            let prev_comments = fetch_prev_reddit_comments(&client, config, show_id);
+            let prev_comments = fetch_prev_reddit_comments(client, config, show_id);
             if let Some(c) = prev_comments {
                 eprintln!(
                     "ℹ️  Reddit throttled for '{}'; carrying forward last recorded comments ({})",
@@ -106,7 +114,7 @@ pub fn run_sync(config: &Config) -> Result<()> {
         }
 
         // To handle same-day manual re-runs gracefully, compare against the previous day's telemetry
-        let prior_day_score = fetch_prior_day_score(&client, config, show_id, &recorded_date);
+        let prior_day_score = fetch_prior_day_score(client, config, show_id, &recorded_date);
 
         let delta_pct = if let Some(prior_score) = prior_day_score {
             calculate_delta(new_score, prior_score)
@@ -127,7 +135,7 @@ pub fn run_sync(config: &Config) -> Result<()> {
             0.0
         };
 
-        if let Err(e) = patch_series_score(&client, config, show_id, new_score, delta_pct) {
+        if let Err(e) = patch_series_score(client, config, show_id, new_score, delta_pct) {
             eprintln!("❌ Failed updating series row for '{}': {}", show.title, e);
             fetch_failures += 1;
             continue;
@@ -156,7 +164,8 @@ pub fn run_sync(config: &Config) -> Result<()> {
                         "recorded_date": date_iso,
                         "daily_score": daily_est,
                         "wiki_views": day.views,
-                        "reddit_comments": daily_comments
+                        "reddit_comments": daily_comments,
+                        "reddit_upvotes": daily_upvotes
                     }));
                 }
             }
@@ -166,11 +175,12 @@ pub fn run_sync(config: &Config) -> Result<()> {
                 "recorded_date": recorded_date,
                 "daily_score": new_score / 7,
                 "wiki_views": total_wiki,
-                "reddit_comments": total_comments / 7
+                "reddit_comments": total_comments / 7,
+                "reddit_upvotes": total_upvotes / 7
             }));
         }
 
-        if let Err(e) = batch_record_daily_telemetry(&client, config, telemetry_batch) {
+        if let Err(e) = batch_record_daily_telemetry(client, config, telemetry_batch) {
             eprintln!(
                 "❌ Failed batch recording daily telemetry for '{}': {}",
                 show.title, e
@@ -214,7 +224,7 @@ pub fn run_sync(config: &Config) -> Result<()> {
             },
             duration_ms,
         };
-        update_sync_run(&client, config, id, &update);
+        update_sync_run(client, config, id, &update);
     }
 
     // Fail the run if over 40% of shows failed to sync so GitHub Actions alerts accurately
@@ -231,5 +241,5 @@ pub fn run_sync(config: &Config) -> Result<()> {
         eprintln!("⚠️  Failed generating daily deck during sync: {}", e);
     }
 
-    Ok(())
+    Ok(updated_count)
 }
