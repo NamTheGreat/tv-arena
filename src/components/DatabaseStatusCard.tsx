@@ -78,7 +78,7 @@ export function DatabaseStatusCard({ type, errorMessage, onClose }: DatabaseStat
           .maybeSingle();
 
         if (active && data) {
-          setLatestRun(data as SyncRunRecord);
+          setLatestRun(data as unknown as SyncRunRecord);
         }
       } catch {
         // Fall back gracefully

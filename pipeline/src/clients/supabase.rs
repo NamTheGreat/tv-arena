@@ -7,7 +7,7 @@ use crate::models::{SeedSeriesPayload, SeriesRow};
 
 pub fn fetch_series(client: &ureq::Agent, config: &Config) -> Result<Vec<SeriesRow>> {
     let list_url = format!(
-        "{}/rest/v1/series?select=*&order=viewers_premiere_28d.desc",
+        "{}/rest/v1/series?select=*&order=buzz_score.desc",
         config.supabase_url
     );
     let list_res = client
@@ -94,7 +94,7 @@ pub fn fetch_prior_day_score(
         .ok()
         .and_then(|r| r.into_json::<Vec<serde_json::Value>>().ok())
         .and_then(|rows| rows.into_iter().next())
-        .and_then(|row| row.get("daily_viewers").and_then(|v| v.as_i64()))
+        .and_then(|row| row.get("daily_score").and_then(|v| v.as_i64()))
         .map(|dv| dv * 7)
 }
 
@@ -111,7 +111,7 @@ pub fn patch_series_score(
         .set("apikey", &config.supabase_key)
         .set("Authorization", &format!("Bearer {}", config.supabase_key))
         .send_json(json!({
-            "viewers_premiere_28d": new_score,
+            "buzz_score": new_score,
             "delta_pct": delta_pct,
             "updated_at": Utc::now().to_rfc3339()
         }))?;

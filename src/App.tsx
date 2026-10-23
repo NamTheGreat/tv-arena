@@ -9,6 +9,7 @@ import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { AuthModal } from './components/AuthModal';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
 import { MethodologyModal } from './components/MethodologyModal';
+import { LearnToPlayModal } from './components/LearnToPlayModal';
 
 type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess';
 
@@ -17,6 +18,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
   const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
+  const [isLearnModalOpen, setIsLearnModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('arena');
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
@@ -52,7 +54,7 @@ export default function App() {
       const { data, error } = await supabase
         .from('series')
         .select('*')
-        .order('viewers_premiere_28d', { ascending: false });
+        .order('buzz_score', { ascending: false });
 
       if (error) {
         setDbError(error.message);
@@ -69,7 +71,7 @@ export default function App() {
 
         const { data: telemetryData } = await supabase
           .from('series_daily_telemetry')
-          .select('series_id, daily_viewers, recorded_date')
+          .select('series_id, daily_score, recorded_date')
           .in('series_id', chartedIds)
           .gte('recorded_date', startDateStr)
           .order('recorded_date', { ascending: true });
@@ -79,7 +81,7 @@ export default function App() {
         if (telemetryData) {
           for (const row of telemetryData) {
             const arr = telemetryValuesMap.get(row.series_id) || [];
-            arr.push(Number(row.daily_viewers));
+            arr.push(Number(row.daily_score));
             telemetryValuesMap.set(row.series_id, arr);
 
             const dateArr = telemetryDatesMap.get(row.series_id) || [];
@@ -90,8 +92,7 @@ export default function App() {
 
         const mapped: SeriesItem[] = data.map((row: any) => ({
           ...row,
-          viewers_premiere_28d: Number(row.viewers_premiere_28d || 0),
-          viewers_finale: Number(row.viewers_finale || 0),
+          buzz_score: Number(row.buzz_score || 0),
           delta_pct: Number(row.delta_pct || 0),
           daily_series: telemetryValuesMap.get(row.id) || [],
           daily_dates: telemetryDatesMap.get(row.id) || [],
@@ -126,14 +127,14 @@ export default function App() {
 
   const arenaStats: ArenaStats | null = useMemo(() => {
     if (!leftShow || !rightShow) return null;
-    const total = Math.max(1, leftShow.viewers_premiere_28d + rightShow.viewers_premiere_28d);
-    const leftPct = Number(((leftShow.viewers_premiere_28d / total) * 100).toFixed(1));
+    const total = Math.max(1, leftShow.buzz_score + rightShow.buzz_score);
+    const leftPct = Number(((leftShow.buzz_score / total) * 100).toFixed(1));
     const rightPct = Number((100 - leftPct).toFixed(1));
-    const leftLeads = leftShow.viewers_premiere_28d >= rightShow.viewers_premiere_28d;
+    const leftLeads = leftShow.buzz_score >= rightShow.buzz_score;
     const winner = leftLeads ? leftShow : rightShow;
     const loser = leftLeads ? rightShow : leftShow;
-    const diff = Math.abs(leftShow.viewers_premiere_28d - rightShow.viewers_premiere_28d);
-    const diffPct = ((diff / Math.max(1, loser.viewers_premiere_28d)) * 100).toFixed(1);
+    const diff = Math.abs(leftShow.buzz_score - rightShow.buzz_score);
+    const diffPct = ((diff / Math.max(1, loser.buzz_score)) * 100).toFixed(1);
     return { leftPct, rightPct, leftLeads, winner, diff, diffPct };
   }, [leftShow, rightShow]);
 
@@ -171,10 +172,10 @@ export default function App() {
     return [...seriesList]
       .filter((s) => (platformFilter === 'ALL' ? true : s.network === platformFilter))
       .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group === genreFilter))
-      .sort((a, b) => b.viewers_premiere_28d - a.viewers_premiere_28d);
+      .sort((a, b) => b.buzz_score - a.buzz_score);
   }, [seriesList, platformFilter, genreFilter]);
 
-  const maxLeaderboardViewers = rankedShows[0]?.viewers_premiere_28d || 1;
+  const maxLeaderboardViewers = rankedShows[0]?.buzz_score || 1;
 
   if (!isSupabaseConfigured) {
     return <DatabaseStatusCard type="unconfigured" />;
@@ -203,6 +204,7 @@ export default function App() {
           onOpenAuth={() => setIsAuthModalOpen(true)}
           onSignOut={signOut}
           onOpenMethodology={() => setIsMethodologyOpen(true)}
+          onOpenLearnToPlay={() => setIsLearnModalOpen(true)}
         />
       </div>
 
@@ -296,11 +298,12 @@ export default function App() {
         <TriviaGame
           seriesList={seriesList}
           onViewLeaderboard={() => setActiveTab('leaderboard')}
+          onOpenLearnToPlay={() => setIsLearnModalOpen(true)}
         />
       )}
 
       {/* Shared Trending Battles Footer */}
-      <footer className="mt-8 sm:mt-10 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 text-xs text-arena-muted">
+      <footer className="mt-4 sm:mt-5 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 text-xs text-arena-muted">
         <span className="text-[10px] sm:text-[11px] uppercase tracking-wider font-semibold">Trending Battles:</span>
         <button
           onClick={() => selectTrendingBattle('the-last-of-us', 'fallout')}
@@ -347,10 +350,29 @@ export default function App() {
         </div>
       )}
 
+      {/* Minimalist Learn to Play Button positioned below Trending Battles as requested */}
+      <div className="mt-2.5 sm:mt-3 flex items-center justify-center">
+        <button
+          type="button"
+          onClick={() => setIsLearnModalOpen(true)}
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/75 hover:bg-white border border-stone-200/90 hover:border-stone-300 text-stone-600 hover:text-stone-900 text-[11px] sm:text-xs font-medium tracking-wide shadow-sm transition-all duration-150 cursor-pointer hover:shadow"
+        >
+          <svg className="w-3.5 h-3.5 text-arena-terracotta" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-4m0-4h.01" />
+          </svg>
+          <span>Learn to Play</span>
+        </button>
+      </div>
+
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
       <MethodologyModal
         isOpen={isMethodologyOpen}
         onClose={() => setIsMethodologyOpen(false)}
+      />
+      <LearnToPlayModal
+        isOpen={isLearnModalOpen}
+        onClose={() => setIsLearnModalOpen(false)}
       />
     </div>
   );
