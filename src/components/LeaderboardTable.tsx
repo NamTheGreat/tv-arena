@@ -38,7 +38,7 @@ export function LeaderboardTable({
             <select
               value={platformFilter}
               onChange={(e) => setPlatformFilter(e.target.value)}
-              className="appearance-none bg-[#F6F1EA] hover:bg-[#EFE8DD] text-[#3D372E] pl-3 pr-7 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors cursor-pointer outline-none focus:border-brand-terracotta"
+              className="appearance-none bg-white hover:bg-stone-50 text-[#786E63] pl-3 pr-7 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors cursor-pointer outline-none focus:border-brand-terracotta"
               aria-label="Filter by Platform"
             >
               {availablePlatforms.map((p) => (
