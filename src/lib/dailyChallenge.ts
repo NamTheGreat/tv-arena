@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 export const LAUNCH_DATE = '2026-10-15';
 
 export function getTodayDateString(): string {
@@ -12,9 +14,9 @@ export function getDailyChallengeNumber(dateStr?: string): number {
   return Math.max(1, diffDays + 1);
 }
 
-// ponytail: deterministic 30-line Mulberry32 PRNG for Wordle-style daily seed
+// Deterministic 30-line Mulberry32 PRNG retained for deterministic fallbacks
 export function getDailySeed(dateStr?: string): number {
-  const d = dateStr || new Date().toISOString().split('T')[0];
+  const d = dateStr || getTodayDateString();
   let hash = 0;
   for (let i = 0; i < d.length; i++) {
     hash = (hash << 5) - hash + d.charCodeAt(i);
@@ -48,4 +50,76 @@ export function generateDailyMatchupIndices(listLength: number, totalRounds: num
   }
 
   return indices;
+}
+
+export async function fetchDailyDeck(dateStr?: string): Promise<string[] | null> {
+  if (!supabase) return null;
+  const d = dateStr || getTodayDateString();
+  try {
+    const { data, error } = await supabase
+      .from('daily_challenges')
+      .select('series_ids')
+      .eq('date', d)
+      .maybeSingle();
+
+    if (error || !data || !Array.isArray(data.series_ids) || data.series_ids.length < 2) {
+      return null;
+    }
+    return data.series_ids as string[];
+  } catch {
+    return null;
+  }
+}
+
+export async function submitDailyScore(
+  dateStr: string,
+  answers: ('higher' | 'lower')[]
+): Promise<{ success: boolean; score: number; date: string } | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.rpc('submit_daily_score', {
+      p_date: dateStr,
+      p_answers: answers,
+    });
+    if (error || !data) {
+      console.warn('Daily score submission failed or rejected:', error?.message);
+      return null;
+    }
+    return data as { success: boolean; score: number; date: string };
+  } catch (err) {
+    console.warn('Error calling submit_daily_score RPC:', err);
+    return null;
+  }
+}
+
+export interface LeaderboardEntry {
+  username: string;
+  score: number;
+  streak: number;
+  rank: number;
+}
+
+export async function fetchDailyLeaderboard(dateStr?: string): Promise<LeaderboardEntry[]> {
+  if (!supabase) return [];
+  const d = dateStr || getTodayDateString();
+  try {
+    const { data, error } = await supabase.rpc('daily_leaderboard', {
+      p_date: d,
+    });
+    if (error || !data) return [];
+    return data as unknown as LeaderboardEntry[];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchStreakLeaderboard(): Promise<LeaderboardEntry[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase.rpc('streak_leaderboard');
+    if (error || !data) return [];
+    return data as unknown as LeaderboardEntry[];
+  } catch {
+    return [];
+  }
 }

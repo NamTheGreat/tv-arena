@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { SeriesItem } from '../lib/supabase';
 
 export interface ArenaStats {
@@ -45,6 +45,15 @@ export function ArenaContenders({
   onSwapShows,
   arenaStats,
 }: ArenaContendersProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyLink = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
   return (
     <div className="w-full max-w-3xl flex flex-col items-center">
       {/* Search & Contender Selector */}
@@ -203,7 +212,7 @@ export function ArenaContenders({
         </div>
 
         {/* Winner Footer */}
-        <footer className="flex items-center justify-between pt-3 sm:pt-4 border-t border-arena-border/50 text-xs sm:text-sm gap-2">
+        <footer className="flex flex-col sm:flex-row items-start sm:items-center justify-between pt-3 sm:pt-4 border-t border-arena-border/50 text-xs sm:text-sm gap-3">
           <div className="flex items-center space-x-2">
             <span className="flex h-2 w-2 relative">
               <span
@@ -221,19 +230,41 @@ export function ArenaContenders({
               {arenaStats.winner.title} leads
             </p>
           </div>
-          <div className="text-[11px] sm:text-sm font-medium font-tabular text-arena-muted flex items-center">
-            <span className="text-arena-charcoal font-semibold">
-              {arenaStats.diff.toLocaleString()}
-            </span>
-            <span className="ml-1">more</span>
-            <span className="mx-1.5">·</span>
-            <span
-              className={`font-semibold ${
-                arenaStats.leftLeads ? 'text-arena-terracotta' : 'text-arena-sage'
-              }`}
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+            <div className="text-[11px] sm:text-sm font-medium font-tabular text-arena-muted flex items-center">
+              <span className="text-arena-charcoal font-semibold">
+                {arenaStats.diff.toLocaleString()}
+              </span>
+              <span className="ml-1">more</span>
+              <span className="mx-1.5">·</span>
+              <span
+                className={`font-semibold ${
+                  arenaStats.leftLeads ? 'text-arena-terracotta' : 'text-arena-sage'
+                }`}
+              >
+                +{arenaStats.diffPct}%
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-[#FAF6F2] border border-arena-border hover:border-stone-300 text-stone-600 hover:text-stone-900 text-[11px] font-medium transition-all shadow-xs cursor-pointer"
+              title="Copy battle URL to clipboard"
             >
-              +{arenaStats.diffPct}%
-            </span>
+              {copied ? (
+                <>
+                  <span className="text-emerald-600">✓</span>
+                  <span className="text-emerald-700 font-semibold">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5 text-arena-terracotta" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  <span>Copy Link</span>
+                </>
+              )}
+            </button>
           </div>
         </footer>
       </main>

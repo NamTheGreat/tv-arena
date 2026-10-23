@@ -193,5 +193,10 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         );
     }
 
+    // Run daily-deck generation as part of daily sync, idempotent (ON CONFLICT DO NOTHING)
+    if let Err(e) = crate::commands::daily_deck::run_daily_deck(config, None) {
+        eprintln!("⚠️  Failed generating daily deck during sync: {}", e);
+    }
+
     Ok(updated_count)
 }
