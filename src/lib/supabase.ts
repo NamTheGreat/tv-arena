@@ -8,6 +8,8 @@ export type SeriesDailyTelemetryRow = Tables<'series_daily_telemetry'>;
 export interface SeriesItem extends SeriesRow {
   daily_series: number[];
   daily_dates?: string[];
+  is_breakout?: boolean;
+  breakout_reason?: string;
 }
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';

@@ -230,3 +230,88 @@ pub fn update_sync_run(client: &ureq::Agent, config: &Config, run_id: i64, updat
         eprintln!("⚠️  Could not update sync_runs completion: {}", e);
     }
 }
+
+pub struct SignalHistory {
+    pub wiki_views: Vec<i64>,
+    pub reddit_comments: Vec<i64>,
+}
+
+pub fn fetch_series_signal_history(
+    client: &ureq::Agent,
+    config: &Config,
+    show_id: &str,
+    current_date: &str,
+    limit: usize,
+) -> SignalHistory {
+    let url = format!(
+        "{}/rest/v1/series_daily_telemetry?series_id=eq.{}&recorded_date=lt.{}&order=recorded_date.desc&limit={}",
+        config.supabase_url, show_id, current_date, limit
+    );
+    let res = client
+        .get(&url)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .call();
+
+    match res {
+        Ok(r) => {
+            let rows: Vec<serde_json::Value> = r.into_json().unwrap_or_default();
+            let mut wiki_views = Vec::new();
+            let mut reddit_comments = Vec::new();
+            for row in rows.into_iter().rev() {
+                if let Some(w) = row.get("wiki_views").and_then(|v| v.as_i64()) {
+                    wiki_views.push(w);
+                }
+                if let Some(c) = row.get("reddit_comments").and_then(|v| v.as_i64()) {
+                    reddit_comments.push(c);
+                }
+            }
+            SignalHistory {
+                wiki_views,
+                reddit_comments,
+            }
+        }
+        Err(_) => SignalHistory {
+            wiki_views: Vec::new(),
+            reddit_comments: Vec::new(),
+        },
+    }
+}
+
+pub fn record_series_breakout(
+    client: &ureq::Agent,
+    config: &Config,
+    show_id: &str,
+    detected_date: &str,
+    breakout: &crate::engine::anomaly::BreakoutDetection,
+) -> Result<()> {
+    let endpoint = format!(
+        "{}/rest/v1/series_breakouts?on_conflict=series_id,detected_date,signal",
+        config.supabase_url
+    );
+    let payload = json!({
+        "series_id": show_id,
+        "detected_date": detected_date,
+        "signal": breakout.signal,
+        "value": breakout.value,
+        "baseline_mean": breakout.baseline_mean,
+        "baseline_std": breakout.baseline_std,
+        "pct_over_baseline": breakout.pct_over_baseline,
+        "reason": breakout.reason
+    });
+
+    let res = client
+        .post(&endpoint)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .set("Prefer", "resolution=merge-duplicates")
+        .send_json(payload);
+
+    match res {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            eprintln!("⚠️  Could not record breakout for show {}: {}", show_id, e);
+            Err(e.into())
+        }
+    }
+}

@@ -92,6 +92,50 @@ export type Database = {
           }
         ]
       }
+      series_breakouts: {
+        Row: {
+          series_id: string
+          detected_date: string
+          signal: string
+          value: number
+          baseline_mean: number
+          baseline_std: number
+          pct_over_baseline: number
+          reason: string
+          created_at: string | null
+        }
+        Insert: {
+          series_id: string
+          detected_date: string
+          signal: string
+          value: number
+          baseline_mean: number
+          baseline_std: number
+          pct_over_baseline: number
+          reason: string
+          created_at?: string | null
+        }
+        Update: {
+          series_id?: string
+          detected_date?: string
+          signal?: string
+          value?: number
+          baseline_mean?: number
+          baseline_std?: number
+          pct_over_baseline?: number
+          reason?: string
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "series_breakouts_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       sync_runs: {
         Row: {
           id: number

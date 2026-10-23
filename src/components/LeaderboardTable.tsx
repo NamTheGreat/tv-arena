@@ -111,9 +111,19 @@ export function LeaderboardTable({
                     {rank}
                   </div>
                   <div className="min-w-0">
-                    <h2 className="font-serif text-base sm:text-xl text-[#1E1A17] font-medium tracking-tight truncate">
-                      {show.title}
-                    </h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-serif text-base sm:text-xl text-[#1E1A17] font-medium tracking-tight truncate">
+                        {show.title}
+                      </h2>
+                      {show.is_breakout && (
+                        <span
+                          title={show.breakout_reason || 'Recent statistical engagement surge'}
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30 shrink-0 cursor-help"
+                        >
+                          🔥 Breakout
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[11px] sm:text-xs text-[#8A8175] font-medium mt-0.5">{show.network}</p>
                   </div>
                 </div>

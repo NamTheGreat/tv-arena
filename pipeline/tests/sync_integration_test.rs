@@ -105,9 +105,9 @@ fn test_sync_full_run_against_mock_server() {
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), 1);
 
-    // Verify all mock interactions were invoked with expected payloads (series fetched by sync and daily-deck)
+    // Verify all mock interactions were invoked with expected payloads (series fetched by sync and daily-deck, telemetry fetched for prior score and breakout detection)
     series_mock.assert_hits(2);
-    prior_telemetry_mock.assert();
+    prior_telemetry_mock.assert_hits(2);
     patch_mock.assert();
     telemetry_batch_mock.assert();
 }
