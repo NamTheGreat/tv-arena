@@ -9,6 +9,7 @@ import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { AuthModal } from './components/AuthModal';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
 import { MethodologyModal } from './components/MethodologyModal';
+import { LearnToPlayModal } from './components/LearnToPlayModal';
 
 type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess';
 
@@ -16,6 +17,7 @@ export default function App() {
   const { user, signOut } = useAuth();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
+  const [isLearnModalOpen, setIsLearnModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('arena');
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
@@ -202,6 +204,7 @@ export default function App() {
           onOpenAuth={() => setIsAuthModalOpen(true)}
           onSignOut={signOut}
           onOpenMethodology={() => setIsMethodologyOpen(true)}
+          onOpenLearnToPlay={() => setIsLearnModalOpen(true)}
         />
       </div>
 
@@ -295,11 +298,12 @@ export default function App() {
         <TriviaGame
           seriesList={seriesList}
           onViewLeaderboard={() => setActiveTab('leaderboard')}
+          onOpenLearnToPlay={() => setIsLearnModalOpen(true)}
         />
       )}
 
       {/* Shared Trending Battles Footer */}
-      <footer className="mt-8 sm:mt-10 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 text-xs text-arena-muted">
+      <footer className="mt-4 sm:mt-5 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 text-xs text-arena-muted">
         <span className="text-[10px] sm:text-[11px] uppercase tracking-wider font-semibold">Trending Battles:</span>
         <button
           onClick={() => selectTrendingBattle('the-last-of-us', 'fallout')}
@@ -321,10 +325,29 @@ export default function App() {
         </button>
       </footer>
 
+      {/* Minimalist Learn to Play Button positioned below Trending Battles as requested */}
+      <div className="mt-2.5 sm:mt-3 flex items-center justify-center">
+        <button
+          type="button"
+          onClick={() => setIsLearnModalOpen(true)}
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/75 hover:bg-white border border-stone-200/90 hover:border-stone-300 text-stone-600 hover:text-stone-900 text-[11px] sm:text-xs font-medium tracking-wide shadow-sm transition-all duration-150 cursor-pointer hover:shadow"
+        >
+          <svg className="w-3.5 h-3.5 text-arena-terracotta" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-4m0-4h.01" />
+          </svg>
+          <span>Learn to Play</span>
+        </button>
+      </div>
+
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
       <MethodologyModal
         isOpen={isMethodologyOpen}
         onClose={() => setIsMethodologyOpen(false)}
+      />
+      <LearnToPlayModal
+        isOpen={isLearnModalOpen}
+        onClose={() => setIsLearnModalOpen(false)}
       />
     </div>
   );
