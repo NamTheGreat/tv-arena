@@ -4,22 +4,31 @@ use serde_json::json;
 use std::{thread, time::Duration};
 
 use crate::clients::http::create_http_client;
-use crate::clients::reddit::fetch_reddit_stats;
 use crate::clients::supabase::{
     batch_record_daily_telemetry, fetch_prev_reddit_comments, fetch_prior_day_score, fetch_series,
     patch_series_score,
 };
-use crate::clients::wikipedia::fetch_wiki_days;
+use crate::clients::{HttpTelemetryFetcher, TelemetryFetcher};
 use crate::config::Config;
 use crate::engine::scoring::{calculate_delta, compute_buzz_score};
 
 pub fn run_sync(config: &Config) -> Result<()> {
     let client = create_http_client();
-    let shows = fetch_series(&client, config)?;
+    let fetcher = HttpTelemetryFetcher { client: &client };
+    run_sync_with_fetcher(config, &client, &fetcher)?;
+    Ok(())
+}
+
+pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
+    config: &Config,
+    client: &ureq::Agent,
+    fetcher: &F,
+) -> Result<usize> {
+    let shows = fetch_series(client, config)?;
 
     if shows.is_empty() {
         println!("ℹ️  No series found in Supabase. Run 'cargo run -- seed' or execute 'supabase/schema.sql' to initialize show records.");
-        return Ok(());
+        return Ok(0);
     }
 
     // Use yesterday as the end boundary so completed Wikimedia day dumps are guaranteed published
@@ -44,9 +53,8 @@ pub fn run_sync(config: &Config) -> Result<()> {
     for show in &shows {
         let Some(show_id) = &show.id else { continue };
 
-        let wiki_days =
-            fetch_wiki_days(&client, &show.wiki_slug, &start_str, &end_str, &show.title);
-        let reddit_stats = fetch_reddit_stats(&client, &show.reddit_query, &show.title);
+        let wiki_days = fetcher.fetch_wiki_days(&show.wiki_slug, &start_str, &end_str, &show.title);
+        let reddit_stats = fetcher.fetch_reddit_stats(&show.reddit_query, &show.title);
 
         // If both sources failed or throttled, DO NOT store fake 0s. Skip this show and retain previous valid telemetry.
         if wiki_days.is_none() && reddit_stats.is_none() {
@@ -67,7 +75,7 @@ pub fn run_sync(config: &Config) -> Result<()> {
         let (total_comments, total_upvotes) = if let Some(stats) = reddit_stats {
             stats
         } else {
-            let prev_comments = fetch_prev_reddit_comments(&client, config, show_id);
+            let prev_comments = fetch_prev_reddit_comments(client, config, show_id);
             if let Some(c) = prev_comments {
                 eprintln!(
                     "ℹ️  Reddit throttled for '{}'; carrying forward last recorded comments ({})",
@@ -91,7 +99,7 @@ pub fn run_sync(config: &Config) -> Result<()> {
         }
 
         // To handle same-day manual re-runs gracefully, compare against the previous day's telemetry
-        let prior_day_score = fetch_prior_day_score(&client, config, show_id, &recorded_date);
+        let prior_day_score = fetch_prior_day_score(client, config, show_id, &recorded_date);
 
         let delta_pct = if let Some(prior_score) = prior_day_score {
             calculate_delta(new_score, prior_score)
@@ -112,7 +120,7 @@ pub fn run_sync(config: &Config) -> Result<()> {
             0.0
         };
 
-        if let Err(e) = patch_series_score(&client, config, show_id, new_score, delta_pct) {
+        if let Err(e) = patch_series_score(client, config, show_id, new_score, delta_pct) {
             eprintln!("❌ Failed updating series row for '{}': {}", show.title, e);
             fetch_failures += 1;
             continue;
@@ -157,7 +165,7 @@ pub fn run_sync(config: &Config) -> Result<()> {
             }));
         }
 
-        if let Err(e) = batch_record_daily_telemetry(&client, config, telemetry_batch) {
+        if let Err(e) = batch_record_daily_telemetry(client, config, telemetry_batch) {
             eprintln!(
                 "❌ Failed batch recording daily telemetry for '{}': {}",
                 show.title, e
@@ -192,5 +200,5 @@ pub fn run_sync(config: &Config) -> Result<()> {
         eprintln!("⚠️  Failed generating daily deck during sync: {}", e);
     }
 
-    Ok(())
+    Ok(updated_count)
 }

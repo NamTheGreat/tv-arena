@@ -9,7 +9,7 @@ import {
 } from 'react-router-dom';
 import { isSupabaseConfigured, SeriesItem, supabase } from './lib/supabase';
 import { useAuth } from './lib/auth';
-import { ArenaStats } from './components/ArenaContenders';
+import { ArenaStats, computeArenaStats } from './lib/svgMath';
 import { ChartRange } from './components/TrajectoryChart';
 import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
@@ -153,18 +153,7 @@ function ArenaRouteWrapper({ seriesList }: { seriesList: SeriesItem[] }) {
 
   const arenaStats: ArenaStats | null = useMemo(() => {
     if (!leftShow || !rightShow) return null;
-    const scoreA = Number(leftShow.buzz_score || 0);
-    const scoreB = Number(rightShow.buzz_score || 0);
-    const total = Math.max(1, scoreA + scoreB);
-    const leftPct = Number(((scoreA / total) * 100).toFixed(1));
-    const rightPct = Number((100 - leftPct).toFixed(1));
-    const leftLeads = scoreA >= scoreB;
-    const winner = leftLeads ? leftShow : rightShow;
-    const loser = leftLeads ? rightShow : leftShow;
-    const loserScore = Number(loser.buzz_score || 0);
-    const diff = Math.abs(scoreA - scoreB);
-    const diffPct = `${((diff / Math.max(1, loserScore)) * 100).toFixed(1)}%`;
-    return { leftPct, rightPct, leftLeads, winner, diff, diffPct };
+    return computeArenaStats(leftShow, rightShow);
   }, [leftShow, rightShow]);
 
   if (!leftShow || !rightShow || !arenaStats) {
@@ -381,6 +370,7 @@ export default function App() {
     }
     loadFromSupabase();
   }, []);
+
 
   // Available platforms and genres dynamically derived from dataset
   const availablePlatforms = useMemo(() => {
