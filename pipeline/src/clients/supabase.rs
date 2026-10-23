@@ -315,4 +315,3 @@ pub fn record_series_breakout(
         }
     }
 }
-
