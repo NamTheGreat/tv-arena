@@ -51,7 +51,7 @@ pub fn run_daily_deck(config: &Config, target_date: Option<String>) -> Result<()
     }
 
     // Sort shows by buzz score to allow balanced tier distribution
-    shows.sort_by_key(|s| s.viewers_premiere_28d);
+    shows.sort_by_key(|s| s.buzz_score);
 
     let seed = date_to_seed(&date_str);
     let mut prng = SimplePrng::new(seed);

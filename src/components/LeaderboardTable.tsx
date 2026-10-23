@@ -38,7 +38,7 @@ export function LeaderboardTable({
             <select
               value={platformFilter}
               onChange={(e) => setPlatformFilter(e.target.value)}
-              className="appearance-none bg-[#F6F1EA] hover:bg-[#EFE8DD] text-[#3D372E] pl-3 pr-7 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors cursor-pointer outline-none focus:border-brand-terracotta"
+              className="appearance-none bg-white hover:bg-stone-50 text-[#786E63] pl-3 pr-7 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors cursor-pointer outline-none focus:border-brand-terracotta"
               aria-label="Filter by Platform"
             >
               {availablePlatforms.map((p) => (
@@ -79,7 +79,7 @@ export function LeaderboardTable({
       <div className="mt-3 sm:mt-4 divide-y divide-[#F7F3ED]/75">
         {rankedShows.map((show, idx) => {
           const rank = idx + 1;
-          const widthPct = Math.round((show.viewers_premiere_28d / maxLeaderboardViewers) * 100);
+          const widthPct = Math.round((show.buzz_score / maxLeaderboardViewers) * 100);
           const isSteady = Math.abs(show.delta_pct) < 0.5;
           const isUp = show.delta_pct > 0;
 
@@ -120,7 +120,7 @@ export function LeaderboardTable({
 
                 <div className="text-right shrink-0 font-tabular">
                   <div className="font-serif text-base sm:text-xl font-medium text-[#1E1A17]">
-                    {show.viewers_premiere_28d.toLocaleString()}
+                    {show.buzz_score.toLocaleString()}
                   </div>
                   {isSteady ? (
                     <div className="text-[10px] sm:text-xs font-medium text-[#A3998D] mt-0.5">

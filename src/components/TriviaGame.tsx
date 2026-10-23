@@ -22,9 +22,15 @@ interface TriviaGameProps {
   seriesList: SeriesItem[];
   onViewLeaderboard?: () => void;
   onOpenAuth?: () => void;
+  onOpenLearnToPlay?: () => void;
 }
 
-export function TriviaGame({ seriesList, onViewLeaderboard, onOpenAuth }: TriviaGameProps) {
+export function TriviaGame({
+  seriesList,
+  onViewLeaderboard,
+  onOpenAuth,
+  onOpenLearnToPlay,
+}: TriviaGameProps) {
   const { user } = useAuth();
   const [gameMode, setGameMode] = useState<GameMode>('endless');
   const [deckFilter, setDeckFilter] = useState<DeckFilter>('all');
@@ -183,8 +189,8 @@ export function TriviaGame({ seriesList, onViewLeaderboard, onOpenAuth }: Trivia
   // Current shows
   const knownShow = activeDeck[knownIdx % Math.max(1, activeDeck.length)] || null;
   const challengerShow = activeDeck[challengerIdx % Math.max(1, activeDeck.length)] || null;
-  const knownScore = knownShow?.viewers_premiere_28d || 0;
-  const challengerScore = challengerShow?.viewers_premiere_28d || 0;
+  const knownScore = knownShow?.buzz_score || 0;
+  const challengerScore = challengerShow?.buzz_score || 0;
 
   // Nailbiter difficulty multiplier (within 8% gap)
   const isNailbiter = useMemo(() => {
@@ -325,7 +331,7 @@ export function TriviaGame({ seriesList, onViewLeaderboard, onOpenAuth }: Trivia
   };
 
   return (
-    <main className="w-full max-w-3xl mx-auto py-2 sm:py-4 overflow-hidden">
+    <main className="w-full max-w-3xl mx-auto pt-2 pb-1 sm:pt-4 sm:pb-2 overflow-hidden">
       {/* Mode & Deck Filter Selector Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-5 sm:mb-6">
         {/* Game Mode Pill */}
@@ -708,7 +714,7 @@ export function TriviaGame({ seriesList, onViewLeaderboard, onOpenAuth }: Trivia
             )}
           </div>
 
-          <div className="mt-4 flex items-center justify-center">
+          <div className="mt-2.5 flex items-center justify-center">
             <button
               type="button"
               onClick={advanceToNextRound}

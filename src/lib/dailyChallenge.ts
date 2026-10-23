@@ -107,7 +107,7 @@ export async function fetchDailyLeaderboard(dateStr?: string): Promise<Leaderboa
       p_date: d,
     });
     if (error || !data) return [];
-    return data as LeaderboardEntry[];
+    return data as unknown as LeaderboardEntry[];
   } catch {
     return [];
   }
@@ -118,7 +118,7 @@ export async function fetchStreakLeaderboard(): Promise<LeaderboardEntry[]> {
   try {
     const { data, error } = await supabase.rpc('streak_leaderboard');
     if (error || !data) return [];
-    return data as LeaderboardEntry[];
+    return data as unknown as LeaderboardEntry[];
   } catch {
     return [];
   }
