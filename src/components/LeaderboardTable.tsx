@@ -79,7 +79,7 @@ export function LeaderboardTable({
       <div className="mt-3 sm:mt-4 divide-y divide-[#F7F3ED]/75">
         {rankedShows.map((show, idx) => {
           const rank = idx + 1;
-          const widthPct = Math.round((show.viewers_premiere_28d / maxLeaderboardViewers) * 100);
+          const widthPct = Math.round((show.buzz_score / maxLeaderboardViewers) * 100);
           const isSteady = Math.abs(show.delta_pct) < 0.5;
           const isUp = show.delta_pct > 0;
 
@@ -120,7 +120,7 @@ export function LeaderboardTable({
 
                 <div className="text-right shrink-0 font-tabular">
                   <div className="font-serif text-base sm:text-xl font-medium text-[#1E1A17]">
-                    {show.viewers_premiere_28d.toLocaleString()}
+                    {show.buzz_score.toLocaleString()}
                   </div>
                   {isSteady ? (
                     <div className="text-[10px] sm:text-xs font-medium text-[#A3998D] mt-0.5">
