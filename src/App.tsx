@@ -20,6 +20,9 @@ const AuthModal = React.lazy(() =>
 const MethodologyModal = React.lazy(() =>
   import('./components/MethodologyModal').then((m) => ({ default: m.MethodologyModal }))
 );
+const LearnToPlayModal = React.lazy(() =>
+  import('./components/LearnToPlayModal').then((m) => ({ default: m.LearnToPlayModal }))
+);
 
 // Route components code-split with React.lazy
 const LeaderboardTable = React.lazy(() =>
@@ -83,8 +86,8 @@ function LeaderboardRouteWrapper({
       .filter((s) => (platformFilter === 'ALL' ? true : s.network === platformFilter))
       .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group === genreFilter))
       .sort((a, b) => {
-        const scoreA = (a as any).buzz_score ?? (a as any).viewers_premiere_28d ?? 0;
-        const scoreB = (b as any).buzz_score ?? (b as any).viewers_premiere_28d ?? 0;
+        const scoreA = Number(a.buzz_score || 0);
+        const scoreB = Number(b.buzz_score || 0);
         return scoreB - scoreA;
       });
   }, [seriesList, platformFilter, genreFilter]);
@@ -92,7 +95,7 @@ function LeaderboardRouteWrapper({
   const maxScore = useMemo(() => {
     const top = rankedShows[0];
     if (!top) return 1;
-    return (top as any).buzz_score ?? (top as any).viewers_premiere_28d ?? 1;
+    return Number(top.buzz_score || 1);
   }, [rankedShows]);
 
   return (
@@ -150,21 +153,23 @@ function ArenaRouteWrapper({ seriesList }: { seriesList: SeriesItem[] }) {
 
   const arenaStats: ArenaStats | null = useMemo(() => {
     if (!leftShow || !rightShow) return null;
-    const scoreA = (leftShow as any).buzz_score ?? (leftShow as any).viewers_premiere_28d ?? 0;
-    const scoreB = (rightShow as any).buzz_score ?? (rightShow as any).viewers_premiere_28d ?? 0;
+    const scoreA = Number(leftShow.buzz_score || 0);
+    const scoreB = Number(rightShow.buzz_score || 0);
     const total = Math.max(1, scoreA + scoreB);
     const leftPct = Number(((scoreA / total) * 100).toFixed(1));
     const rightPct = Number((100 - leftPct).toFixed(1));
     const leftLeads = scoreA >= scoreB;
     const winner = leftLeads ? leftShow : rightShow;
     const loser = leftLeads ? rightShow : leftShow;
-    const loserScore = (loser as any).buzz_score ?? (loser as any).viewers_premiere_28d ?? 0;
+    const loserScore = Number(loser.buzz_score || 0);
     const diff = Math.abs(scoreA - scoreB);
-    const diffPct = ((diff / Math.max(1, loserScore)) * 100).toFixed(1);
+    const diffPct = `${((diff / Math.max(1, loserScore)) * 100).toFixed(1)}%`;
     return { leftPct, rightPct, leftLeads, winner, diff, diffPct };
   }, [leftShow, rightShow]);
 
-  if (!leftShow || !rightShow || !arenaStats) return null;
+  if (!leftShow || !rightShow || !arenaStats) {
+    return <RouteLoadingFallback />;
+  }
 
   return (
     <ArenaContenders
@@ -180,20 +185,24 @@ function ArenaRouteWrapper({ seriesList }: { seriesList: SeriesItem[] }) {
       setLeftDropdownOpen={setLeftDropdownOpen}
       setRightDropdownOpen={setRightDropdownOpen}
       onSelectLeftShow={(show) => {
+        setLeftSearch(show.title);
         navigate(`/arena/${show.slug}/${rightShow.slug}`);
       }}
       onSelectRightShow={(show) => {
+        setRightSearch(show.title);
         navigate(`/arena/${leftShow.slug}/${show.slug}`);
       }}
       onSwapShows={() => {
-        navigate(`/arena/${rightShow.slug}/${leftShow.slug}`, { replace: true });
+        setLeftSearch(rightShow.title);
+        setRightSearch(leftShow.title);
+        navigate(`/arena/${rightShow.slug}/${leftShow.slug}`);
       }}
       arenaStats={arenaStats}
     />
   );
 }
 
-// Wrapper for Charts Route (/charts, /charts/:slug)
+// Wrapper for Charts Route (/charts, /charts/:slug) with ?range= URL state
 function ChartsRouteWrapper({ seriesList }: { seriesList: SeriesItem[] }) {
   const { slug } = useParams<{ slug?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -201,17 +210,13 @@ function ChartsRouteWrapper({ seriesList }: { seriesList: SeriesItem[] }) {
   const rangeParam = searchParams.get('range') as ChartRange | null;
   const validRanges: ChartRange[] = ['7D', '30D', '90D', 'All-Time'];
   const chartRange: ChartRange =
-    rangeParam && validRanges.includes(rangeParam) ? rangeParam : '7D';
+    rangeParam && validRanges.includes(rangeParam) ? rangeParam : '30D';
 
   const setChartRange = (range: ChartRange) => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        if (range === '7D') {
-          next.delete('range');
-        } else {
-          next.set('range', range);
-        }
+        next.set('range', range);
         return next;
       },
       { replace: true }
@@ -222,10 +227,10 @@ function ChartsRouteWrapper({ seriesList }: { seriesList: SeriesItem[] }) {
     if (slug) {
       const show = seriesList.find((s) => s.slug === slug);
       document.title = show
-        ? `${show.title} Trajectory — TV Arena`
-        : 'TV Arena — Trajectory Charts';
+        ? `${show.title} — Engagement Trajectory | TV Arena`
+        : 'TV Arena — Multi-Series Trajectory';
     } else {
-      document.title = 'TV Arena — Viewership Trajectory Charts';
+      document.title = 'TV Arena — Multi-Series Trajectory';
     }
   }, [slug, seriesList]);
 
@@ -243,9 +248,11 @@ function ChartsRouteWrapper({ seriesList }: { seriesList: SeriesItem[] }) {
 function GuessRouteWrapper({
   seriesList,
   isDaily = false,
+  onOpenLearnToPlay,
 }: {
   seriesList: SeriesItem[];
   isDaily?: boolean;
+  onOpenLearnToPlay: () => void;
 }) {
   const navigate = useNavigate();
 
@@ -259,6 +266,7 @@ function GuessRouteWrapper({
     <TriviaGame
       seriesList={seriesList}
       onViewLeaderboard={() => navigate('/')}
+      onOpenLearnToPlay={onOpenLearnToPlay}
     />
   );
 }
@@ -270,6 +278,7 @@ export default function App() {
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
+  const [isLearnModalOpen, setIsLearnModalOpen] = useState(false);
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -301,7 +310,7 @@ export default function App() {
       const { data, error } = await supabase
         .from('series')
         .select('*')
-        .order('viewers_premiere_28d', { ascending: false });
+        .order('buzz_score', { ascending: false });
 
       if (error) {
         setDbError(error.message);
@@ -317,7 +326,7 @@ export default function App() {
 
         const { data: telemetryData } = await supabase
           .from('series_daily_telemetry')
-          .select('series_id, daily_viewers, recorded_date')
+          .select('series_id, daily_score, recorded_date')
           .in('series_id', chartedIds)
           .gte('recorded_date', startDateStr)
           .order('recorded_date', { ascending: true });
@@ -327,7 +336,7 @@ export default function App() {
         if (telemetryData) {
           for (const row of telemetryData) {
             const arr = telemetryValuesMap.get(row.series_id) || [];
-            arr.push(Number(row.daily_viewers));
+            arr.push(Number(row.daily_score));
             telemetryValuesMap.set(row.series_id, arr);
 
             const dateArr = telemetryDatesMap.get(row.series_id) || [];
@@ -338,10 +347,9 @@ export default function App() {
 
         const mapped: SeriesItem[] = data.map((row: any) => ({
           ...row,
-          viewers_premiere_28d: Number(row.viewers_premiere_28d || 0),
-          viewers_finale: Number(row.viewers_finale || 0),
+          buzz_score: Number(row.buzz_score || 0),
           delta_pct: Number(row.delta_pct || 0),
-          daily_series: telemetryValuesMap.get(row.id) || [],
+          daily_series: telemetryValuesMap.get(row.id) || [Number(row.buzz_score || 0)],
           daily_dates: telemetryDatesMap.get(row.id) || [],
         }));
 
@@ -358,7 +366,7 @@ export default function App() {
     for (const s of seriesList) {
       if (s.network) set.add(s.network);
     }
-    return ['ALL', ...Array.from(set)];
+    return ['ALL', ...Array.from(set).sort()];
   }, [seriesList]);
 
   const availableGenres = useMemo(() => {
@@ -366,51 +374,61 @@ export default function App() {
     for (const s of seriesList) {
       if (s.genre_group) set.add(s.genre_group);
     }
-    return ['ALL', ...Array.from(set)];
+    return ['ALL', ...Array.from(set).sort()];
   }, [seriesList]);
 
-  if (!isSupabaseConfigured) {
-    return <DatabaseStatusCard type="unconfigured" />;
+  // If Supabase is unconfigured or returns an error, render the clear setup card
+  if (!isSupabaseConfigured || dbError) {
+    return (
+      <DatabaseStatusCard
+        type={!isSupabaseConfigured ? 'unconfigured' : 'error'}
+        errorMessage={dbError}
+      />
+    );
   }
 
-  if (isLoading) {
-    return <DatabaseStatusCard type="loading" />;
+  // Loading state while initially fetching live database rows
+  if (isLoading && seriesList.length === 0) {
+    return (
+      <div className="min-h-screen bg-arena-sand flex flex-col items-center justify-center p-4">
+        <header className="w-full text-center mb-6">
+          <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+            TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
+          </h1>
+          <p className="text-[10px] sm:text-xs uppercase tracking-[0.22em] text-arena-muted font-semibold mt-1">
+            Global TV Engagement Intelligence
+          </p>
+        </header>
+        <div className="inline-flex items-center gap-3 px-5 py-3 rounded-full bg-white/80 border border-arena-border shadow-sm text-arena-muted text-xs font-medium animate-pulse">
+          <div className="w-4 h-4 rounded-full border-2 border-arena-border border-t-arena-terracotta animate-spin" />
+          <span>Synchronizing live television metrics...</span>
+        </div>
+      </div>
+    );
   }
 
-  if (dbError) {
-    return <DatabaseStatusCard type="error" errorMessage={dbError} />;
-  }
-
-  if (seriesList.length === 0) {
-    return <DatabaseStatusCard type="empty" />;
-  }
-
-  const navItems: { label: string; tabKey: TabKey; path: string }[] = [
-    { label: 'leaderboard', tabKey: 'leaderboard', path: '/' },
-    { label: 'arena', tabKey: 'arena', path: '/arena' },
-    { label: 'charts', tabKey: 'charts', path: '/charts' },
-    { label: 'guess', tabKey: 'guess', path: '/guess' },
+  const navItems = [
+    { label: 'Leaderboard', tabKey: 'leaderboard' as TabKey, path: '/' },
+    { label: 'Contenders', tabKey: 'arena' as TabKey, path: '/arena' },
+    { label: 'Charts', tabKey: 'charts' as TabKey, path: '/charts' },
+    { label: 'Guess', tabKey: 'guess' as TabKey, path: '/guess' },
   ];
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal relative">
-      {/* Top Profile Icon & Dropdown Navigation */}
-      <div
-        className="absolute top-6 right-4 sm:top-8 sm:right-8 md:top-10 md:right-12 z-30"
-        data-purpose="user-navigation"
-      >
+    <div className="min-h-screen bg-arena-sand flex flex-col items-center justify-start py-4 sm:py-10 px-3 sm:px-6 text-arena-charcoal">
+      {/* Top Floating User Profile Header */}
+      <div className="w-full max-w-4xl flex items-center justify-end mb-3 sm:mb-4 px-2">
         <UserProfileDropdown
           user={user}
           bestStreak={bestStreak}
           onSelectTab={(tab) => {
             if (tab === 'leaderboard') navigate('/');
-            else if (tab === 'arena') navigate('/arena');
-            else if (tab === 'charts') navigate('/charts');
-            else if (tab === 'guess') navigate('/guess');
+            else navigate(`/${tab}`);
           }}
           onOpenAuth={() => setIsAuthModalOpen(true)}
           onSignOut={signOut}
           onOpenMethodology={() => setIsMethodologyOpen(true)}
+          onOpenLearnToPlay={() => setIsLearnModalOpen(true)}
         />
       </div>
 
@@ -481,11 +499,23 @@ export default function App() {
           />
           <Route
             path="/guess"
-            element={<GuessRouteWrapper seriesList={seriesList} isDaily={false} />}
+            element={
+              <GuessRouteWrapper
+                seriesList={seriesList}
+                isDaily={false}
+                onOpenLearnToPlay={() => setIsLearnModalOpen(true)}
+              />
+            }
           />
           <Route
             path="/guess/daily"
-            element={<GuessRouteWrapper seriesList={seriesList} isDaily={true} />}
+            element={
+              <GuessRouteWrapper
+                seriesList={seriesList}
+                isDaily={true}
+                onOpenLearnToPlay={() => setIsLearnModalOpen(true)}
+              />
+            }
           />
           <Route
             path="/show/:slug"
@@ -520,6 +550,21 @@ export default function App() {
         </button>
       </footer>
 
+      {/* Minimalist Learn to Play Button positioned below Trending Battles as requested */}
+      <div className="mt-2.5 sm:mt-3 flex items-center justify-center">
+        <button
+          type="button"
+          onClick={() => setIsLearnModalOpen(true)}
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/75 hover:bg-white border border-stone-200/90 hover:border-stone-300 text-stone-600 hover:text-stone-900 text-[11px] sm:text-xs font-medium tracking-wide shadow-sm transition-all duration-150 cursor-pointer hover:shadow"
+        >
+          <svg className="w-3.5 h-3.5 text-arena-terracotta" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-4m0-4h.01" />
+          </svg>
+          <span>Learn to Play</span>
+        </button>
+      </div>
+
       <Suspense fallback={null}>
         {isAuthModalOpen && (
           <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
@@ -528,6 +573,12 @@ export default function App() {
           <MethodologyModal
             isOpen={isMethodologyOpen}
             onClose={() => setIsMethodologyOpen(false)}
+          />
+        )}
+        {isLearnModalOpen && (
+          <LearnToPlayModal
+            isOpen={isLearnModalOpen}
+            onClose={() => setIsLearnModalOpen(false)}
           />
         )}
       </Suspense>

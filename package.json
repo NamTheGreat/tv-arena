@@ -6,15 +6,18 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "types:gen": "supabase gen types typescript --local > src/lib/database.types.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "~6.30.5"
+    "react-router-dom": "~6.30.5",
+    "workers-og": "^0.0.27"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261022.1",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/forms": "^0.5.9",
     "@types/react": "^19.0.0",

@@ -89,7 +89,7 @@ pub fn run_seed(csv_path: &str, limit: usize, config: &Config) -> Result<()> {
                 .to_string()
         };
 
-        // Note: We omit viewers_premiere_28d and delta_pct so re-running seed does NOT overwrite live scores
+        // Note: We omit buzz_score and delta_pct so re-running seed does NOT overwrite live scores
         let payload = SeedSeriesPayload {
             tmdb_id: row.id,
             slug,
