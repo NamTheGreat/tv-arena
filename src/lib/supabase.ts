@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Database, Tables } from './database.types';
 
 export interface SeriesEvent {
   id?: number;
@@ -9,17 +10,11 @@ export interface SeriesEvent {
   source?: string;
 }
 
-export interface SeriesItem {
-  id: string;
-  slug: string;
-  title: string;
-  network: string;
-  genre_group: string;
-  release_years: string;
-  chart_color: string;
-  viewers_premiere_28d: number;
-  viewers_finale: number;
-  delta_pct: number;
+export type SeriesRow = Tables<'series'>;
+export type SeriesDailyTelemetryRow = Tables<'series_daily_telemetry'>;
+
+// Thin app-level type for derived frontend fields
+export interface SeriesItem extends SeriesRow {
   daily_series: number[];
   daily_dates?: string[];
   events?: SeriesEvent[];
@@ -31,5 +26,5 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
+  ? createClient<Database>(supabaseUrl, supabaseAnonKey)
   : null;
