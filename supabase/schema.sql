@@ -296,8 +296,8 @@ BEGIN
     v_show_b_id := v_deck[i + 2];
     v_guess := p_answers->>i;
 
-    SELECT COALESCE(viewers_premiere_28d, 0) INTO v_score_a FROM series WHERE id = v_show_a_id;
-    SELECT COALESCE(viewers_premiere_28d, 0) INTO v_score_b FROM series WHERE id = v_show_b_id;
+    SELECT COALESCE(buzz_score, 0) INTO v_score_a FROM series WHERE id = v_show_a_id;
+    SELECT COALESCE(buzz_score, 0) INTO v_score_b FROM series WHERE id = v_show_b_id;
 
     v_is_higher := v_score_b >= v_score_a;
     IF (v_guess = 'higher' AND v_is_higher) OR (v_guess = 'lower' AND NOT v_is_higher) THEN
@@ -374,3 +374,24 @@ $$;
 
 GRANT EXECUTE ON FUNCTION daily_leaderboard(DATE) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION streak_leaderboard() TO anon, authenticated;
+
+-- Operational Health and sync_runs Table
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id BIGSERIAL PRIMARY KEY,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  status TEXT NOT NULL CHECK (status IN ('running', 'success', 'partial', 'failed')),
+  shows_total INT DEFAULT 0,
+  shows_updated INT DEFAULT 0,
+  shows_failed INT DEFAULT 0,
+  wiki_failures INT DEFAULT 0,
+  reddit_failures INT DEFAULT 0,
+  error_log TEXT,
+  duration_ms INT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON sync_runs(started_at DESC);
+
+ALTER TABLE sync_runs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read on sync_runs" ON sync_runs;
+CREATE POLICY "Allow public read on sync_runs" ON sync_runs FOR SELECT USING (true);

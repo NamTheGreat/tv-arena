@@ -268,6 +268,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
   const [isLearnModalOpen, setIsLearnModalOpen] = useState(false);
+  const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -582,7 +583,32 @@ export default function App() {
         >
           Severance vs Silo
         </button>
+
+        <span className="mx-1 text-arena-border">|</span>
+
+        <button
+          type="button"
+          onClick={() => setIsHealthModalOpen(true)}
+          className="px-2.5 sm:px-3 py-1 bg-white/70 hover:bg-white rounded-full border border-arena-border transition-colors text-[11px] sm:text-xs flex items-center gap-1.5 cursor-pointer font-medium text-stone-700"
+          title="Inspect Operational Pipeline Health"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Pipeline Health</span>
+        </button>
       </footer>
+
+      {isHealthModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/30 backdrop-blur-sm overflow-y-auto"
+          onClick={() => setIsHealthModalOpen(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-xl">
+            <DatabaseStatusCard type="healthy" onClose={() => setIsHealthModalOpen(false)} />
+          </div>
+        </div>
+      )}
 
       {/* Minimalist Learn to Play Button positioned below Trending Battles as requested */}
       <div className="mt-2.5 sm:mt-3 flex items-center justify-center">
