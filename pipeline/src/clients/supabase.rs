@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use serde_json::json;
 
@@ -134,4 +134,36 @@ pub fn batch_record_daily_telemetry(
         .set("Prefer", "resolution=merge-duplicates")
         .send_json(serde_json::Value::Array(telemetry_batch))?;
     Ok(())
+}
+
+pub fn insert_daily_challenge(
+    client: &ureq::Agent,
+    config: &Config,
+    date: &str,
+    series_ids: &[String],
+) -> Result<()> {
+    let endpoint = format!(
+        "{}/rest/v1/daily_challenges?on_conflict=date",
+        config.supabase_url
+    );
+    let payload = json!({
+        "date": date,
+        "series_ids": series_ids
+    });
+
+    let res = client
+        .post(&endpoint)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .set("Prefer", "resolution=ignore-duplicates")
+        .send_json(payload);
+
+    match res {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(code, res)) => {
+            let body = res.into_string().unwrap_or_default();
+            bail!("Supabase daily_challenges insert error {}: {}", code, body)
+        }
+        Err(e) => Err(e.into()),
+    }
 }
