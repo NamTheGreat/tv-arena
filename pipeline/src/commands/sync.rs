@@ -1,12 +1,12 @@
 use anyhow::{bail, Result};
 use chrono::{Duration as ChronoDuration, Utc};
 use serde_json::json;
-use std::{thread, time::Duration};
+use std::{thread, time::Duration, time::Instant};
 
 use crate::clients::http::create_http_client;
 use crate::clients::supabase::{
-    batch_record_daily_telemetry, fetch_prev_reddit_comments, fetch_prior_day_score, fetch_series,
-    patch_series_score,
+    batch_record_daily_telemetry, create_sync_run, fetch_prev_reddit_comments,
+    fetch_prior_day_score, fetch_series, patch_series_score, update_sync_run, SyncRunUpdate,
 };
 use crate::clients::{HttpTelemetryFetcher, TelemetryFetcher};
 use crate::config::Config;
@@ -24,12 +24,15 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
     client: &ureq::Agent,
     fetcher: &F,
 ) -> Result<usize> {
+    let start_time = Instant::now();
     let shows = fetch_series(client, config)?;
 
     if shows.is_empty() {
         println!("ℹ️  No series found in Supabase. Run 'cargo run -- seed' or execute 'supabase/schema.sql' to initialize show records.");
         return Ok(0);
     }
+
+    let run_id = create_sync_run(client, config, shows.len());
 
     // Use yesterday as the end boundary so completed Wikimedia day dumps are guaranteed published
     let now = Utc::now();
@@ -53,6 +56,9 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
 
     let mut fetch_failures = 0;
     let mut updated_count = 0;
+    let mut wiki_failures = 0;
+    let mut reddit_failures = 0;
+    let mut error_log = String::new();
 
     for show in &shows {
         let Some(show_id) = &show.id else { continue };
@@ -60,12 +66,21 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         let wiki_days = fetcher.fetch_wiki_days(&show.wiki_slug, &start_str, &end_str, &show.title);
         let reddit_stats = fetcher.fetch_reddit_stats(&show.reddit_query, &show.title);
 
+        if wiki_days.is_none() {
+            wiki_failures += 1;
+        }
+        if reddit_stats.is_none() {
+            reddit_failures += 1;
+        }
+
         // If both sources failed or throttled, DO NOT store fake 0s. Skip this show and retain previous valid telemetry.
         if wiki_days.is_none() && reddit_stats.is_none() {
-            eprintln!(
-                "❌ Both Wikipedia and Reddit failed for '{}'. Skipping to preserve historical scores.",
-                show.title
-            );
+            let msg = format!("Both Wikipedia and Reddit failed for '{}'", show.title);
+            eprintln!("❌ {}. Skipping to preserve historical scores.", msg);
+            if !error_log.is_empty() {
+                error_log.push_str("; ");
+            }
+            error_log.push_str(&msg);
             fetch_failures += 1;
             continue;
         }
@@ -189,6 +204,32 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         shows.len(),
         fetch_failures
     );
+
+    let duration_ms = start_time.elapsed().as_millis() as i64;
+    let status = if fetch_failures == 0 && updated_count == shows.len() {
+        "success"
+    } else if updated_count > 0 {
+        "partial"
+    } else {
+        "failed"
+    };
+
+    if let Some(id) = run_id {
+        let update = SyncRunUpdate {
+            status,
+            shows_updated: updated_count,
+            shows_failed: fetch_failures,
+            wiki_failures,
+            reddit_failures,
+            error_log: if error_log.is_empty() {
+                None
+            } else {
+                Some(&error_log)
+            },
+            duration_ms,
+        };
+        update_sync_run(client, config, id, &update);
+    }
 
     // Fail the run if over 40% of shows failed to sync so GitHub Actions alerts accurately
     if !shows.is_empty() && fetch_failures > (shows.len() * 4 / 10) {

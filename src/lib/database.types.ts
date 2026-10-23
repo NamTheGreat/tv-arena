@@ -130,6 +130,48 @@ export type Database = {
           }
         ]
       }
+      sync_runs: {
+        Row: {
+          id: number
+          started_at: string
+          completed_at: string | null
+          status: string
+          shows_total: number | null
+          shows_updated: number | null
+          shows_failed: number | null
+          wiki_failures: number | null
+          reddit_failures: number | null
+          error_log: string | null
+          duration_ms: number | null
+        }
+        Insert: {
+          id?: number
+          started_at?: string
+          completed_at?: string | null
+          status: string
+          shows_total?: number | null
+          shows_updated?: number | null
+          shows_failed?: number | null
+          wiki_failures?: number | null
+          reddit_failures?: number | null
+          error_log?: string | null
+          duration_ms?: number | null
+        }
+        Update: {
+          id?: number
+          started_at?: string
+          completed_at?: string | null
+          status?: string
+          shows_total?: number | null
+          shows_updated?: number | null
+          shows_failed?: number | null
+          wiki_failures?: number | null
+          reddit_failures?: number | null
+          error_log?: string | null
+          duration_ms?: number | null
+        }
+        Relationships: []
+      }
       score_weights: {
         Row: {
           id: number

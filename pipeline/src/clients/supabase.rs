@@ -168,6 +168,69 @@ pub fn insert_daily_challenge(
     }
 }
 
+pub fn create_sync_run(client: &ureq::Agent, config: &Config, total_shows: usize) -> Option<i64> {
+    let endpoint = format!("{}/rest/v1/sync_runs", config.supabase_url);
+    let payload = json!({
+        "status": "running",
+        "shows_total": total_shows,
+        "started_at": Utc::now().to_rfc3339()
+    });
+
+    let res = client
+        .post(&endpoint)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .set("Prefer", "return=representation")
+        .send_json(payload);
+
+    match res {
+        Ok(r) => {
+            let rows: Vec<serde_json::Value> = r.into_json().unwrap_or_default();
+            rows.first()
+                .and_then(|row| row.get("id").and_then(|id| id.as_i64()))
+        }
+        Err(e) => {
+            eprintln!("⚠️  Could not record sync_runs start: {}", e);
+            None
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SyncRunUpdate<'a> {
+    pub status: &'a str,
+    pub shows_updated: usize,
+    pub shows_failed: usize,
+    pub wiki_failures: usize,
+    pub reddit_failures: usize,
+    pub error_log: Option<&'a str>,
+    pub duration_ms: i64,
+}
+
+pub fn update_sync_run(client: &ureq::Agent, config: &Config, run_id: i64, update: &SyncRunUpdate) {
+    let endpoint = format!("{}/rest/v1/sync_runs?id=eq.{}", config.supabase_url, run_id);
+    let payload = json!({
+        "status": update.status,
+        "completed_at": Utc::now().to_rfc3339(),
+        "shows_updated": update.shows_updated,
+        "shows_failed": update.shows_failed,
+        "wiki_failures": update.wiki_failures,
+        "reddit_failures": update.reddit_failures,
+        "error_log": update.error_log,
+        "duration_ms": update.duration_ms
+    });
+
+    let res = client
+        .patch(&endpoint)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .send_json(payload);
+
+    if let Err(e) = res {
+        eprintln!("⚠️  Could not update sync_runs completion: {}", e);
+    }
+}
+
 pub fn batch_record_series_events(
     client: &ureq::Agent,
     config: &Config,
