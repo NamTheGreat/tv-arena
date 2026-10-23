@@ -23,6 +23,11 @@ enum Commands {
     },
     /// Nightly: Fetch 7d Wikipedia + Reddit telemetry and update Supabase scores
     Sync,
+    /// Pick 11 shows for daily challenge deck and insert into Supabase
+    DailyDeck {
+        #[arg(short, long)]
+        date: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -32,6 +37,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Seed { csv, limit } => commands::seed::run_seed(&csv, limit, &config)?,
         Commands::Sync => commands::sync::run_sync(&config)?,
+        Commands::DailyDeck { date } => commands::daily_deck::run_daily_deck(&config, date)?,
     }
 
     Ok(())
