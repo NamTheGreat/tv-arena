@@ -15,12 +15,14 @@ interface TrajectoryChartProps {
   seriesList: SeriesItem[];
   chartRange: ChartRange;
   setChartRange: (range: ChartRange) => void;
+  focusedSlug?: string;
 }
 
 export function TrajectoryChart({
   seriesList,
   chartRange,
   setChartRange,
+  focusedSlug,
 }: TrajectoryChartProps) {
   // Dynamic X-Axis labels responding to chosen time range with real calendar dates
   const xAxisLabels = useMemo(() => {
@@ -85,7 +87,16 @@ export function TrajectoryChart({
   }, [seriesList, chartRange]);
 
   // Dynamic Chart Scale & Y-Axis Ticks
-  const chartSeries = useMemo(() => seriesList.slice(0, 6), [seriesList]);
+  const chartSeries = useMemo(() => {
+    if (focusedSlug) {
+      const focused = seriesList.find((s) => s.slug === focusedSlug);
+      if (focused) {
+        const others = seriesList.filter((s) => s.slug !== focusedSlug);
+        return [focused, ...others.slice(0, 5)];
+      }
+    }
+    return seriesList.slice(0, 6);
+  }, [seriesList, focusedSlug]);
   const { maxChartScale, chartYTicks } = useMemo(() => {
     let maxVal = 0;
     for (const s of chartSeries) {

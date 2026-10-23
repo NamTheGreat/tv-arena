@@ -130,12 +130,109 @@ export type Database = {
           }
         ]
       }
+      daily_challenges: {
+        Row: {
+          date: string
+          series_ids: string[]
+          created_at: string | null
+        }
+        Insert: {
+          date: string
+          series_ids: string[]
+          created_at?: string | null
+        }
+        Update: {
+          date?: string
+          series_ids?: string[]
+          created_at?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          id: string
+          username: string
+          display_name: string | null
+          current_streak: number
+          best_streak: number
+          last_played_date: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id: string
+          username: string
+          display_name?: string | null
+          current_streak?: number
+          best_streak?: number
+          last_played_date?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          username?: string
+          display_name?: string | null
+          current_streak?: number
+          best_streak?: number
+          last_played_date?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      user_scores: {
+        Row: {
+          id: string
+          user_id: string
+          mode: string
+          challenge_date: string | null
+          score: number
+          best_streak: number
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          mode: string
+          challenge_date?: string | null
+          score: number
+          best_streak?: number
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          mode?: string
+          challenge_date?: string | null
+          score?: number
+          best_streak?: number
+          created_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      submit_daily_score: {
+        Args: {
+          p_date: string
+          p_answers: Json
+        }
+        Returns: Json
+      }
+      daily_leaderboard: {
+        Args: {
+          p_date: string
+        }
+        Returns: Json
+      }
+      streak_leaderboard: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
