@@ -1,0 +1,6 @@
+{
+  "type": "https://mediawiki.org/wiki/HyperSwitch/errors/not_found",
+  "title": "Not Found",
+  "method": "get",
+  "detail": "The date(s) you requested are outside the range of data available."
+}

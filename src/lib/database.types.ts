@@ -136,6 +136,30 @@ export type Database = {
           }
         ]
       }
+      score_weights: {
+        Row: {
+          id: number
+          wiki_weight: number
+          comment_weight: number
+          upvote_weight: number
+          updated_at: string | null
+        }
+        Insert: {
+          id?: number
+          wiki_weight?: number
+          comment_weight?: number
+          upvote_weight?: number
+          updated_at?: string | null
+        }
+        Update: {
+          id?: number
+          wiki_weight?: number
+          comment_weight?: number
+          upvote_weight?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       daily_challenges: {
         Row: {
           date: string

@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "project": "en.wikipedia",
+      "article": "Severance_(TV_series)",
+      "granularity": "daily",
+      "timestamp": "2026102100",
+      "access": "all-access",
+      "agent": "user",
+      "views": 0
+    }
+  ]
+}
