@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export interface UserProfileDropdownProps {
   user: any;
@@ -7,6 +8,7 @@ export interface UserProfileDropdownProps {
   onOpenAuth: () => void;
   onSignOut: () => void;
   onOpenMethodology: () => void;
+  onOpenLearnToPlay?: () => void;
 }
 
 export function UserProfileDropdown({
@@ -16,9 +18,87 @@ export function UserProfileDropdown({
   onOpenAuth,
   onSignOut,
   onOpenMethodology,
+  onOpenLearnToPlay,
 }: UserProfileDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [username, setUsername] = useState<string>('');
+  const [isEditingUsername, setIsEditingUsername] = useState(false);
+  const [usernameDraft, setUsernameDraft] = useState('');
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load user profile username from database
+  useEffect(() => {
+    if (!user?.id || !supabase) {
+      setUsername('');
+      return;
+    }
+    let active = true;
+    async function loadProfile() {
+      try {
+        if (!supabase) return;
+        const { data } = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (active && data?.username) {
+          setUsername(data.username);
+        }
+      } catch {
+        // Fall back gracefully to email prefix
+      }
+    }
+    loadProfile();
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
+
+  const handleStartEdit = () => {
+    setUsernameDraft(username || (user?.email ? user.email.split('@')[0] : 'player'));
+    setUsernameError(null);
+    setIsEditingUsername(true);
+  };
+
+  const handleSaveUsername = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = usernameDraft.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(trimmed)) {
+      setUsernameError('3–20 lowercase chars (letters, numbers, _ only)');
+      return;
+    }
+    setIsSaving(true);
+    setUsernameError(null);
+    try {
+      if (!supabase) {
+        setUsernameError('Database not configured');
+        setIsSaving(false);
+        return;
+      }
+      const { error } = await supabase
+        .from('profiles')
+        .update({ username: trimmed, updated_at: new Date().toISOString() })
+        .eq('id', user.id);
+
+      if (error) {
+        if (error.code === '23505') {
+          setUsernameError('Username already taken');
+        } else {
+          setUsernameError(error.message || 'Failed to update username');
+        }
+      } else {
+        setUsername(trimmed);
+        setIsEditingUsername(false);
+      }
+    } catch {
+      setUsernameError('Network error updating username');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Close on outside click or Escape key
   useEffect(() => {
@@ -107,12 +187,60 @@ export function UserProfileDropdown({
 
             {/* Identity Text */}
             <div className="min-w-0 flex-1 pr-14">
-              <h2 className="font-serif text-lg font-semibold text-arena-charcoal leading-snug tracking-tight truncate capitalize">
-                {emailName}
-              </h2>
-              <p className="text-xs text-arena-muted font-sans truncate">
-                {user ? user.email : 'viewer@tvarena.internal'}
-              </p>
+              {user && isEditingUsername ? (
+                <form onSubmit={handleSaveUsername} className="space-y-1.5 mt-1">
+                  <input
+                    type="text"
+                    value={usernameDraft}
+                    onChange={(e) => setUsernameDraft(e.target.value)}
+                    disabled={isSaving}
+                    placeholder="username"
+                    autoFocus
+                    className="w-full text-xs font-mono px-2 py-1 rounded border border-arena-border bg-white text-stone-900 focus:outline-none focus:border-arena-terracotta"
+                  />
+                  {usernameError && (
+                    <p className="text-[10px] text-rose-600 font-medium">{usernameError}</p>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="submit"
+                      disabled={isSaving}
+                      className="text-[10px] px-2 py-0.5 rounded bg-arena-terracotta text-white font-medium hover:bg-arena-terracottaHover disabled:opacity-50"
+                    >
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingUsername(false)}
+                      disabled={isSaving}
+                      className="text-[10px] px-2 py-0.5 rounded border border-stone-200 text-stone-600 hover:bg-stone-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <h2 className="font-serif text-lg font-semibold text-arena-charcoal leading-snug tracking-tight truncate">
+                      {username ? `@${username}` : emailName}
+                    </h2>
+                    {user && (
+                      <button
+                        type="button"
+                        onClick={handleStartEdit}
+                        className="text-[10px] text-arena-terracotta hover:underline font-medium ml-1"
+                        title="Edit username"
+                      >
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-arena-muted font-sans truncate">
+                    {user ? user.email : 'viewer@tvarena.internal'}
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Plan / Status Badge */}
@@ -254,7 +382,7 @@ export function UserProfileDropdown({
                 onOpenMethodology();
                 setIsOpen(false);
               }}
-              className="w-full group flex items-center justify-between px-3.5 py-2.5 rounded-xl hover:bg-arena-surface transition-colors duration-150 text-stone-700 hover:text-stone-900 text-left"
+              className="w-full group flex items-center justify-between px-3.5 py-2.5 rounded-xl hover:bg-arena-surface transition-colors duration-150 text-stone-700 hover:text-stone-900 text-left cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <span className="text-arena-muted group-hover:text-arena-terracotta transition-colors">
@@ -273,6 +401,37 @@ export function UserProfileDropdown({
                 <span className="text-sm font-medium">Intelligence Methodology</span>
               </div>
             </button>
+
+            {/* Learn to Play Guide */}
+            {onOpenLearnToPlay && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenLearnToPlay();
+                  setIsOpen(false);
+                }}
+                className="w-full group flex items-center justify-between px-3.5 py-2.5 rounded-xl hover:bg-arena-surface transition-colors duration-150 text-stone-700 hover:text-stone-900 text-left cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-arena-muted group-hover:text-arena-terracotta transition-colors">
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  <span className="text-sm font-medium">How to Play Guide</span>
+                </div>
+              </button>
+            )}
           </div>
 
           {/* Divider Line */}

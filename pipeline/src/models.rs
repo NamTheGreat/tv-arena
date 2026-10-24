@@ -26,7 +26,7 @@ pub struct SeriesRow {
     pub wiki_slug: String,
     pub reddit_query: String,
     #[serde(default)]
-    pub viewers_premiere_28d: i64,
+    pub buzz_score: i64,
     #[serde(default)]
     pub delta_pct: f64,
 }
@@ -44,33 +44,33 @@ pub struct SeedSeriesPayload {
     pub reddit_query: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct WikiPageviews {
     pub items: Option<Vec<WikiDay>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct WikiDay {
     pub timestamp: String,
     pub views: i64,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct RedditListing {
     pub data: RedditData,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct RedditData {
     pub children: Vec<RedditChild>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct RedditChild {
     pub data: RedditPost,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct RedditPost {
     pub num_comments: i64,
     pub score: i64,

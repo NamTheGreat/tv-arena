@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use serde_json::json;
 
@@ -7,7 +7,7 @@ use crate::models::{SeedSeriesPayload, SeriesRow};
 
 pub fn fetch_series(client: &ureq::Agent, config: &Config) -> Result<Vec<SeriesRow>> {
     let list_url = format!(
-        "{}/rest/v1/series?select=*&order=viewers_premiere_28d.desc",
+        "{}/rest/v1/series?select=*&order=buzz_score.desc",
         config.supabase_url
     );
     let list_res = client
@@ -94,7 +94,7 @@ pub fn fetch_prior_day_score(
         .ok()
         .and_then(|r| r.into_json::<Vec<serde_json::Value>>().ok())
         .and_then(|rows| rows.into_iter().next())
-        .and_then(|row| row.get("daily_viewers").and_then(|v| v.as_i64()))
+        .and_then(|row| row.get("daily_score").and_then(|v| v.as_i64()))
         .map(|dv| dv * 7)
 }
 
@@ -111,7 +111,7 @@ pub fn patch_series_score(
         .set("apikey", &config.supabase_key)
         .set("Authorization", &format!("Bearer {}", config.supabase_key))
         .send_json(json!({
-            "viewers_premiere_28d": new_score,
+            "buzz_score": new_score,
             "delta_pct": delta_pct,
             "updated_at": Utc::now().to_rfc3339()
         }))?;
@@ -134,4 +134,230 @@ pub fn batch_record_daily_telemetry(
         .set("Prefer", "resolution=merge-duplicates")
         .send_json(serde_json::Value::Array(telemetry_batch))?;
     Ok(())
+}
+
+pub fn insert_daily_challenge(
+    client: &ureq::Agent,
+    config: &Config,
+    date: &str,
+    series_ids: &[String],
+) -> Result<()> {
+    let endpoint = format!(
+        "{}/rest/v1/daily_challenges?on_conflict=date",
+        config.supabase_url
+    );
+    let payload = json!({
+        "date": date,
+        "series_ids": series_ids
+    });
+
+    let res = client
+        .post(&endpoint)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .set("Prefer", "resolution=ignore-duplicates")
+        .send_json(payload);
+
+    match res {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(code, res)) => {
+            let body = res.into_string().unwrap_or_default();
+            bail!("Supabase daily_challenges insert error {}: {}", code, body)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub fn create_sync_run(client: &ureq::Agent, config: &Config, total_shows: usize) -> Option<i64> {
+    let endpoint = format!("{}/rest/v1/sync_runs", config.supabase_url);
+    let payload = json!({
+        "status": "running",
+        "shows_total": total_shows,
+        "started_at": Utc::now().to_rfc3339()
+    });
+
+    let res = client
+        .post(&endpoint)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .set("Prefer", "return=representation")
+        .send_json(payload);
+
+    match res {
+        Ok(r) => {
+            let rows: Vec<serde_json::Value> = r.into_json().unwrap_or_default();
+            rows.first()
+                .and_then(|row| row.get("id").and_then(|id| id.as_i64()))
+        }
+        Err(e) => {
+            eprintln!("⚠️  Could not record sync_runs start: {}", e);
+            None
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SyncRunUpdate<'a> {
+    pub status: &'a str,
+    pub shows_updated: usize,
+    pub shows_failed: usize,
+    pub wiki_failures: usize,
+    pub reddit_failures: usize,
+    pub error_log: Option<&'a str>,
+    pub duration_ms: i64,
+}
+
+pub fn update_sync_run(client: &ureq::Agent, config: &Config, run_id: i64, update: &SyncRunUpdate) {
+    let endpoint = format!("{}/rest/v1/sync_runs?id=eq.{}", config.supabase_url, run_id);
+    let payload = json!({
+        "status": update.status,
+        "completed_at": Utc::now().to_rfc3339(),
+        "shows_updated": update.shows_updated,
+        "shows_failed": update.shows_failed,
+        "wiki_failures": update.wiki_failures,
+        "reddit_failures": update.reddit_failures,
+        "error_log": update.error_log,
+        "duration_ms": update.duration_ms
+    });
+
+    let res = client
+        .patch(&endpoint)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .send_json(payload);
+
+    if let Err(e) = res {
+        eprintln!("⚠️  Could not update sync_runs completion: {}", e);
+    }
+}
+
+pub struct SignalHistory {
+    pub wiki_views: Vec<i64>,
+    pub reddit_comments: Vec<i64>,
+}
+
+pub fn fetch_series_signal_history(
+    client: &ureq::Agent,
+    config: &Config,
+    show_id: &str,
+    current_date: &str,
+    limit: usize,
+) -> SignalHistory {
+    let url = format!(
+        "{}/rest/v1/series_daily_telemetry?series_id=eq.{}&recorded_date=lt.{}&order=recorded_date.desc&limit={}",
+        config.supabase_url, show_id, current_date, limit
+    );
+    let res = client
+        .get(&url)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .call();
+
+    match res {
+        Ok(r) => {
+            let rows: Vec<serde_json::Value> = r.into_json().unwrap_or_default();
+            let mut wiki_views = Vec::new();
+            let mut reddit_comments = Vec::new();
+            for row in rows.into_iter().rev() {
+                if let Some(w) = row.get("wiki_views").and_then(|v| v.as_i64()) {
+                    wiki_views.push(w);
+                }
+                if let Some(c) = row.get("reddit_comments").and_then(|v| v.as_i64()) {
+                    reddit_comments.push(c);
+                }
+            }
+            SignalHistory {
+                wiki_views,
+                reddit_comments,
+            }
+        }
+        Err(_) => SignalHistory {
+            wiki_views: Vec::new(),
+            reddit_comments: Vec::new(),
+        },
+    }
+}
+
+pub fn record_series_breakout(
+    client: &ureq::Agent,
+    config: &Config,
+    show_id: &str,
+    detected_date: &str,
+    breakout: &crate::engine::anomaly::BreakoutDetection,
+) -> Result<()> {
+    let endpoint = format!(
+        "{}/rest/v1/series_breakouts?on_conflict=series_id,detected_date,signal",
+        config.supabase_url
+    );
+    let payload = json!({
+        "series_id": show_id,
+        "detected_date": detected_date,
+        "signal": breakout.signal,
+        "value": breakout.value,
+        "baseline_mean": breakout.baseline_mean,
+        "baseline_std": breakout.baseline_std,
+        "pct_over_baseline": breakout.pct_over_baseline,
+        "reason": breakout.reason
+    });
+
+    let res = client
+        .post(&endpoint)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .set("Prefer", "resolution=merge-duplicates")
+        .send_json(payload);
+
+    match res {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            eprintln!("⚠️  Could not record breakout for show {}: {}", show_id, e);
+            Err(e.into())
+        }
+    }
+}
+pub fn batch_record_series_events(
+    client: &ureq::Agent,
+    config: &Config,
+    show_id: &str,
+    events: &[crate::clients::tmdb::SeriesEventItem],
+) -> Result<()> {
+    if events.is_empty() {
+        return Ok(());
+    }
+
+    let endpoint = format!(
+        "{}/rest/v1/series_events?on_conflict=series_id,event_date,kind",
+        config.supabase_url
+    );
+
+    let payload: Vec<serde_json::Value> = events
+        .iter()
+        .map(|ev| {
+            json!({
+                "series_id": show_id,
+                "event_date": ev.event_date,
+                "kind": ev.kind,
+                "label": ev.label,
+                "source": ev.source
+            })
+        })
+        .collect();
+
+    let res = client
+        .post(&endpoint)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .set("Prefer", "resolution=merge-duplicates")
+        .send_json(serde_json::Value::Array(payload));
+
+    match res {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            eprintln!(
+                "⚠️  Failed batch recording series events for show {}: {}",
+                show_id, e
+            );
+            Err(e.into())
+        }
+    }
 }

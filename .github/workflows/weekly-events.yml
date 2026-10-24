@@ -1,0 +1,44 @@
+name: TV Arena Weekly TMDb Events Ingestion
+
+on:
+  schedule:
+    - cron: '0 8 * * 1' # Weekly Monday 08:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ingest-events:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./pipeline
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Validate Secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error::Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY GitHub repository secret."
+            exit 1
+          fi
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./pipeline -> target"
+
+      - name: Run Weekly Events Ingestion
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: cargo run --release -- events

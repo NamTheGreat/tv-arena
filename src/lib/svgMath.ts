@@ -1,7 +1,43 @@
+import { SeriesItem } from './supabase';
+
 export interface SvgPoint {
   x: number;
   y: number;
   value: number;
+}
+
+export interface ArenaStats {
+  leftPct: number;
+  rightPct: number;
+  leftLeads: boolean;
+  winner: SeriesItem;
+  diff: number;
+  diffPct: string;
+}
+
+export function computeArenaStats(leftShow: SeriesItem, rightShow: SeriesItem): ArenaStats {
+  const total = Math.max(1, leftShow.buzz_score + rightShow.buzz_score);
+  const leftPct = Number(((leftShow.buzz_score / total) * 100).toFixed(1));
+  const rightPct = Number((100 - leftPct).toFixed(1));
+  const leftLeads = leftShow.buzz_score >= rightShow.buzz_score;
+  const winner = leftLeads ? leftShow : rightShow;
+  const loser = leftLeads ? rightShow : leftShow;
+  const diff = Math.abs(leftShow.buzz_score - rightShow.buzz_score);
+  const diffPct = ((diff / Math.max(1, loser.buzz_score)) * 100).toFixed(1);
+  return { leftPct, rightPct, leftLeads, winner, diff, diffPct };
+}
+
+export function calculateDelta(current: number, previous: number): number {
+  if (previous <= 0) return 0.0;
+  const raw = Math.round(((current - previous) / previous) * 1000) / 10;
+  return Math.max(-99999, Math.min(99999, raw));
+}
+
+export function getTierCategory(score: number): 'Flagship' | 'Breakout' | 'Mid-Tier' | 'Developing' {
+  if (score >= 5_000_000) return 'Flagship';
+  if (score >= 1_000_000) return 'Breakout';
+  if (score >= 200_000) return 'Mid-Tier';
+  return 'Developing';
 }
 
 export function formatMetricNumber(val: number): string {
@@ -107,4 +143,54 @@ export function buildMobileChartGeometry(dailyValues: number[], maxScale = 16000
 
   const pathD = points.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x},${pt.y}`).join(' ');
   return { pathD, points };
+}
+
+/**
+ * Maps an event date into the horizontal X coordinate of the trajectory chart.
+ * Returns null if the event date is strictly outside the visible [startDate, endDate] window.
+ *
+ * Desktop chart span: X_START=85, X_STEP=145, 7 buckets => span from 85 to 955 (870 px)
+ * Mobile chart span: X_START=35, X_STEP=49, 7 buckets => span from 35 to 329 (294 px)
+ */
+export function calculateEventX(
+  eventDate: string | Date,
+  startDate: string | Date,
+  endDate: string | Date,
+  isMobile = false
+): number | null {
+  const parseToMs = (d: string | Date): number => {
+    if (typeof d === 'string') {
+      const parts = d.split('T')[0].split('-');
+      if (parts.length === 3) {
+        return Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      }
+    }
+    const dt = new Date(d);
+    return Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
+  };
+
+  const eventMs = parseToMs(eventDate);
+  const startMs = parseToMs(startDate);
+  const endMs = parseToMs(endDate);
+
+  if (isNaN(eventMs) || isNaN(startMs) || isNaN(endMs) || endMs <= startMs) {
+    return null;
+  }
+
+  // Event must fall strictly within the visible window
+  if (eventMs < startMs || eventMs > endMs) {
+    return null;
+  }
+
+  const ratio = (eventMs - startMs) / (endMs - startMs);
+
+  if (isMobile) {
+    const X_START = 35;
+    const X_SPAN = 294; // 35 -> 329
+    return Math.round(X_START + ratio * X_SPAN);
+  } else {
+    const X_START = 85;
+    const X_SPAN = 870; // 85 -> 955
+    return Math.round(X_START + ratio * X_SPAN);
+  }
 }

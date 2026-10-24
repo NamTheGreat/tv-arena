@@ -40,6 +40,12 @@ pub fn resolve_wiki_slug(title: &str, client: &ureq::Agent) -> Option<String> {
     None
 }
 
+pub fn parse_wiki_pageviews(json_str: &str) -> Option<Vec<WikiDay>> {
+    serde_json::from_str::<WikiPageviews>(json_str)
+        .ok()
+        .and_then(|w| w.items)
+}
+
 pub fn fetch_wiki_days(
     client: &ureq::Agent,
     wiki_slug: &str,
@@ -63,7 +69,10 @@ pub fn fetch_wiki_days(
         .call();
 
     match wiki_result {
-        Ok(r) if r.status() == 200 => r.into_json::<WikiPageviews>().ok().and_then(|w| w.items),
+        Ok(r) if r.status() == 200 => {
+            let body = r.into_string().ok()?;
+            parse_wiki_pageviews(&body)
+        }
         Ok(r) => {
             eprintln!("⚠️  Wiki returned status {} for '{}'", r.status(), title);
             None

@@ -1,5 +1,6 @@
 // ponytail: zero-dependency share modal with navigator.clipboard, Wordle-style emoji grid, and daily run metrics
 import React, { useState } from 'react';
+import { getDailyChallengeNumber } from '../lib/dailyChallenge';
 
 interface GameOverModalProps {
   isOpen: boolean;
@@ -52,7 +53,7 @@ export function GameOverModal({
       : '🟥';
 
   const shareText = isDaily
-    ? `TV Arena Daily Run #${todayStr} 📺🎯\nScore: ${correctCount}/10\n${emojiGrid}\nhttps://tv-arena.pages.dev`
+    ? `TV Arena Daily Run #${getDailyChallengeNumber(todayStr)} 📺🎯\nScore: ${correctCount}/10\n${emojiGrid}\nhttps://tv-arena.pages.dev`
     : `TV Arena 📺🔥\nStreak: ${streak} pts!\nFell on ${knownTitle} vs ${challengerTitle}\n${emojiGrid}\nhttps://tv-arena.pages.dev`;
 
   const handleShare = async () => {
