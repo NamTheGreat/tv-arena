@@ -349,10 +349,30 @@ export default function App() {
 
         const eventsMap = new Map<string, any[]>();
         if (eventsData) {
-          for (const ev of eventsData) {
+          for (const ev of eventsData as any[]) {
             const arr = eventsMap.get(ev.series_id) || [];
             arr.push(ev);
             eventsMap.set(ev.series_id, arr);
+          }
+        }
+
+        // Query breakouts detected in the last 2 days
+        const twoDaysAgo = new Date();
+        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+        const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
+
+        const { data: breakoutData } = await supabase
+          .from('series_breakouts')
+          .select('series_id, reason, detected_date')
+          .gte('detected_date', twoDaysAgoStr)
+          .order('detected_date', { ascending: false });
+
+        const breakoutMap = new Map<string, string>();
+        if (breakoutData) {
+          for (const b of breakoutData as any[]) {
+            if (!breakoutMap.has(b.series_id)) {
+              breakoutMap.set(b.series_id, b.reason);
+            }
           }
         }
 
@@ -379,6 +399,8 @@ export default function App() {
           daily_series: telemetryValuesMap.get(row.id) || [Number(row.current_7d_score ?? row.buzz_score ?? 0)],
           daily_dates: telemetryDatesMap.get(row.id) || [],
           events: eventsMap.get(row.id) || [],
+          is_breakout: breakoutMap.has(row.id),
+          breakout_reason: breakoutMap.get(row.id),
         }));
 
         setSeriesList(mapped);

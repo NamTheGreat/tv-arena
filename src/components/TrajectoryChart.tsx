@@ -127,6 +127,7 @@ export function TrajectoryChart({
   };
 
   const topCumulativeShows = useMemo(() => seriesList.slice(0, 3), [seriesList]);
+  const breakoutShow = useMemo(() => seriesList.find((s) => s.is_breakout), [seriesList]);
   const maxCumulativeScore = useMemo(() => {
     const scores = topCumulativeShows.map((s) => getCumulativeScore(s, chartRange));
     return Math.max(...scores, 1);
@@ -197,11 +198,19 @@ export function TrajectoryChart({
     <section className="w-full max-w-5xl bg-[#FFFDF9]/95 backdrop-blur-md rounded-3xl p-5 sm:p-8 lg:p-10 shadow-soft border border-[#EDE5DA]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-stone-200/60">
         <div>
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-brand-terracotta" />
             <span className="text-[10px] sm:text-xs font-semibold tracking-widest uppercase text-stone-500">
               Metric: Daily Engagement Index
             </span>
+            {breakoutShow && (
+              <span
+                title={breakoutShow.breakout_reason || 'Recent statistical engagement surge'}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30 cursor-help"
+              >
+                🔥 Breakout: {breakoutShow.title}
+              </span>
+            )}
           </div>
           <p className="text-[10px] sm:text-xs text-stone-400 mt-0.5 sm:mt-1">
             Daily synthesized telemetry across Wikipedia pageviews &amp; Reddit discussion metrics
@@ -233,6 +242,14 @@ export function TrajectoryChart({
               style={{ backgroundColor: s.chart_color || '#C66A3D' }}
             />
             <span className="text-stone-800 font-medium">{s.title}</span>
+            {s.is_breakout && (
+              <span
+                title={s.breakout_reason || 'Recent statistical engagement surge'}
+                className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/15 text-amber-700 border border-amber-500/30 cursor-help"
+              >
+                🔥 Breakout
+              </span>
+            )}
           </div>
         ))}
       </div>

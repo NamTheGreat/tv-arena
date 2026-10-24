@@ -6,10 +6,12 @@ use std::{thread, time::Duration, time::Instant};
 use crate::clients::http::create_http_client;
 use crate::clients::supabase::{
     batch_record_daily_telemetry, create_sync_run, fetch_prev_reddit_comments,
-    fetch_prior_day_score, fetch_series, patch_series_score, update_sync_run, SyncRunUpdate,
+    fetch_prior_day_score, fetch_series, fetch_series_signal_history, patch_series_score,
+    record_series_breakout, update_sync_run, SyncRunUpdate,
 };
 use crate::clients::{HttpTelemetryFetcher, TelemetryFetcher};
 use crate::config::Config;
+use crate::engine::anomaly::{detect_signal_breakout, REDDIT_COMMENTS_FLOOR, WIKI_VIEWS_FLOOR};
 use crate::engine::scoring::{calculate_delta, compute_buzz_score};
 
 pub fn run_sync(config: &Config) -> Result<()> {
@@ -56,6 +58,7 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
 
     let mut fetch_failures = 0;
     let mut updated_count = 0;
+    let mut breakouts_flagged = 0;
     let mut wiki_failures = 0;
     let mut reddit_failures = 0;
     let mut error_log = String::new();
@@ -193,16 +196,66 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
             continue;
         }
 
+        // Run Anomaly / Breakout Detection for wiki_views and reddit_comments
+        let history = fetch_series_signal_history(client, config, show_id, &recorded_date, 14);
+        let today_wiki = wiki_days
+            .as_ref()
+            .and_then(|days| days.last().map(|d| d.views))
+            .unwrap_or(total_wiki / 7);
+        let today_reddit = total_comments / 7;
+
+        if let Some(wiki_breakout) = detect_signal_breakout(
+            &history.wiki_views,
+            today_wiki,
+            "wiki_views",
+            WIKI_VIEWS_FLOOR,
+        ) {
+            println!(
+                "🔥 Statistical Breakout (Wiki) for '{}': {} ({} vs baseline {:.0})",
+                show.title, wiki_breakout.reason, wiki_breakout.value, wiki_breakout.baseline_mean
+            );
+            if let Err(e) =
+                record_series_breakout(client, config, show_id, &recorded_date, &wiki_breakout)
+            {
+                eprintln!("⚠️  Could not record breakout for '{}': {}", show.title, e);
+            } else {
+                breakouts_flagged += 1;
+            }
+        }
+
+        if let Some(reddit_breakout) = detect_signal_breakout(
+            &history.reddit_comments,
+            today_reddit,
+            "reddit_comments",
+            REDDIT_COMMENTS_FLOOR,
+        ) {
+            println!(
+                "🔥 Statistical Breakout (Reddit) for '{}': {} ({} vs baseline {:.0})",
+                show.title,
+                reddit_breakout.reason,
+                reddit_breakout.value,
+                reddit_breakout.baseline_mean
+            );
+            if let Err(e) =
+                record_series_breakout(client, config, show_id, &recorded_date, &reddit_breakout)
+            {
+                eprintln!("⚠️  Could not record breakout for '{}': {}", show.title, e);
+            } else {
+                breakouts_flagged += 1;
+            }
+        }
+
         updated_count += 1;
         println!("✓ {}: score {} ({:+.1}%)", show.title, new_score, delta_pct);
         thread::sleep(Duration::from_millis(600));
     }
 
     println!(
-        "\nSync complete. Successfully updated: {}/{}. Failures: {}.",
+        "\nSync complete. Successfully updated: {}/{}. Failures: {}. Breakouts flagged: {}.",
         updated_count,
         shows.len(),
-        fetch_failures
+        fetch_failures,
+        breakouts_flagged
     );
 
     let duration_ms = start_time.elapsed().as_millis() as i64;

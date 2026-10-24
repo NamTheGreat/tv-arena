@@ -18,6 +18,8 @@ export interface SeriesItem extends SeriesRow {
   daily_series: number[];
   daily_dates?: string[];
   events?: SeriesEvent[];
+  is_breakout?: boolean;
+  breakout_reason?: string;
 }
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
