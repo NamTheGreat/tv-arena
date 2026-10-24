@@ -315,3 +315,49 @@ pub fn record_series_breakout(
         }
     }
 }
+pub fn batch_record_series_events(
+    client: &ureq::Agent,
+    config: &Config,
+    show_id: &str,
+    events: &[crate::clients::tmdb::SeriesEventItem],
+) -> Result<()> {
+    if events.is_empty() {
+        return Ok(());
+    }
+
+    let endpoint = format!(
+        "{}/rest/v1/series_events?on_conflict=series_id,event_date,kind",
+        config.supabase_url
+    );
+
+    let payload: Vec<serde_json::Value> = events
+        .iter()
+        .map(|ev| {
+            json!({
+                "series_id": show_id,
+                "event_date": ev.event_date,
+                "kind": ev.kind,
+                "label": ev.label,
+                "source": ev.source
+            })
+        })
+        .collect();
+
+    let res = client
+        .post(&endpoint)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .set("Prefer", "resolution=merge-duplicates")
+        .send_json(serde_json::Value::Array(payload));
+
+    match res {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            eprintln!(
+                "⚠️  Failed batch recording series events for show {}: {}",
+                show_id, e
+            );
+            Err(e.into())
+        }
+    }
+}

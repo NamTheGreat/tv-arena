@@ -52,6 +52,10 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         recorded_date
     );
 
+    if config.tmdb_api_key.is_none() {
+        println!("ℹ️  TMDB_API_KEY not set; skipping series event milestone checks during sync.");
+    }
+
     let mut fetch_failures = 0;
     let mut updated_count = 0;
     let mut breakouts_flagged = 0;

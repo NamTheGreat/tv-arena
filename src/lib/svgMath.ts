@@ -144,3 +144,53 @@ export function buildMobileChartGeometry(dailyValues: number[], maxScale = 16000
   const pathD = points.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x},${pt.y}`).join(' ');
   return { pathD, points };
 }
+
+/**
+ * Maps an event date into the horizontal X coordinate of the trajectory chart.
+ * Returns null if the event date is strictly outside the visible [startDate, endDate] window.
+ *
+ * Desktop chart span: X_START=85, X_STEP=145, 7 buckets => span from 85 to 955 (870 px)
+ * Mobile chart span: X_START=35, X_STEP=49, 7 buckets => span from 35 to 329 (294 px)
+ */
+export function calculateEventX(
+  eventDate: string | Date,
+  startDate: string | Date,
+  endDate: string | Date,
+  isMobile = false
+): number | null {
+  const parseToMs = (d: string | Date): number => {
+    if (typeof d === 'string') {
+      const parts = d.split('T')[0].split('-');
+      if (parts.length === 3) {
+        return Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      }
+    }
+    const dt = new Date(d);
+    return Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
+  };
+
+  const eventMs = parseToMs(eventDate);
+  const startMs = parseToMs(startDate);
+  const endMs = parseToMs(endDate);
+
+  if (isNaN(eventMs) || isNaN(startMs) || isNaN(endMs) || endMs <= startMs) {
+    return null;
+  }
+
+  // Event must fall strictly within the visible window
+  if (eventMs < startMs || eventMs > endMs) {
+    return null;
+  }
+
+  const ratio = (eventMs - startMs) / (endMs - startMs);
+
+  if (isMobile) {
+    const X_START = 35;
+    const X_SPAN = 294; // 35 -> 329
+    return Math.round(X_START + ratio * X_SPAN);
+  } else {
+    const X_START = 85;
+    const X_SPAN = 870; // 85 -> 955
+    return Math.round(X_START + ratio * X_SPAN);
+  }
+}

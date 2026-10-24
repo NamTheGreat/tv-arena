@@ -341,6 +341,20 @@ export default function App() {
           telemetryData = fallbackTelemetry.data as any;
         }
 
+        const { data: eventsData } = await supabase
+          .from('series_events')
+          .select('id, series_id, event_date, kind, label, source')
+          .in('series_id', chartedIds)
+          .order('event_date', { ascending: true });
+
+        const eventsMap = new Map<string, any[]>();
+        if (eventsData) {
+          for (const ev of eventsData as any[]) {
+            const arr = eventsMap.get(ev.series_id) || [];
+            arr.push(ev);
+            eventsMap.set(ev.series_id, arr);
+          }
+        }
         // Query breakouts detected in the last 2 days
         const twoDaysAgo = new Date();
         twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
@@ -383,6 +397,7 @@ export default function App() {
           delta_pct: Number(row.delta_pct || 0),
           daily_series: telemetryValuesMap.get(row.id) || [Number(row.current_7d_score ?? row.buzz_score ?? 0)],
           daily_dates: telemetryDatesMap.get(row.id) || [],
+          events: eventsMap.get(row.id) || [],
           is_breakout: breakoutMap.has(row.id),
           breakout_reason: breakoutMap.get(row.id),
         }));

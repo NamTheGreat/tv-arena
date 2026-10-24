@@ -9,6 +9,7 @@ pub const CHART_PALETTE: [&str; 6] = [
 pub struct Config {
     pub supabase_url: String,
     pub supabase_key: String,
+    pub tmdb_api_key: Option<String>,
 }
 
 pub fn load_config() -> Result<Config> {
@@ -50,8 +51,14 @@ pub fn load_config() -> Result<Config> {
         std::process::exit(1);
     }
 
+    let tmdb_api_key = env::var("TMDB_API_KEY")
+        .ok()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty());
+
     Ok(Config {
         supabase_url,
         supabase_key,
+        tmdb_api_key,
     })
 }

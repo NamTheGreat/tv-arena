@@ -92,6 +92,44 @@ export type Database = {
           }
         ]
       }
+      series_events: {
+        Row: {
+          id: number
+          series_id: string
+          event_date: string
+          kind: string
+          label: string
+          source: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: number
+          series_id: string
+          event_date: string
+          kind: string
+          label: string
+          source?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: number
+          series_id?: string
+          event_date?: string
+          kind?: string
+          label?: string
+          source?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "series_events_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       series_breakouts: {
         Row: {
           series_id: string
