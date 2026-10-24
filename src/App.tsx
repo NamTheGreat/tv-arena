@@ -355,7 +355,6 @@ export default function App() {
             eventsMap.set(ev.series_id, arr);
           }
         }
-
         // Query breakouts detected in the last 2 days
         const twoDaysAgo = new Date();
         twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);

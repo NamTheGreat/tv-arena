@@ -315,7 +315,6 @@ pub fn record_series_breakout(
         }
     }
 }
-
 pub fn batch_record_series_events(
     client: &ureq::Agent,
     config: &Config,

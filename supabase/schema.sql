@@ -162,7 +162,6 @@ CREATE INDEX IF NOT EXISTS idx_series_events_series ON series_events(series_id, 
 ALTER TABLE series_events ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read on series_events" ON series_events;
 CREATE POLICY "Allow public read on series_events" ON series_events FOR SELECT USING (true);
-
 -- Anomaly and Breakout Detection
 CREATE TABLE IF NOT EXISTS series_breakouts (
   series_id UUID NOT NULL REFERENCES series(id) ON DELETE CASCADE,
