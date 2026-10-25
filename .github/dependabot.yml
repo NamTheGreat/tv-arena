@@ -10,6 +10,8 @@ updates:
       - "dependencies"
       - "frontend"
     ignore:
+      - dependency-name: "react-router-dom"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "tailwindcss"
         update-types: ["version-update:semver-major"]
       - dependency-name: "vite"
@@ -38,6 +40,8 @@ updates:
     ignore:
       - dependency-name: "ureq"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "httpmock"
+        update-types: ["version-update:semver-major"]
     groups:
       dependencies:
         patterns:
@@ -59,3 +63,6 @@ updates:
       actions:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
