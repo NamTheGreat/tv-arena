@@ -96,6 +96,11 @@ DECLARE
 BEGIN
   RAISE NOTICE 'Testing Profile Column Privileges...';
 
+  -- Seed auth user so profiles foreign key succeeds
+  INSERT INTO auth.users (id, email)
+  VALUES (v_user_id, 'test_pilot@example.com')
+  ON CONFLICT (id) DO NOTHING;
+
   -- Seed test profile
   INSERT INTO profiles (id, username, display_name, current_streak, best_streak)
   VALUES (v_user_id, 'test_pilot', 'Test Pilot', 1, 1)
