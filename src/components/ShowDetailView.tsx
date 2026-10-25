@@ -50,7 +50,7 @@ export function ShowDetailView({ seriesList }: ShowDetailViewProps) {
   const { pathD, points } = buildMobileChartGeometry(sampled, maxSampled);
   const isSteady = Math.abs(show.delta_pct) < 0.5;
   const isUp = show.delta_pct > 0;
-  const score = (show as any).buzz_score ?? (show as any).viewers_premiere_28d ?? 0;
+  const score = show.buzz_score ?? 0;
 
   return (
     <main className="w-full max-w-2xl mx-auto bg-white/95 backdrop-blur-xl rounded-[28px] sm:rounded-[32px] p-6 sm:p-10 shadow-card border border-[#EFEAE2]/90 my-4 text-left">
