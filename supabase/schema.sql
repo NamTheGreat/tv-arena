@@ -48,7 +48,8 @@ VALUES (1, 10, 150, 25)
 ON CONFLICT (id) DO NOTHING;
 
 -- Views: series_daily_scores & series_leaderboard
-CREATE OR REPLACE VIEW series_daily_scores AS
+CREATE OR REPLACE VIEW series_daily_scores 
+WITH (security_invoker = on) AS
 SELECT
   t.id AS telemetry_id,
   t.series_id,
@@ -64,8 +65,9 @@ SELECT
 FROM series_daily_telemetry t
 CROSS JOIN (SELECT wiki_weight, comment_weight, upvote_weight FROM score_weights WHERE id = 1 LIMIT 1) w;
 
-CREATE OR REPLACE VIEW series_leaderboard AS
-WITH ranked_daily AS (
+CREATE OR REPLACE VIEW series_leaderboard 
+WITH (security_invoker = on) AS
+WITH daily_buckets AS (
   SELECT
     s.id AS series_id,
     s.tmdb_id,
@@ -75,26 +77,11 @@ WITH ranked_daily AS (
     s.genre_group,
     s.release_years,
     s.chart_color,
-    d.recorded_date,
-    d.daily_score,
-    ROW_NUMBER() OVER (PARTITION BY s.id ORDER BY d.recorded_date DESC) as day_rank
+    COALESCE(SUM(CASE WHEN d.recorded_date > CURRENT_DATE - INTERVAL '7 days' AND d.recorded_date <= CURRENT_DATE THEN d.daily_score ELSE 0 END), 0)::BIGINT AS current_7d_score,
+    COALESCE(SUM(CASE WHEN d.recorded_date > CURRENT_DATE - INTERVAL '14 days' AND d.recorded_date <= CURRENT_DATE - INTERVAL '7 days' THEN d.daily_score ELSE 0 END), 0)::BIGINT AS previous_7d_score
   FROM series s
   LEFT JOIN series_daily_scores d ON s.id = d.series_id
-),
-aggregated_scores AS (
-  SELECT
-    series_id,
-    tmdb_id,
-    slug,
-    title,
-    network,
-    genre_group,
-    release_years,
-    chart_color,
-    COALESCE(SUM(CASE WHEN day_rank BETWEEN 1 AND 7 THEN daily_score ELSE 0 END), 0)::BIGINT AS current_7d_score,
-    COALESCE(SUM(CASE WHEN day_rank BETWEEN 8 AND 14 THEN daily_score ELSE 0 END), 0)::BIGINT AS previous_7d_score
-  FROM ranked_daily
-  GROUP BY series_id, tmdb_id, slug, title, network, genre_group, release_years, chart_color
+  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.genre_group, s.release_years, s.chart_color
 )
 SELECT
   series_id AS id,
@@ -113,7 +100,7 @@ SELECT
       ROUND(((current_7d_score - previous_7d_score)::numeric / previous_7d_score::numeric) * 100, 2)
     ELSE 0.0
   END AS delta_pct
-FROM aggregated_scores
+FROM daily_buckets
 ORDER BY current_7d_score DESC;
 
 -- Enable public read-only access for the React frontend
@@ -210,8 +197,12 @@ CREATE TABLE IF NOT EXISTS profiles (
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read on profiles" ON profiles;
 CREATE POLICY "Allow public read on profiles" ON profiles FOR SELECT USING (true);
+
+REVOKE UPDATE ON profiles FROM authenticated;
+GRANT UPDATE (username, display_name) ON profiles TO authenticated;
+
 DROP POLICY IF EXISTS "Allow users update own profile" ON profiles;
-CREATE POLICY "Allow users update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Allow users update own profile" ON profiles FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 DROP POLICY IF EXISTS "Allow users insert own profile" ON profiles;
 CREATE POLICY "Allow users insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
@@ -302,6 +293,11 @@ BEGIN
     RAISE EXCEPTION 'Challenge deck is incomplete';
   END IF;
 
+  -- Validate p_answers structure: must be an array of matching length
+  IF jsonb_typeof(p_answers) <> 'array' OR jsonb_array_length(p_answers) <> (v_deck_len - 1) THEN
+    RAISE EXCEPTION 'p_answers must be a JSON array of % answers', (v_deck_len - 1);
+  END IF;
+
   IF EXISTS (
     SELECT 1 FROM user_scores
     WHERE user_id = v_uid AND date = p_date
@@ -309,13 +305,21 @@ BEGIN
     RAISE EXCEPTION 'Score already submitted for this daily challenge';
   END IF;
 
+  -- Score answers against dynamic series_leaderboard with fallback to stored buzz_score
   FOR i IN 0 .. (LEAST(v_deck_len - 2, 9)) LOOP
     v_show_a_id := v_deck[i + 1];
     v_show_b_id := v_deck[i + 2];
     v_guess := p_answers->>i;
 
-    SELECT COALESCE(buzz_score, 0) INTO v_score_a FROM series WHERE id = v_show_a_id;
-    SELECT COALESCE(buzz_score, 0) INTO v_score_b FROM series WHERE id = v_show_b_id;
+    SELECT COALESCE(l.current_7d_score, s.buzz_score, 0) INTO v_score_a 
+    FROM series s 
+    LEFT JOIN series_leaderboard l ON s.id = l.id 
+    WHERE s.id = v_show_a_id;
+
+    SELECT COALESCE(l.current_7d_score, s.buzz_score, 0) INTO v_score_b 
+    FROM series s 
+    LEFT JOIN series_leaderboard l ON s.id = l.id 
+    WHERE s.id = v_show_b_id;
 
     v_is_higher := v_score_b >= v_score_a;
     IF (v_guess = 'higher' AND v_is_higher) OR (v_guess = 'lower' AND NOT v_is_higher) THEN

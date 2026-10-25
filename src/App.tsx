@@ -196,10 +196,14 @@ function ChartsRouteWrapper({ seriesList }: { seriesList: SeriesItem[] }) {
   const { slug } = useParams<{ slug?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const rangeParam = searchParams.get('range') as ChartRange | null;
+  const rangeParam = searchParams.get('range');
   const validRanges: ChartRange[] = ['7D', '30D', '90D', 'All-Time'];
   const chartRange: ChartRange =
-    rangeParam && validRanges.includes(rangeParam) ? rangeParam : '30D';
+    rangeParam === 'All' || rangeParam === 'ALL' || rangeParam === 'All-Time'
+      ? 'All-Time'
+      : rangeParam && validRanges.includes(rangeParam as ChartRange)
+      ? (rangeParam as ChartRange)
+      : '30D';
 
   const setChartRange = (range: ChartRange) => {
     setSearchParams(
@@ -321,30 +325,28 @@ export default function App() {
         const ninetyDaysAgo = new Date();
         ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
         const startDateStr = ninetyDaysAgo.toISOString().split('T')[0];
-        const chartedIds = data.slice(0, 10).map((s: any) => s.id);
 
-        // Query dynamic daily scores view with fallback to raw telemetry
+        // Query dynamic daily scores view with fallback to raw telemetry across all catalog series
         let { data: telemetryData } = await (supabase as any)
           .from('series_daily_scores')
           .select('series_id, daily_score, recorded_date')
-          .in('series_id', chartedIds)
           .gte('recorded_date', startDateStr)
-          .order('recorded_date', { ascending: true });
+          .order('recorded_date', { ascending: true })
+          .limit(10000);
 
         if (!telemetryData || telemetryData.length === 0) {
           const fallbackTelemetry = await supabase
             .from('series_daily_telemetry')
             .select('series_id, daily_score, recorded_date')
-            .in('series_id', chartedIds)
             .gte('recorded_date', startDateStr)
-            .order('recorded_date', { ascending: true });
+            .order('recorded_date', { ascending: true })
+            .limit(10000);
           telemetryData = fallbackTelemetry.data as any;
         }
 
         const { data: eventsData } = await supabase
           .from('series_events')
           .select('id, series_id, event_date, kind, label, source')
-          .in('series_id', chartedIds)
           .order('event_date', { ascending: true });
 
         const eventsMap = new Map<string, any[]>();

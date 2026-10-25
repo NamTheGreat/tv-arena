@@ -1,0 +1,40 @@
+name: TV Arena Seed Catalog (TMDb Auto-Discover)
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Max number of new shows to seed'
+        required: false
+        default: '200'
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate Secrets
+        run: |
+          [ -n "$SUPABASE_URL" ] || { echo "::error::SUPABASE_URL not set"; exit 1; }
+          [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] || { echo "::error::SUPABASE_SERVICE_ROLE_KEY not set"; exit 1; }
+          [ -n "$TMDB_API_KEY" ] || { echo "::error::TMDB_API_KEY not set"; exit 1; }
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: pipeline
+          key: seed-catalog
+
+      - name: Run TMDb Auto-Discover Seed
+        working-directory: pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: cargo run --release -- seed --limit ${{ inputs.limit }}

@@ -11,7 +11,8 @@ interface SeriesRecord {
   slug: string;
   title: string;
   network?: string;
-  viewers_premiere_28d: number;
+  current_7d_score?: number;
+  buzz_score?: number;
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
@@ -29,7 +30,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   if (supabaseUrl && supabaseKey && a && b) {
     try {
-      const apiUrl = `${supabaseUrl}/rest/v1/series?slug=in.("${encodeURIComponent(a)}","${encodeURIComponent(b)}")&select=slug,title,viewers_premiere_28d`;
+      const apiUrl = `${supabaseUrl}/rest/v1/series_leaderboard?slug=in.("${encodeURIComponent(a)}","${encodeURIComponent(b)}")&select=slug,title,current_7d_score,buzz_score`;
       const res = await fetch(apiUrl, {
         headers: {
           apikey: supabaseKey,
@@ -44,11 +45,11 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         const showB = rows.find((r) => r.slug === b);
         if (showA) {
           titleA = showA.title;
-          scoreA = Number(showA.viewers_premiere_28d) || 0;
+          scoreA = Number(showA.current_7d_score ?? showA.buzz_score) || 0;
         }
         if (showB) {
           titleB = showB.title;
-          scoreB = Number(showB.viewers_premiere_28d) || 0;
+          scoreB = Number(showB.current_7d_score ?? showB.buzz_score) || 0;
         }
       }
     } catch {
