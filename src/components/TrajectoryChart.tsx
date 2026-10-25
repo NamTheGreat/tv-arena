@@ -72,6 +72,7 @@ export function TrajectoryChart({
   const [hoveredSlug, setHoveredSlug] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
+  const [pickerNetwork, setPickerNetwork] = useState<string>('ALL');
   const [genreDropdownOpen, setGenreDropdownOpen] = useState(false);
   const [activePreset, setActivePreset] = useState<string>('top');
   const [catalogDrawerOpen, setCatalogDrawerOpen] = useState(false);
@@ -101,7 +102,7 @@ export function TrajectoryChart({
     }
   }, [selectedSlugs, setSearchParams]);
 
-  // Close popups on click outside
+  // Close popups on click outside or Escape key
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
@@ -111,8 +112,18 @@ export function TrajectoryChart({
         setGenreDropdownOpen(false);
       }
     }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setPickerOpen(false);
+        setGenreDropdownOpen(false);
+      }
+    }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   // Map active shows and assign distinct colors from WORKBENCH_PALETTE
@@ -172,10 +183,12 @@ export function TrajectoryChart({
         }
         return labels;
       } else {
-        const bucketSize = windowDates.length / 7;
         const labels: string[] = [];
         for (let b = 0; b < 7; b++) {
-          const idx = Math.min(windowDates.length - 1, Math.floor(b * bucketSize));
+          const idx = Math.min(
+            windowDates.length - 1,
+            Math.round((b / 6) * (windowDates.length - 1))
+          );
           labels.push(formatShortDate(windowDates[idx]));
         }
         return labels;
@@ -374,20 +387,35 @@ export function TrajectoryChart({
     }
   };
 
-  // Autocomplete search candidate list (excluding already selected)
+  // Autocomplete search candidate list (unplotted shows sorted first, full catalog searchable)
   const filteredPickerShows = useMemo(() => {
     const q = pickerQuery.toLowerCase().trim();
-    return seriesList
-      .filter((s) => {
-        if (!q) return true;
-        return (
-          s.title.toLowerCase().includes(q) ||
-          s.network.toLowerCase().includes(q) ||
-          s.genre_group.toLowerCase().includes(q)
-        );
-      })
-      .slice(0, 10);
-  }, [seriesList, pickerQuery]);
+    const filtered = seriesList.filter((s) => {
+      const matchesQuery =
+        !q ||
+        s.title.toLowerCase().includes(q) ||
+        s.network.toLowerCase().includes(q) ||
+        s.genre_group.toLowerCase().includes(q);
+      const matchesNet =
+        pickerNetwork === 'ALL' ||
+        s.network.toLowerCase().includes(pickerNetwork.toLowerCase());
+      return matchesQuery && matchesNet;
+    });
+
+    // Unplotted shows sorted by buzz_score descending first, then plotted shows
+    return filtered.sort((a, b) => {
+      const aPlotted = selectedSlugs.includes(a.slug);
+      const bPlotted = selectedSlugs.includes(b.slug);
+      if (aPlotted !== bPlotted) {
+        return aPlotted ? 1 : -1;
+      }
+      return (b.buzz_score || 0) - (a.buzz_score || 0);
+    });
+  }, [seriesList, pickerQuery, pickerNetwork, selectedSlugs]);
+
+  const pickerUnplottedCount = useMemo(() => {
+    return filteredPickerShows.filter((s) => !selectedSlugs.includes(s.slug)).length;
+  }, [filteredPickerShows, selectedSlugs]);
 
   // Catalog drawer candidate list
   const filteredCatalogShows = useMemo(() => {
@@ -403,7 +431,7 @@ export function TrajectoryChart({
 
   return (
     <section
-      className="bg-[#FFFDF9]/95 backdrop-blur-md rounded-3xl p-5 sm:p-8 lg:p-10 shadow-soft border border-[#EDE5DA]"
+      className="w-full max-w-4xl bg-[#FFFDF9]/95 backdrop-blur-md rounded-3xl p-5 sm:p-8 lg:p-10 shadow-soft border border-[#EDE5DA]"
       data-purpose="charts-card"
     >
       {/* Top Header of Card: Title + Time Range Switcher */}
@@ -442,21 +470,24 @@ export function TrajectoryChart({
             <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 mr-1">
               Range:
             </span>
-            <div className="inline-flex items-center bg-[#F3EFE9] p-1 rounded-full text-xs font-medium border border-[#E7DFD5]">
-              {(['7D', '30D', '90D', 'All-Time'] as const).map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setChartRange(r)}
-                  className={`px-3 py-1 rounded-full transition-colors ${
-                    chartRange === r
-                      ? 'bg-white text-stone-800 shadow-sm font-semibold'
-                      : 'text-stone-500 hover:text-stone-900'
-                  }`}
-                >
-                  {r}
-                </button>
-              ))}
+            <div className="inline-flex items-center bg-[#F3EFE9] p-0.5 rounded-full text-[11px] font-medium border border-[#E7DFD5]">
+              {(['7D', '30D', '90D', 'All-Time'] as const).map((r) => {
+                const label = r === 'All-Time' ? 'All' : r;
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setChartRange(r)}
+                    className={`px-2.5 py-0.5 rounded-full whitespace-nowrap transition-colors ${
+                      chartRange === r
+                        ? 'bg-white text-stone-800 shadow-sm font-semibold'
+                        : 'text-stone-500 hover:text-stone-900'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -605,10 +636,20 @@ export function TrajectoryChart({
                       e.stopPropagation();
                       removeShow(show.slug);
                     }}
-                    className="text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-full w-4 h-4 flex items-center justify-center text-xs leading-none transition-colors"
+                    className="text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-full w-4 h-4 inline-flex items-center justify-center transition-colors -mr-0.5"
                     title={`Remove ${show.title}`}
+                    aria-label={`Remove ${show.title}`}
                   >
-                    ×
+                    <svg
+                      className="w-2.5 h-2.5 shrink-0"
+                      viewBox="0 0 12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    >
+                      <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" />
+                    </svg>
                   </button>
                 )}
               </div>
@@ -635,13 +676,14 @@ export function TrajectoryChart({
             {/* Compare Search Dropdown */}
             {pickerOpen && (
               <div className="absolute left-0 sm:right-0 sm:left-auto mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-nav border border-[#ECE5DC] p-3 z-40 text-xs">
+                {/* Search Bar */}
                 <div className="flex items-center gap-2 pb-2 mb-2 border-b border-stone-100">
                   <span className="text-stone-400">🔍</span>
                   <input
                     type="text"
                     value={pickerQuery}
                     onChange={(e) => setPickerQuery(e.target.value)}
-                    placeholder="Search 200+ series (e.g. The Office, Severance, Fallout)..."
+                    placeholder="Search all series (e.g. The Office, Severance, Fallout)..."
                     autoFocus
                     className="w-full bg-transparent border-0 text-xs text-stone-800 placeholder-stone-400 focus:ring-0 p-0 font-medium"
                   />
@@ -649,16 +691,51 @@ export function TrajectoryChart({
                     <button
                       type="button"
                       onClick={() => setPickerQuery('')}
-                      className="text-stone-400 hover:text-stone-600 text-xs"
+                      className="w-4 h-4 rounded-full inline-flex items-center justify-center text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-colors"
+                      aria-label="Clear search"
                     >
-                      ×
+                      <svg
+                        className="w-2.5 h-2.5 shrink-0"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      >
+                        <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" />
+                      </svg>
                     </button>
                   )}
                 </div>
 
-                <div className="max-h-60 overflow-y-auto space-y-1">
+                {/* Quick Network Filters */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-1.5 no-scrollbar text-[10px]">
+                  {['ALL', 'Netflix', 'HBO', 'Apple TV+', 'Prime Video'].map((net) => (
+                    <button
+                      key={net}
+                      type="button"
+                      onClick={() => setPickerNetwork(net)}
+                      className={`px-2 py-0.5 rounded-full font-medium whitespace-nowrap transition-colors ${
+                        pickerNetwork === net
+                          ? 'bg-stone-900 text-white'
+                          : 'bg-stone-100 hover:bg-stone-200 text-stone-600'
+                      }`}
+                    >
+                      {net}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Status Bar */}
+                <div className="flex items-center justify-between text-[10px] text-stone-400 font-medium px-1 pb-1.5 border-b border-stone-100">
+                  <span>{pickerUnplottedCount} available to add</span>
+                  <span>{selectedSlugs.length}/8 active</span>
+                </div>
+
+                {/* Scrollable Series List */}
+                <div className="max-h-72 overflow-y-auto space-y-1 pr-0.5 mt-1">
                   {filteredPickerShows.length === 0 ? (
-                    <p className="text-center py-4 text-stone-400 text-xs">
+                    <p className="text-center py-6 text-stone-400 text-xs">
                       No matching series found.
                     </p>
                   ) : (
@@ -667,18 +744,27 @@ export function TrajectoryChart({
                       return (
                         <div
                           key={s.slug}
-                          className="flex items-center justify-between p-2 rounded-xl hover:bg-stone-50 transition-colors"
+                          className={`flex items-center justify-between p-2 rounded-xl transition-colors ${
+                            isSelected ? 'bg-stone-50/70' : 'hover:bg-stone-50'
+                          }`}
                         >
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-stone-800">{s.title}</span>
-                            <span className="text-[10px] text-stone-400">
+                          <div className="flex flex-col min-w-0 pr-2">
+                            <span className="font-semibold text-stone-800 truncate">{s.title}</span>
+                            <span className="text-[10px] text-stone-400 truncate">
                               {s.network} · {s.genre_group}
                             </span>
                           </div>
                           {isSelected ? (
-                            <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                              ✓ Plotted
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeShow(s.slug)}
+                              disabled={selectedSlugs.length <= 1}
+                              className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-rose-50 hover:text-rose-600 px-2 py-0.5 rounded-full border border-emerald-200 hover:border-rose-200 transition-colors group cursor-pointer"
+                              title="Click to unplot"
+                            >
+                              <span className="group-hover:hidden">✓ Plotted</span>
+                              <span className="hidden group-hover:inline">× Remove</span>
+                            </button>
                           ) : (
                             <button
                               type="button"
@@ -686,7 +772,7 @@ export function TrajectoryChart({
                                 addShow(s.slug);
                                 setPickerOpen(false);
                               }}
-                              className="px-2.5 py-1 rounded-full bg-brand-terracotta text-white font-semibold text-[11px] shadow-sm hover:bg-brand-terracotta-dark transition-colors"
+                              className="shrink-0 px-2.5 py-0.5 rounded-full bg-brand-terracotta text-white font-semibold text-[11px] shadow-sm hover:bg-brand-terracotta-dark transition-colors cursor-pointer"
                             >
                               + Add
                             </button>
@@ -695,6 +781,20 @@ export function TrajectoryChart({
                       );
                     })
                   )}
+                </div>
+
+                {/* Footer with Done button */}
+                <div className="pt-2 mt-2 border-t border-stone-100 flex items-center justify-between text-xs">
+                  <span className="text-[10px] text-stone-400">
+                    {selectedSlugs.length >= 8 ? 'Capacity full (replaces oldest)' : 'Select up to 8'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen(false)}
+                    className="px-3 py-1 rounded-full bg-stone-900 text-white text-xs font-semibold hover:bg-stone-800 transition-colors cursor-pointer"
+                  >
+                    Done
+                  </button>
                 </div>
               </div>
             )}
