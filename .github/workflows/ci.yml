@@ -106,10 +106,25 @@ jobs:
             PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_test -v ON_ERROR_STOP=1 -f "$file"
           done
 
-      - name: Smoke Test Leaderboard & Scores Views
+      - name: Run Supabase Security & RPC Smoke Test Suite on Migrated DB
         run: |
-          PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_test -v ON_ERROR_STOP=1 << 'EOF'
-            SELECT count(*) FROM series_leaderboard;
-            SELECT count(*) FROM series_daily_scores;
-            SELECT buzz_score, current_7d_score, delta_pct, rank FROM series_leaderboard LIMIT 1;
+          PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_test -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql
+
+      - name: Verify schema.sql Applies Cleanly to Fresh DB & Passes Smoke Tests
+        run: |
+          PGPASSWORD=postgrespassword psql -h localhost -U postgres -c "CREATE DATABASE tv_arena_schema_test;"
+          PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_schema_test << 'EOF'
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
+                CREATE ROLE anon NOLOGIN;
+              END IF;
+              IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN
+                CREATE ROLE authenticated NOLOGIN;
+              END IF;
+            END $$;
+            CREATE SCHEMA IF NOT EXISTS auth;
+            CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY, email TEXT);
+            CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$ SELECT '00000000-0000-0000-0000-000000000000'::UUID; $$ LANGUAGE sql;
           EOF
+          PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_schema_test -v ON_ERROR_STOP=1 -f supabase/schema.sql
+          PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_schema_test -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql

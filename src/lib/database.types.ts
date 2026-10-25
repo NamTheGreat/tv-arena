@@ -353,6 +353,14 @@ export type Database = {
         }
         Relationships: []
       }
+      series_recent_telemetry: {
+        Row: {
+          series_id: string
+          daily_series: number[]
+          daily_dates: string[]
+        }
+        Relationships: []
+      }
     }
     Functions: {
       submit_daily_score: {

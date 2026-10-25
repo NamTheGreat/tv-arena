@@ -40,9 +40,8 @@ pub fn fetch_show_events(
     tmdb_id: i64,
 ) -> Result<Vec<SeriesEventItem>> {
     let url = format!("https://api.themoviedb.org/3/tv/{}", tmdb_id);
-    let auth_header = format!("Bearer {}", api_key);
 
-    let show_res = make_tmdb_request(client, &url, &auth_header, api_key)?;
+    let show_res = make_tmdb_request(client, &url, api_key)?;
     let show_details: TmdbShowDetails = match show_res.into_json() {
         Ok(d) => d,
         Err(e) => bail!("Failed parsing TMDb show {}: {}", tmdb_id, e),
@@ -75,7 +74,7 @@ pub fn fetch_show_events(
             tmdb_id, season.season_number
         );
 
-        let season_res = match make_tmdb_request(client, &season_url, &auth_header, api_key) {
+        let season_res = match make_tmdb_request(client, &season_url, api_key) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!(
@@ -160,19 +159,16 @@ pub fn fetch_show_events(
     Ok(events)
 }
 
-fn make_tmdb_request(
-    client: &ureq::Agent,
-    url: &str,
-    auth_header: &str,
-    api_key: &str,
-) -> Result<ureq::Response> {
+fn make_tmdb_request(client: &ureq::Agent, url: &str, api_key: &str) -> Result<ureq::Response> {
+    let is_bearer = api_key.len() > 32 || api_key.starts_with("ey");
     let mut backoff = Duration::from_millis(500);
     for attempt in 0..3 {
-        let req = client
-            .get(url)
-            .query("api_key", api_key)
-            .set("Authorization", auth_header)
-            .set("Accept", "application/json");
+        let mut req = client.get(url).set("Accept", "application/json");
+        if is_bearer {
+            req = req.set("Authorization", &format!("Bearer {}", api_key));
+        } else {
+            req = req.query("api_key", api_key);
+        }
 
         match req.call() {
             Ok(resp) => return Ok(resp),

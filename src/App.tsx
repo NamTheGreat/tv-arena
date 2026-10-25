@@ -329,24 +329,47 @@ export default function App() {
       }
 
       if (data && data.length > 0) {
-        const fourteenDaysAgo = new Date();
-        fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-        const startDateStr = fourteenDaysAgo.toISOString().split('T')[0];
+        const telemetryValuesMap = new Map<string, number[]>();
+        const telemetryDatesMap = new Map<string, string[]>();
 
-        // Query dynamic daily scores view with fallback to raw telemetry across all catalog series
-        let { data: telemetryData } = await supabase
-          .from('series_daily_scores')
-          .select('series_id, daily_score, recorded_date')
-          .gte('recorded_date', startDateStr)
-          .order('recorded_date', { ascending: true });
+        // 1. Primary: load pre-aggregated 90-day telemetry (1 row per show, bypassing 1,000-row limit)
+        const { data: recentAggregated, error: aggError } = await supabase
+          .from('series_recent_telemetry')
+          .select('series_id, daily_series, daily_dates');
 
-        if (!telemetryData || telemetryData.length === 0) {
-          const fallbackTelemetry = await supabase
-            .from('series_daily_telemetry')
-            .select('series_id, daily_score, recorded_date')
-            .gte('recorded_date', startDateStr)
-            .order('recorded_date', { ascending: true });
-          telemetryData = fallbackTelemetry.data as any;
+        if (!aggError && recentAggregated && recentAggregated.length > 0) {
+          for (const row of recentAggregated) {
+            telemetryValuesMap.set(row.series_id, (row.daily_series || []).map(Number));
+            telemetryDatesMap.set(row.series_id, row.daily_dates || []);
+          }
+        } else {
+          // 2. Fallback: paged query through raw daily scores using .range() to prevent 1,000-row cutoff
+          const ninetyDaysAgo = new Date();
+          ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+          const startDateStr = ninetyDaysAgo.toISOString().split('T')[0];
+          const PAGE_SIZE = 1000;
+          let from = 0;
+          while (true) {
+            const { data: page, error: pageErr } = await supabase
+              .from('series_daily_scores')
+              .select('series_id, daily_score, recorded_date')
+              .gte('recorded_date', startDateStr)
+              .order('recorded_date', { ascending: true })
+              .range(from, from + PAGE_SIZE - 1);
+
+            if (pageErr || !page || page.length === 0) break;
+            for (const row of page) {
+              const arr = telemetryValuesMap.get(row.series_id) || [];
+              arr.push(Number(row.daily_score ?? 0));
+              telemetryValuesMap.set(row.series_id, arr);
+
+              const dateArr = telemetryDatesMap.get(row.series_id) || [];
+              dateArr.push(String(row.recorded_date));
+              telemetryDatesMap.set(row.series_id, dateArr);
+            }
+            if (page.length < PAGE_SIZE) break;
+            from += PAGE_SIZE;
+          }
         }
 
         const { data: eventsData } = await supabase
@@ -379,20 +402,6 @@ export default function App() {
             if (!breakoutMap.has(b.series_id)) {
               breakoutMap.set(b.series_id, b.reason);
             }
-          }
-        }
-
-        const telemetryValuesMap = new Map<string, number[]>();
-        const telemetryDatesMap = new Map<string, string[]>();
-        if (telemetryData) {
-          for (const row of telemetryData) {
-            const arr = telemetryValuesMap.get(row.series_id) || [];
-            arr.push(Number(row.daily_score ?? 0));
-            telemetryValuesMap.set(row.series_id, arr);
-
-            const dateArr = telemetryDatesMap.get(row.series_id) || [];
-            dateArr.push(String(row.recorded_date));
-            telemetryDatesMap.set(row.series_id, dateArr);
           }
         }
 

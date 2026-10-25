@@ -103,9 +103,9 @@ export function ShowDetailView({ seriesList }: ShowDetailViewProps) {
             ) : isSteady ? (
               <span className="text-stone-500">Steady</span>
             ) : isUp ? (
-              <span className="text-emerald-600">+{(show.delta_pct || 0)}%</span>
+              <span className="text-emerald-600">+{(show.delta_pct as number).toFixed(1)}%</span>
             ) : (
-              <span className="text-rose-600">{show.delta_pct}%</span>
+              <span className="text-rose-600">{(show.delta_pct as number).toFixed(1)}%</span>
             )}
           </div>
         </div>

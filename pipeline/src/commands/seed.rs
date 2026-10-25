@@ -70,7 +70,7 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
     let max_pages = 25;
     let mut retry_count = 0;
     const MAX_RETRIES_PER_PAGE: u32 = 3;
-    let auth_header = format!("Bearer {}", tmdb_key);
+    let is_bearer = tmdb_key.len() > 32 || tmdb_key.starts_with("ey");
 
     while seeded < limit && page <= max_pages {
         // Exclude: 10762 (Kids), 10763 (News), 10764 (Reality), 10766 (Soap), 10767 (Talk)
@@ -86,13 +86,14 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
             page
         );
 
-        let res = match client
-            .get(&url)
-            .query("api_key", tmdb_key)
-            .set("Authorization", &auth_header)
-            .set("Accept", "application/json")
-            .call()
-        {
+        let mut req = client.get(&url).set("Accept", "application/json");
+        if is_bearer {
+            req = req.set("Authorization", &format!("Bearer {}", tmdb_key));
+        } else {
+            req = req.query("api_key", tmdb_key);
+        }
+
+        let res = match req.call() {
             Ok(r) => {
                 retry_count = 0;
                 r
@@ -141,8 +142,16 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
             }
         };
 
-        let Ok(data) = res.into_json::<TmdbDiscoverResponse>() else {
-            break;
+        let data = match res.into_json::<TmdbDiscoverResponse>() {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!(
+                    "⚠️  Failed to parse TMDb discover response on page {}: {}. Skipping to next page.",
+                    page, e
+                );
+                page += 1;
+                continue;
+            }
         };
 
         for item in &data.results {
@@ -155,13 +164,14 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
 
             // Fetch show details for network + genre + status
             let detail_url = format!("https://api.themoviedb.org/3/tv/{}?language=en-US", item.id);
-            let Ok(detail_res) = client
-                .get(&detail_url)
-                .query("api_key", tmdb_key)
-                .set("Authorization", &auth_header)
-                .set("Accept", "application/json")
-                .call()
-            else {
+            let mut detail_req = client.get(&detail_url).set("Accept", "application/json");
+            if is_bearer {
+                detail_req = detail_req.set("Authorization", &format!("Bearer {}", tmdb_key));
+            } else {
+                detail_req = detail_req.query("api_key", tmdb_key);
+            }
+
+            let Ok(detail_res) = detail_req.call() else {
                 continue;
             };
             let Ok(detail) = detail_res.into_json::<TmdbTvDetail>() else {
@@ -253,6 +263,12 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
             break;
         }
         page += 1;
+    }
+
+    if limit > 0 && seeded == 0 {
+        anyhow::bail!(
+            "TMDb seed failed: 0 series seeded. Check TMDB_API_KEY and network connectivity."
+        );
     }
 
     println!("\n🎉 Finished seeding {} new series into Supabase!", seeded);

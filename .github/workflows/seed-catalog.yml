@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       limit:
-        description: 'Max number of new shows to seed'
+        description: 'Max number of new shows to seed (e.g. 5 for smoke test, 200 for full)'
         required: false
-        default: '200'
+        default: '5'
 
 jobs:
   seed:
