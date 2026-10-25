@@ -16,6 +16,14 @@ DECLARE
 BEGIN
   RAISE NOTICE 'Testing View Schema & Column Integrity...';
 
+  -- Seed baseline series if empty to test view projections
+  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score, delta_pct)
+  VALUES 
+    (gen_random_uuid(), 66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', 'test', 0, 0),
+    (gen_random_uuid(), 1399, 'game-of-thrones', 'Game of Thrones', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Game_of_Thrones', 'test', 0, 0),
+    (gen_random_uuid(), 114472, 'severance', 'Severance', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#4A7C59', 'Severance', 'test', 0, 0)
+  ON CONFLICT (slug) DO NOTHING;
+
   SELECT COUNT(*) INTO v_count FROM series_leaderboard;
   IF v_count < 1 THEN
     RAISE EXCEPTION 'series_leaderboard returned 0 rows';
