@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS series_daily_telemetry (
   id BIGSERIAL PRIMARY KEY,
   series_id UUID REFERENCES series(id) ON DELETE CASCADE,
   recorded_date DATE NOT NULL DEFAULT CURRENT_DATE,
-  daily_score BIGINT NOT NULL,
+  daily_score BIGINT NOT NULL DEFAULT 0,
   wiki_views INT DEFAULT 0,
   reddit_comments INT DEFAULT 0,
   reddit_upvotes INT DEFAULT 0,

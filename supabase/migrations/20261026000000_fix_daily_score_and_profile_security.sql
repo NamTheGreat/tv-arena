@@ -10,6 +10,9 @@ CREATE POLICY "Allow users update own profile" ON profiles
   USING (auth.uid() = id) 
   WITH CHECK (auth.uid() = id);
 
+-- 1b. Ensure series_daily_telemetry.daily_score defaults to 0
+ALTER TABLE series_daily_telemetry ALTER COLUMN daily_score SET DEFAULT 0;
+
 -- 2. Harden views with security_invoker = on, anchor to max telemetry date, and deterministic tie-breaker
 CREATE OR REPLACE VIEW series_daily_scores 
 WITH (security_invoker = on) AS

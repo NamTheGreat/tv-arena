@@ -67,8 +67,8 @@ BEGIN
   RETURNING id INTO v_test_show_id;
 
   -- Case A: Show with no previous week telemetry must return delta_pct IS NULL
-  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes)
-  VALUES (v_test_show_id, v_anchor_date, 100, 10, 5);
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
+  VALUES (v_test_show_id, v_anchor_date, 2625, 100, 10, 5);
 
   SELECT delta_pct INTO v_delta FROM series_leaderboard WHERE id = v_test_show_id;
   IF v_delta IS NOT NULL THEN
@@ -77,8 +77,8 @@ BEGIN
 
   -- Case B: Show with equal 7-day current and previous volume must return exactly 0.00
   -- Insert equal volume in previous window: anchor_date - 8 days
-  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes)
-  VALUES (v_test_show_id, v_anchor_date - INTERVAL '8 days', 100, 10, 5);
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
+  VALUES (v_test_show_id, v_anchor_date - INTERVAL '8 days', 2625, 100, 10, 5);
 
   SELECT delta_pct INTO v_delta FROM series_leaderboard WHERE id = v_test_show_id;
   IF v_delta <> 0.00 THEN
