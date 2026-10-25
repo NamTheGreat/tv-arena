@@ -14,10 +14,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// One-time: Parse Kaggle CSV, verify Wiki slugs, and seed Supabase
+    /// Discover & seed prestige TV via TMDb API (default), or parse CSV with --csv <file>
     Seed {
-        #[arg(short, long, default_value = "TMDB_tv_dataset_v3.csv")]
-        csv: String,
+        #[arg(short, long)]
+        csv: Option<String>,
         #[arg(short, long, default_value_t = 200)]
         limit: usize,
     },
@@ -37,7 +37,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Seed { csv, limit } => commands::seed::run_seed(&csv, limit, &config)?,
+        Commands::Seed { csv, limit } => commands::seed::run_seed(csv.as_deref(), limit, &config)?,
         Commands::Sync => commands::sync::run_sync(&config)?,
         Commands::Events => commands::events::run_events(&config)?,
         Commands::DailyDeck { date } => commands::daily_deck::run_daily_deck(&config, date)?,
