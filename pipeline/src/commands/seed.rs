@@ -68,30 +68,75 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
     let mut page = 1;
     // ponytail: 25 pages × 20 results = 500 candidates, plenty for 200 limit
     let max_pages = 25;
+    let mut retry_count = 0;
+    const MAX_RETRIES_PER_PAGE: u32 = 3;
+    let auth_header = format!("Bearer {}", tmdb_key);
 
     while seeded < limit && page <= max_pages {
         // Exclude: 10762 (Kids), 10763 (News), 10764 (Reality), 10766 (Soap), 10767 (Talk)
         let url = format!(
             "https://api.themoviedb.org/3/discover/tv\
-             ?api_key={}\
-             &language=en-US\
+             ?language=en-US\
              &sort_by=vote_count.desc\
              &vote_average.gte=7.0\
              &vote_count.gte=800\
              &without_genres=10762,10763,10764,10766,10767\
              &with_original_language=en\
              &page={}",
-            tmdb_key, page
+            page
         );
 
-        let res = match client.get(&url).call() {
-            Ok(r) => r,
-            Err(_) => {
+        let res = match client
+            .get(&url)
+            .query("api_key", tmdb_key)
+            .set("Authorization", &auth_header)
+            .set("Accept", "application/json")
+            .call()
+        {
+            Ok(r) => {
+                retry_count = 0;
+                r
+            }
+            Err(ureq::Error::Status(status, _resp)) => {
+                if status == 401 || status == 403 {
+                    anyhow::bail!(
+                        "TMDb authentication failed (HTTP {}). Please check TMDB_API_KEY.",
+                        status
+                    );
+                }
+                retry_count += 1;
+                if retry_count >= MAX_RETRIES_PER_PAGE {
+                    eprintln!(
+                        "⚠️  Failed to fetch TMDb page {} after {} attempts (HTTP {}). Skipping to next page.",
+                        page, retry_count, status
+                    );
+                    page += 1;
+                    retry_count = 0;
+                    continue;
+                }
                 eprintln!(
-                    "⚠️  Failed to fetch TMDb discover page {}, retrying...",
-                    page
+                    "⚠️  TMDb error HTTP {} on page {}, retrying ({}/{})...",
+                    status, page, retry_count, MAX_RETRIES_PER_PAGE
                 );
-                thread::sleep(Duration::from_secs(1));
+                thread::sleep(Duration::from_secs(retry_count as u64));
+                continue;
+            }
+            Err(e) => {
+                retry_count += 1;
+                if retry_count >= MAX_RETRIES_PER_PAGE {
+                    eprintln!(
+                        "⚠️  Network error on page {} after {} attempts: {}. Skipping to next page.",
+                        page, retry_count, e
+                    );
+                    page += 1;
+                    retry_count = 0;
+                    continue;
+                }
+                eprintln!(
+                    "⚠️  Network error on page {}, retrying ({}/{})...",
+                    page, retry_count, MAX_RETRIES_PER_PAGE
+                );
+                thread::sleep(Duration::from_secs(retry_count as u64));
                 continue;
             }
         };
@@ -109,11 +154,14 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
             }
 
             // Fetch show details for network + genre + status
-            let detail_url = format!(
-                "https://api.themoviedb.org/3/tv/{}?api_key={}&language=en-US",
-                item.id, tmdb_key
-            );
-            let Ok(detail_res) = client.get(&detail_url).call() else {
+            let detail_url = format!("https://api.themoviedb.org/3/tv/{}?language=en-US", item.id);
+            let Ok(detail_res) = client
+                .get(&detail_url)
+                .query("api_key", tmdb_key)
+                .set("Authorization", &auth_header)
+                .set("Accept", "application/json")
+                .call()
+            else {
                 continue;
             };
             let Ok(detail) = detail_res.into_json::<TmdbTvDetail>() else {

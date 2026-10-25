@@ -61,3 +61,55 @@ jobs:
 
       - name: Run Tests
         run: cargo test --manifest-path pipeline/Cargo.toml
+
+  database:
+    name: Database Migration Replay (Postgres 15)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: tv_arena_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Bootstrap Supabase Emulation Stubs
+        run: |
+          PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_test << 'EOF'
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'anon') THEN
+                CREATE ROLE anon NOLOGIN;
+              END IF;
+              IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN
+                CREATE ROLE authenticated NOLOGIN;
+              END IF;
+            END $$;
+            CREATE SCHEMA IF NOT EXISTS auth;
+            CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY, email TEXT);
+            CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$ SELECT '00000000-0000-0000-0000-000000000000'::UUID; $$ LANGUAGE sql;
+          EOF
+
+      - name: Apply All Migrations Sequentially
+        run: |
+          for file in $(ls -1 supabase/migrations/*.sql | sort); do
+            echo "Applying $file..."
+            PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_test -v ON_ERROR_STOP=1 -f "$file"
+          done
+
+      - name: Smoke Test Leaderboard & Scores Views
+        run: |
+          PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_test -v ON_ERROR_STOP=1 << 'EOF'
+            SELECT count(*) FROM series_leaderboard;
+            SELECT count(*) FROM series_daily_scores;
+            SELECT buzz_score, current_7d_score, delta_pct, rank FROM series_leaderboard LIMIT 1;
+          EOF

@@ -65,9 +65,17 @@ SELECT
 FROM series_daily_telemetry t
 CROSS JOIN (SELECT wiki_weight, comment_weight, upvote_weight FROM score_weights WHERE id = 1 LIMIT 1) w;
 
-CREATE OR REPLACE VIEW series_leaderboard 
+GRANT SELECT ON series_daily_scores TO anon, authenticated;
+
+DROP VIEW IF EXISTS series_leaderboard CASCADE;
+
+CREATE VIEW series_leaderboard 
 WITH (security_invoker = on) AS
-WITH daily_buckets AS (
+WITH anchor AS (
+  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  FROM series_daily_telemetry
+),
+daily_buckets AS (
   SELECT
     s.id AS series_id,
     s.tmdb_id,
@@ -77,11 +85,12 @@ WITH daily_buckets AS (
     s.genre_group,
     s.release_years,
     s.chart_color,
-    COALESCE(SUM(CASE WHEN d.recorded_date > CURRENT_DATE - INTERVAL '7 days' AND d.recorded_date <= CURRENT_DATE THEN d.daily_score ELSE 0 END), 0)::BIGINT AS current_7d_score,
-    COALESCE(SUM(CASE WHEN d.recorded_date > CURRENT_DATE - INTERVAL '14 days' AND d.recorded_date <= CURRENT_DATE - INTERVAL '7 days' THEN d.daily_score ELSE 0 END), 0)::BIGINT AS previous_7d_score
+    COALESCE(SUM(CASE WHEN d.recorded_date > a.max_date - INTERVAL '7 days' AND d.recorded_date <= a.max_date THEN d.daily_score ELSE 0 END), 0)::BIGINT AS current_7d_score,
+    COALESCE(SUM(CASE WHEN d.recorded_date > a.max_date - INTERVAL '14 days' AND d.recorded_date <= a.max_date - INTERVAL '7 days' THEN d.daily_score ELSE 0 END), 0)::BIGINT AS previous_7d_score
   FROM series s
+  CROSS JOIN anchor a
   LEFT JOIN series_daily_scores d ON s.id = d.series_id
-  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.genre_group, s.release_years, s.chart_color
+  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.genre_group, s.release_years, s.chart_color, a.max_date
 )
 SELECT
   series_id AS id,
@@ -92,16 +101,18 @@ SELECT
   genre_group,
   release_years,
   chart_color,
-  current_7d_score AS buzz_score,
   current_7d_score,
+  current_7d_score AS buzz_score,
   previous_7d_score,
   CASE
     WHEN previous_7d_score > 0 THEN
       ROUND(((current_7d_score - previous_7d_score)::numeric / previous_7d_score::numeric) * 100, 2)
-    ELSE 0.0
-  END AS delta_pct
-FROM daily_buckets
-ORDER BY current_7d_score DESC;
+    ELSE NULL
+  END AS delta_pct,
+  ROW_NUMBER() OVER (ORDER BY current_7d_score DESC, title ASC) as rank
+FROM daily_buckets;
+
+GRANT SELECT ON series_leaderboard TO anon, authenticated;
 
 -- Enable public read-only access for the React frontend
 ALTER TABLE series ENABLE ROW LEVEL SECURITY;

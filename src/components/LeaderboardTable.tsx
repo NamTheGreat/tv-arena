@@ -80,8 +80,9 @@ export function LeaderboardTable({
         {rankedShows.map((show, idx) => {
           const rank = idx + 1;
           const widthPct = Math.round((show.buzz_score / maxLeaderboardViewers) * 100);
-          const isSteady = Math.abs(show.delta_pct) < 0.5;
-          const isUp = show.delta_pct > 0;
+          const isNew = show.delta_pct === null || show.delta_pct === undefined;
+          const isSteady = !isNew && Math.abs(show.delta_pct as number) < 0.5;
+          const isUp = !isNew && (show.delta_pct as number) > 0;
 
           return (
             <article
@@ -132,7 +133,11 @@ export function LeaderboardTable({
                   <div className="font-serif text-base sm:text-xl font-medium text-[#1E1A17]">
                     {show.buzz_score.toLocaleString()}
                   </div>
-                  {isSteady ? (
+                  {isNew ? (
+                    <div className="text-[10px] sm:text-xs font-semibold text-brand-terracotta mt-0.5">
+                      NEW
+                    </div>
+                  ) : isSteady ? (
                     <div className="text-[10px] sm:text-xs font-medium text-[#A3998D] mt-0.5">
                       Steady
                     </div>
@@ -143,7 +148,7 @@ export function LeaderboardTable({
                       }`}
                     >
                       <span>{isUp ? '▲' : '▼'}</span>
-                      <span>{Math.abs(show.delta_pct).toFixed(1)}%</span>
+                      <span>{Math.abs(show.delta_pct || 0).toFixed(1)}%</span>
                     </div>
                   )}
                 </div>
