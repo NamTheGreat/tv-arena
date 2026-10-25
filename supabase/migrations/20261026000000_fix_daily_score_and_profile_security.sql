@@ -1,6 +1,7 @@
 -- Migration: Fix submit_daily_score column reference, validate answers, secure profiles, and harden views
 
 -- 1. Secure profiles table: prevent users from forging streak / score columns
+GRANT SELECT ON profiles TO anon, authenticated;
 REVOKE UPDATE ON profiles FROM authenticated;
 GRANT UPDATE (username, display_name) ON profiles TO authenticated;
 

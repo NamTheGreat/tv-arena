@@ -244,6 +244,7 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read on profiles" ON profiles;
 CREATE POLICY "Allow public read on profiles" ON profiles FOR SELECT USING (true);
 
+GRANT SELECT ON profiles TO anon, authenticated;
 REVOKE UPDATE ON profiles FROM authenticated;
 GRANT UPDATE (username, display_name) ON profiles TO authenticated;
 

@@ -96,7 +96,7 @@ jobs:
             END $$;
             CREATE SCHEMA IF NOT EXISTS auth;
             CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY, email TEXT);
-            CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$ SELECT '00000000-0000-0000-0000-000000000000'::UUID; $$ LANGUAGE sql;
+            CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::UUID; $$ LANGUAGE sql STABLE;
           EOF
 
       - name: Apply All Migrations Sequentially
@@ -124,7 +124,7 @@ jobs:
             END $$;
             CREATE SCHEMA IF NOT EXISTS auth;
             CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY, email TEXT);
-            CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$ SELECT '00000000-0000-0000-0000-000000000000'::UUID; $$ LANGUAGE sql;
+            CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::UUID; $$ LANGUAGE sql STABLE;
           EOF
           PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_schema_test -v ON_ERROR_STOP=1 -f supabase/schema.sql
           PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_schema_test -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql

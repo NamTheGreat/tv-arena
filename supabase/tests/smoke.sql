@@ -106,6 +106,9 @@ BEGIN
   VALUES (v_user_id, 'test_pilot', 'Test Pilot', 1, 1)
   ON CONFLICT (id) DO NOTHING;
 
+  -- Set auth context to match user
+  PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
+
   -- Switch to authenticated role
   SET LOCAL ROLE authenticated;
 
@@ -116,17 +119,12 @@ BEGIN
     v_caught := TRUE;
   END;
 
-  RESET ROLE;
-
   IF NOT v_caught THEN
+    RESET ROLE;
     RAISE EXCEPTION 'Security failure: authenticated role was able to modify best_streak!';
   END IF;
 
   -- Legitimate update to username must succeed
-  SET LOCAL ROLE authenticated;
-  -- Set auth context to match user
-  PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
-
   UPDATE profiles SET username = 'updated_pilot' WHERE id = v_user_id;
 
   RESET ROLE;
@@ -185,7 +183,8 @@ BEGIN
   VALUES (v_today, v_deck)
   ON CONFLICT (date) DO UPDATE SET series_ids = v_deck;
 
-  -- 5a. Unauthenticated submission must fail
+  -- 5a. Unauthenticated submission must fail (no sub claim)
+  PERFORM set_config('request.jwt.claim.sub', '', true);
   v_caught := FALSE;
   BEGIN
     PERFORM submit_daily_score(v_today, '["higher", "lower"]'::jsonb);
@@ -196,8 +195,8 @@ BEGIN
     RAISE EXCEPTION 'submit_daily_score allowed unauthenticated execution';
   END IF;
 
-  -- Emulate auth.uid()
-  CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$ SELECT '11111111-1111-1111-1111-111111111111'::UUID; $$ LANGUAGE sql;
+  -- Set auth user context
+  PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
 
   -- 5b. Malformed payload (wrong length) must fail
   v_caught := FALSE;
