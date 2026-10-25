@@ -49,10 +49,11 @@ export function getNext0200UtcCountdown(): string {
 interface DatabaseStatusCardProps {
   type: DatabaseStatusType;
   errorMessage?: string | null;
+  viewWarning?: string | null;
   onClose?: () => void;
 }
 
-export function DatabaseStatusCard({ type, errorMessage, onClose }: DatabaseStatusCardProps) {
+export function DatabaseStatusCard({ type, errorMessage, viewWarning, onClose }: DatabaseStatusCardProps) {
   const [latestRun, setLatestRun] = useState<SyncRunRecord | null>(null);
   const [isLoadingRun, setIsLoadingRun] = useState(false);
   const [countdown, setCountdown] = useState<string>(getNext0200UtcCountdown());
@@ -215,6 +216,14 @@ export function DatabaseStatusCard({ type, errorMessage, onClose }: DatabaseStat
             </p>
           </div>
         </div>
+
+        {/* View degradation warning if view query failed and fell back */}
+        {viewWarning && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-mono mb-4 overflow-x-auto">
+            <span className="font-bold block mb-1">⚠️ View Degradation Warning:</span>
+            {viewWarning}
+          </div>
+        )}
 
         {/* Error log if present */}
         {latestRun?.error_log && (

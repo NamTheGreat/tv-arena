@@ -22,7 +22,7 @@ export type Database = {
           wiki_slug: string
           reddit_query: string
           buzz_score: number
-          delta_pct: number
+          delta_pct: number | null
           updated_at: string | null
         }
         Insert: {
@@ -323,7 +323,44 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      series_leaderboard: {
+        Row: {
+          id: string
+          tmdb_id: number
+          slug: string
+          title: string
+          network: string
+          genre_group: string
+          release_years: string
+          chart_color: string | null
+          current_7d_score: number
+          buzz_score: number
+          previous_7d_score: number
+          delta_pct: number | null
+          rank: number
+        }
+        Relationships: []
+      }
+      series_daily_scores: {
+        Row: {
+          telemetry_id: string
+          series_id: string
+          recorded_date: string
+          wiki_views: number
+          reddit_comments: number
+          reddit_upvotes: number
+          daily_score: number
+        }
+        Relationships: []
+      }
+      series_recent_telemetry: {
+        Row: {
+          series_id: string
+          daily_series: number[]
+          daily_dates: string[]
+        }
+        Relationships: []
+      }
     }
     Functions: {
       submit_daily_score: {
