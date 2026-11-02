@@ -16,34 +16,44 @@
 
 ## 🏛️ System Architecture
 
-TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend with a high-throughput **Rust ETL pipeline** backed by a **Supabase PostgreSQL** database with Row-Level Security (RLS) and automated daily cron telemetry synchronization.
+TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend with a high-throughput **Rust ETL pipeline** backed by a **Supabase PostgreSQL** database with Row-Level Security (RLS), dynamic SQL scoring views, and automated GitHub Actions workflows for nightly telemetry sync and zero-CSV catalog discovery.
 
-```
+```text
                     ┌─────────────────────────┐
-                    │    Kaggle TMDB Dataset  │
-                    │   (Historical Metadata) │
+                    │    TMDb API (v3 / v4)   │ ◄── Automated Discovery & Milestone Events
+                    │  (Discover TV Series)   │     (Fallback: Kaggle TMDB CSV)
                     └────────────┬────────────┘
                                  │
                                  ▼
                     ┌─────────────────────────┐
                     │  Rust Pipeline CLI      │ ◄── Wikipedia REST API (Pageviews)
-                    │  (tv-arena-pipeline)    │ ◄── Reddit Search API (Engagement)
+                    │  (tv-arena-pipeline)    │ ◄── Reddit Search API (Discussions & Sentiment)
                     └────────────┬────────────┘
                                  │
-                    ┌────────────▼────────────┐
-                    │   Supabase PostgreSQL   │
-                    │   - series              │
-                    │   - series_daily_...    │
-                    └────────────┬────────────┘
-                                 │ Public Read (RLS)
                                  ▼
-                    ┌─────────────────────────┐
-                    │  React 19 + Vite + TS   │
-                    │  - 1v1 Arena Tug-of-War │
-                    │  - Global Leaderboard   │
-                    │  - SVG Telemetry Charts │
-                    │  - Higher/Lower Trivia  │
-                    └─────────────────────────┘
+                    ┌──────────────────────────────────────────────┐
+                    │             Supabase PostgreSQL              │
+                    │  Core Tables:                                │
+                    │  - series, series_daily_telemetry            │
+                    │  - daily_challenges, user_scores, profiles   │
+                    │  - sync_runs, series_events, series_breakouts│
+                    │  Dynamic Views & Security:                   │
+                    │  - series_leaderboard (dynamic 7-day scores) │
+                    │  - series_daily_scores (weighted raw signals)│
+                    │  - series_recent_telemetry (array-aggregated)│
+                    │  - submit_daily_score() RPC & Profile RLS    │
+                    └──────────────────────┬───────────────────────┘
+                                           │ Public Read (RLS) & Auth
+                                           ▼
+                    ┌──────────────────────────────────────────────┐
+                    │            React 19 + Vite + TS              │
+                    │  - 1v1 Arena Tug-of-War                      │
+                    │  - Global Leaderboard (with "NEW" badges)    │
+                    │  - Interactive Trajectory Workbench (Presets,│
+                    │    Milestone Overlays, 200-Show Pinning)     │
+                    │  - Daily Challenge Trivia & Verified Streaks │
+                    │  - Pipeline Operational Health Modal         │
+                    └──────────────────────────────────────────────┘
 ```
 
 ---
@@ -51,24 +61,38 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 ## ✨ Features & Dashboard Modes
 
 ### 1. ⚔️ The Arena (1v1 Head-to-Head Comparison)
-- Interactive contender selector with live search filtering and swap capabilities.
+- Interactive contender selector with live search filtering, auto-closing dropdowns, and instant show swapping.
 - Dynamic tug-of-war bar visualizing engagement splits between any two series.
 - Instant differential calculation showing absolute volume and percentage margins.
 
 ### 2. 🏆 Global Leaderboard
-- Real-time ranking of top television properties by measured 7-day engagement index.
-- Platform filtering (Netflix, HBO, Apple TV+, Prime Video, Hulu, Disney+, etc.) and genre isolation.
-- Visual proportional telemetry bars and trend indicators (`▲ Up`, `▼ Down`, `Steady`).
+- Real-time ranking of television properties computed dynamically via the `series_leaderboard` SQL view.
+- Rolling 7-day windows anchored to the latest telemetry date to eliminate day-boundary bias.
+- Platform filtering (Netflix, HBO, Apple TV+, Prime Video, Hulu, Disney+, FX, etc.) and genre isolation.
+- Proportional telemetry bars and trend indicators (`▲ Up`, `▼ Down`, `Steady`, or bold `NEW` badges for newly debuted shows with no prior week history).
+- Deterministic rank tie-breaking (`ORDER BY current_7d_score DESC, title ASC`).
 
-### 3. 📈 Multi-Series SVG Telemetry Charts
-- Lightweight zero-dependency mathematical vector charting (`1000x420` SVG coordinate grid).
-- Multi-series telemetry curves with interactive hover states and 7-day retrospective data points.
-- Cumulative period volume bars comparing market footprints.
+### 3. 📈 Interactive Trajectory Workbench (`/charts`)
+- Zero-dependency mathematical vector charting rendered on a high-precision SVG coordinate grid.
+- **Quick Presets:** Instant multi-series battle views (*Flagships*, *Streamer Wars*, *Drama Heavyweights*, *Breakouts*, *Netflix*, *HBO*, *Apple TV+*).
+- **200-Show Catalog Popover:** Search and pin up to 8 concurrent series with direct color-coded lines and active show chips.
+- **Show Focus & Isolation:** Single-click any show chip or trajectory line to isolate that series while softly dimming contenders; click again or clear to restore full view.
+- **Time Ranges:** Responsive `7D`, `30D`, `90D`, and `All-Time` ranges with URL synchronization (`/charts?range=90D&slug=severance`).
+- **Milestone Event Overlays:** TMDb-powered markers on the trajectory curves showing Season Premieres, Season Finales, and Series Finales.
+- **Breakout Anomaly Detection:** Anomaly detection engine flagging rapid engagement spikes with `🔥 Breakout` badges.
 
-### 4. 🎯 Higher / Lower Engagement Trivia
-- Engaging interactive game pitting known benchmark series against challenger shows.
-- Tests player intuition comparing 7-day engagement index performance.
-- Streak counting with browser `localStorage` best-score persistence and instant answer feedback.
+### 4. 🎯 Daily Challenge & User Profiles (`/guess`)
+- Daily curated 10-pair challenge deck generated at 00:00 UTC (`daily_challenges`).
+- Player guesses whether show B has higher or lower 7-day engagement than show A.
+- Supabase Authentication (Google OAuth & Email/Password) with server-side profile persistence (`profiles`).
+- **Anti-Cheat Scoring RPC:** Scores verified and calculated server-side via `submit_daily_score(p_date, p_answers)`, enforcing UTC submission windows and preventing duplicate daily entries.
+- Column-level security restricting user modifications on `profiles` to `username` and `display_name`, protecting streak records (`current_streak`, `best_streak`) from client tampering.
+
+### 5. 🩺 Pipeline Operational Health
+- Real-time database health modal (`DatabaseStatusCard`) accessible directly from the header status pill.
+- Inspects `sync_runs` table reporting last sync run timestamp, status (`Healthy / Success`, `Partial Sync`, `Sync Failed`), duration, shows updated, and individual `wiki_failures` / `reddit_failures` counters.
+- Countdown timer tracking the next scheduled 06:00 UTC sync run.
+- Automatic degradation warnings if the dynamic leaderboard view encounters an error and falls back to static series cache.
 
 ---
 
@@ -78,29 +102,40 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 .
 ├── .github/
 │   └── workflows/
-│       └── nightly-sync.yml      # GitHub Actions daily automated cron pipeline (06:00 UTC)
-├── .env.example                  # Environment configuration template
-├── .gitignore                    # Comprehensive multi-language ignore rules
-├── index.html                    # Single Page Application HTML entrypoint
-├── package.json                  # Frontend dependencies and npm scripts
-├── postcss.config.js             # PostCSS configuration
-├── tailwind.config.js            # Custom TV Arena warm palette & typography
-├── tsconfig.json                 # Strict TypeScript configuration
-├── vite.config.ts                # Vite bundler configuration
+│       ├── ci.yml                # CI Quality Gates: Vite build, Rust fmt/clippy/test, Postgres 15 migration replay & smoke tests
+│       ├── nightly-sync.yml      # Daily automated telemetry ETL cron (06:00 UTC)
+│       └── seed-catalog.yml      # TMDb auto-discover catalog seeding workflow
+├── functions/                    # Cloudflare Pages edge functions
+│   ├── arena/[a]/[b].ts          # Dynamic SSR OpenGraph meta tag injector
+│   └── og/[a]/[b].ts             # On-the-fly 1200x630 social preview card generator
 ├── src/
-│   ├── App.tsx                   # Primary application router & tab views
-│   ├── main.tsx                  # React DOM root bootstrapping
-│   ├── index.css                 # Custom background gradients & utility classes
-│   ├── vite-env.d.ts             # Vite client environment typing
-│   └── lib/
-│       ├── supabase.ts           # Supabase client & connection configuration
-│       └── svgMath.ts            # Mathematical coordinate transformations for SVG lines
+│   ├── App.tsx                   # Primary application router, telemetry loader, & modal orchestrator
+│   ├── components/
+│   │   ├── ArenaContenders.tsx   # 1v1 battleground comparison & tug-of-war
+│   │   ├── AuthModal.tsx         # Supabase Auth modal (Sign In / Sign Up)
+│   │   ├── DatabaseStatusCard.tsx# Pipeline operational health & setup card
+│   │   ├── LeaderboardTable.tsx  # Dynamic rankings table with platform/genre filters
+│   │   ├── ShowDetailView.tsx    # Dedicated individual show page with 7D sparkline
+│   │   ├── TrajectoryChart.tsx   # Interactive trajectory workbench, presets, & catalog popover
+│   │   ├── TriviaGame.tsx        # Daily challenge Higher/Lower game & streak view
+│   │   └── UserProfileDropdown.tsx# User profile menu, streak stats, & sign-out
+│   ├── lib/
+│   │   ├── auth.tsx              # Supabase Auth React context & session listener
+│   │   ├── database.types.ts     # Generated Supabase TypeScript database schema & view types
+│   │   ├── supabase.ts           # PostgREST client configuration
+│   │   └── svgMath.ts            # Mathematical coordinate transformations for SVG lines
+│   └── test/                     # Vitest component & mathematical unit test suite
 ├── supabase/
-│   └── schema.sql                # Complete PostgreSQL schema, indexes, RLS, and seed data
+│   ├── schema.sql                # Complete idempotent PostgreSQL schema, tables, views, RLS, and RPCs
+│   ├── migrations/               # Sequential version-controlled migrations (Postgres 15)
+│   └── tests/
+│       └── smoke.sql             # SQL smoke test suite verifying views, RPCs, and RLS in CI
 └── pipeline/
     ├── Cargo.toml                # Rust CLI dependencies (ureq, clap, chrono, serde)
     └── src/
-        └── main.rs               # Kaggle seeder and Wikipedia/Reddit nightly sync CLI
+        ├── clients/              # HTTP clients for TMDb, Wikipedia, Reddit, and Supabase
+        ├── commands/             # CLI commands: seed (TMDb auto-discover) & sync (telemetry ETL)
+        └── engine/               # Anomaly detection & scoring engine unit tests
 ```
 
 ---
@@ -108,9 +143,10 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 ## 🚀 Quick Start Guide
 
 ### Prerequisites
-- **Node.js**: v18.0.0 or higher (v20+ recommended)
+- **Node.js**: v20.0.0 or higher
 - **Rust**: 1.85.0 or higher with Cargo
 - **Supabase Account**: Required for real streaming telemetry and PostgreSQL storage
+- **TMDb API Key**: Required for catalog discovery and milestone event sync
 
 ---
 
@@ -144,8 +180,9 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
    ```
    Open your browser at `http://localhost:5173`.
 
-5. **Build for production:**
+5. **Run test suite & typecheck:**
    ```bash
+   npm test
    npm run build
    ```
 
@@ -153,19 +190,25 @@ TV Arena combines a modern **React 19 + TypeScript + Tailwind CSS** frontend wit
 
 ### Database Setup (Supabase)
 
-1. Open your Supabase project dashboard at [supabase.com](https://supabase.com).
-2. Navigate to the **SQL Editor**.
-3. Paste and execute the contents of [`supabase/schema.sql`](supabase/schema.sql).
-   - Provisions the `series` and `series_daily_telemetry` tables.
-   - Configures Full-Text Search and compound indexes.
-   - Enables Row-Level Security (RLS) with public read access.
-   - Seeds initial flagship series (*Stranger Things*, *House of the Dragon*, *Wednesday*, *The Last of Us*, etc.).
+You can provision your Supabase database using either the all-in-one schema or sequential migrations:
+
+1. **All-in-One Setup (Fresh Database):**
+   - Open your Supabase project dashboard at [supabase.com](https://supabase.com).
+   - Navigate to the **SQL Editor**.
+   - Paste and execute [`supabase/schema.sql`](supabase/schema.sql).
+
+2. **Migration Replay (Existing Database):**
+   - Apply the files in [`supabase/migrations/`](supabase/migrations/) sequentially in timestamp order.
+   - All migrations include cascade replacements, column-level security on profiles, and pre-aggregated views.
+
+3. **Verify Database Integrity:**
+   - Run the smoke test suite in [`supabase/tests/smoke.sql`](supabase/tests/smoke.sql) to assert that views, scoring aliases, and RLS privileges are properly configured.
 
 ---
 
 ### Rust ETL Pipeline
 
-The Rust pipeline supports both one-time bulk seeding from Kaggle datasets and scheduled nightly telemetry synchronization:
+The Rust pipeline supports automated API catalog discovery and scheduled nightly telemetry synchronization:
 
 ```bash
 cd pipeline
@@ -176,36 +219,49 @@ cd pipeline
    ```env
    SUPABASE_URL=https://your-project-id.supabase.co
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-secret-key
+   TMDB_API_KEY=your-tmdb-api-key-or-bearer-token
    ```
+   *(Supports both TMDb v3 32-character API keys and v4 Bearer JWT tokens).*
 
-2. **One-time Kaggle dataset seeding:**
+2. **TMDb Auto-Discover Catalog Seeding (Primary):**
    ```bash
-   cargo run --release -- seed --csv path/to/TMDB_tv_dataset_v3.csv --limit 200
+   cargo run --release -- seed --limit 200
    ```
-   - Filters for major broadcast networks and high-engagement titles.
-   - Validates live Wikipedia slugs via the Wikimedia REST API.
-   - Batches upsert records into Supabase.
+   - Auto-discovers high-engagement series from TMDb's `/discover/tv` endpoint (filtered by rating, vote threshold, and language).
+   - Resolves network provenance, genres, release years, and Wikipedia slugs.
+   - Includes retry caps (max 3 retries per page with linear backoff), rate limiting, and instant bail-out on 401/403 credentials issues.
+   - *Legacy CSV Fallback:* `cargo run --release -- seed --csv path/to/TMDB_tv_dataset_v3.csv --limit 200` is also supported.
 
-3. **Manual telemetry sync:**
+3. **Telemetry Synchronization:**
    ```bash
    cargo run --release -- sync
    ```
    - Fetches 7-day rolling pageview statistics from Wikipedia.
    - Queries Reddit `/r/television` discussions for comment velocity and upvote sentiment.
-   - Computes weighted viewership indices and delta percentages.
-   - Appends snapshot records to `series_daily_telemetry`.
+   - Records anomalies and breakout flags in `series_breakouts`.
+   - Fetches milestone premiere and finale events via TMDb into `series_events`.
+   - Records execution status, duration, and failure counts into `sync_runs`.
 
 ---
 
-## ⚙️ Automated Nightly Sync (CI/CD)
+## ⚙️ Automated Workflows & CI Quality Gates
 
-The repository includes a GitHub Actions workflow in [`.github/workflows/nightly-sync.yml`](.github/workflows/nightly-sync.yml) that executes daily at 06:00 UTC (`0 6 * * *`).
+The repository contains three primary GitHub Actions workflows:
 
-To enable:
-1. Navigate to your GitHub repository **Settings > Secrets and variables > Actions**.
-2. Add the following repository secrets:
-   - `SUPABASE_URL`: Your Supabase API endpoint.
-   - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase Service Role Secret Key.
+1. **CI Quality Gates ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):**
+   - Runs on every push and PR to `dev` and `main`.
+   - **Frontend:** TypeScript typecheck, Vite production build, and 39 Vitest unit tests.
+   - **Rust Pipeline:** Formatting (`cargo fmt --check`), linting (`cargo clippy -- -D warnings`), and 20 unit/integration tests.
+   - **Database Migration Replay (Postgres 15):** Starts a live PostgreSQL 15 service container, replays all migrations sequentially from scratch, and runs the [`supabase/tests/smoke.sql`](supabase/tests/smoke.sql) verification suite.
+   - **Schema Equivalence:** Provisions a second fresh database from [`supabase/schema.sql`](supabase/schema.sql) and verifies identical smoke test passes.
+
+2. **Nightly Telemetry Sync ([`.github/workflows/nightly-sync.yml`](.github/workflows/nightly-sync.yml)):**
+   - Executes daily at 06:00 UTC (`0 6 * * *`).
+   - Syncs Wikipedia pageviews, Reddit discussions, and milestone events for all active series.
+
+3. **Catalog Seeder ([`.github/workflows/seed-catalog.yml`](.github/workflows/seed-catalog.yml)):**
+   - Manual workflow dispatch with configurable limit (default `5` for smoke tests, up to `200` for full catalog expansion).
+   - Hardened with a 30-minute timeout and `contents: read` permissions.
 
 ---
 
@@ -215,7 +271,7 @@ TV Arena uses Cloudflare Pages Functions to serve edge-rendered OpenGraph metada
 
 ### Edge Endpoints:
 - `/arena/:a/:b`: Server-side injects dynamic OG and Twitter metadata into `index.html` (e.g. `The Boys vs Fallout | TV Arena Battle`) while preserving full Single-Page-Application client capabilities.
-- `/og/:a/:b`: Generates an on-the-fly 1200x630 battle card PNG using `workers-og` featuring both contender titles, live 7-day buzz scores, and an engagement momentum bar.
+- `/og/:a/:b`: Generates an on-the-fly 1200x630 battle card PNG using `workers-og` featuring both contender titles, live 7-day buzz scores (aliasing `current_7d_score`), and an engagement momentum bar.
 
 ### Cloudflare Environment Variables:
 Configure these in **Cloudflare Pages > Settings > Environment variables**:
@@ -242,5 +298,3 @@ curl -s http://localhost:8788/og/the-boys/fallout | file -
 - **Typography**:
   - Headings: `Newsreader`, `Cormorant Garamond` (Editorial Serif)
   - UI & Data: `Plus Jakarta Sans` with `font-tabular` for numerical stability
-
-
