@@ -1,0 +1,39 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+categories:
+  - title: '🚀 Features'
+    labels:
+      - 'feat'
+      - 'enhancement'
+      - 'frontend'
+  - title: '🐛 Bug Fixes & Database'
+    labels:
+      - 'fix'
+      - 'bug'
+      - 'database'
+  - title: '🦀 Rust Pipeline & CI/CD'
+    labels:
+      - 'rust-pipeline'
+      - 'ci-cd'
+      - 'dependencies'
+change-template: '- $TITLE (#$NUMBER) @$AUTHOR'
+version-resolver:
+  major:
+    labels:
+      - 'major'
+  minor:
+    labels:
+      - 'feat'
+      - 'enhancement'
+  patch:
+    labels:
+      - 'fix'
+      - 'bug'
+      - 'dependencies'
+      - 'rust-pipeline'
+      - 'database'
+  default: patch
+template: |
+  ## What's Changed in v$RESOLVED_VERSION
+
+  $CHANGES
