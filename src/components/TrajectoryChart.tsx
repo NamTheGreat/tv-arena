@@ -237,7 +237,7 @@ export function TrajectoryChart({
   };
 
   const breakoutShow = useMemo(
-    () => seriesList.find((s) => s.is_breakout) || seriesList.slice().sort((a, b) => b.delta_pct - a.delta_pct)[0],
+    () => seriesList.find((s) => s.is_breakout) || seriesList.slice().sort((a, b) => (b.delta_pct ?? 0) - (a.delta_pct ?? 0))[0],
     [seriesList]
   );
 
@@ -364,7 +364,7 @@ export function TrajectoryChart({
       candidates.sort((a, b) => {
         if (a.is_breakout && !b.is_breakout) return -1;
         if (!a.is_breakout && b.is_breakout) return 1;
-        return b.delta_pct - a.delta_pct;
+        return (b.delta_pct ?? 0) - (a.delta_pct ?? 0);
       });
     } else if (preset === 'netflix') {
       candidates = candidates.filter((s) => s.network.toLowerCase().includes('netflix'));
@@ -452,7 +452,7 @@ export function TrajectoryChart({
                 >
                   <span className="text-xs">🔥</span>
                   <span>
-                    Breakout: <strong>{breakoutShow.title}</strong> (+{breakoutShow.delta_pct.toFixed(1)}%)
+                    Breakout: <strong>{breakoutShow.title}</strong> (+{(breakoutShow.delta_pct ?? 0).toFixed(1)}%)
                   </span>
                   <span className="text-stone-400 font-mono">·</span>
                   <span className="text-brand-terracotta font-medium hover:underline">

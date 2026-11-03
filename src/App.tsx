@@ -276,6 +276,7 @@ export default function App() {
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [viewWarning, setViewWarning] = useState<string | null>(null);
 
   // Leaderboard Filter State
   const [platformFilter, setPlatformFilter] = useState<string>('ALL');
@@ -302,17 +303,23 @@ export default function App() {
       setIsLoading(true);
       setDbError(null);
       // Query authoritative SQL leaderboard view with fallback to series table
-      let { data, error } = await (supabase as any)
+      let { data, error } = await supabase
         .from('series_leaderboard')
         .select('*');
 
       if (error || !data || data.length === 0) {
+        if (error) {
+          console.warn('⚠️ Warning: failed to fetch from series_leaderboard view, falling back to static series table:', error);
+          setViewWarning(`Failed to query dynamic 'series_leaderboard' view (${error.message || 'unknown'}). Displaying static series table fallback.`);
+        }
         const fallback = await supabase
           .from('series')
           .select('*')
           .order('buzz_score', { ascending: false });
         data = fallback.data as any;
         error = fallback.error;
+      } else {
+        setViewWarning(null);
       }
 
       if (error) {
@@ -322,26 +329,47 @@ export default function App() {
       }
 
       if (data && data.length > 0) {
-        const ninetyDaysAgo = new Date();
-        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-        const startDateStr = ninetyDaysAgo.toISOString().split('T')[0];
+        const telemetryValuesMap = new Map<string, number[]>();
+        const telemetryDatesMap = new Map<string, string[]>();
 
-        // Query dynamic daily scores view with fallback to raw telemetry across all catalog series
-        let { data: telemetryData } = await (supabase as any)
-          .from('series_daily_scores')
-          .select('series_id, daily_score, recorded_date')
-          .gte('recorded_date', startDateStr)
-          .order('recorded_date', { ascending: true })
-          .limit(10000);
+        // 1. Primary: load pre-aggregated 90-day telemetry (1 row per show, bypassing 1,000-row limit)
+        const { data: recentAggregated, error: aggError } = await supabase
+          .from('series_recent_telemetry')
+          .select('series_id, daily_series, daily_dates');
 
-        if (!telemetryData || telemetryData.length === 0) {
-          const fallbackTelemetry = await supabase
-            .from('series_daily_telemetry')
-            .select('series_id, daily_score, recorded_date')
-            .gte('recorded_date', startDateStr)
-            .order('recorded_date', { ascending: true })
-            .limit(10000);
-          telemetryData = fallbackTelemetry.data as any;
+        if (!aggError && recentAggregated && recentAggregated.length > 0) {
+          for (const row of recentAggregated) {
+            telemetryValuesMap.set(row.series_id, (row.daily_series || []).map(Number));
+            telemetryDatesMap.set(row.series_id, row.daily_dates || []);
+          }
+        } else {
+          // 2. Fallback: paged query through raw daily scores using .range() to prevent 1,000-row cutoff
+          const ninetyDaysAgo = new Date();
+          ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+          const startDateStr = ninetyDaysAgo.toISOString().split('T')[0];
+          const PAGE_SIZE = 1000;
+          let from = 0;
+          while (true) {
+            const { data: page, error: pageErr } = await supabase
+              .from('series_daily_scores')
+              .select('series_id, daily_score, recorded_date')
+              .gte('recorded_date', startDateStr)
+              .order('recorded_date', { ascending: true })
+              .range(from, from + PAGE_SIZE - 1);
+
+            if (pageErr || !page || page.length === 0) break;
+            for (const row of page) {
+              const arr = telemetryValuesMap.get(row.series_id) || [];
+              arr.push(Number(row.daily_score ?? 0));
+              telemetryValuesMap.set(row.series_id, arr);
+
+              const dateArr = telemetryDatesMap.get(row.series_id) || [];
+              dateArr.push(String(row.recorded_date));
+              telemetryDatesMap.set(row.series_id, dateArr);
+            }
+            if (page.length < PAGE_SIZE) break;
+            from += PAGE_SIZE;
+          }
         }
 
         const { data: eventsData } = await supabase
@@ -377,26 +405,12 @@ export default function App() {
           }
         }
 
-        const telemetryValuesMap = new Map<string, number[]>();
-        const telemetryDatesMap = new Map<string, string[]>();
-        if (telemetryData) {
-          for (const row of telemetryData) {
-            const arr = telemetryValuesMap.get(row.series_id) || [];
-            arr.push(Number(row.daily_score ?? 0));
-            telemetryValuesMap.set(row.series_id, arr);
-
-            const dateArr = telemetryDatesMap.get(row.series_id) || [];
-            dateArr.push(String(row.recorded_date));
-            telemetryDatesMap.set(row.series_id, dateArr);
-          }
-        }
-
         const mapped: SeriesItem[] = data.map((row: any) => ({
           ...row,
           buzz_score: Number(
             row.current_7d_score ?? row.buzz_score ?? 0
           ),
-          delta_pct: Number(row.delta_pct || 0),
+          delta_pct: row.delta_pct !== null && row.delta_pct !== undefined ? Number(row.delta_pct) : null,
           daily_series: telemetryValuesMap.get(row.id) || [Number(row.current_7d_score ?? row.buzz_score ?? 0)],
           daily_dates: telemetryDatesMap.get(row.id) || [],
           events: eventsMap.get(row.id) || [],
@@ -435,6 +449,7 @@ export default function App() {
       <DatabaseStatusCard
         type={!isSupabaseConfigured ? 'unconfigured' : 'error'}
         errorMessage={dbError}
+        viewWarning={viewWarning}
       />
     );
   }
@@ -622,7 +637,11 @@ export default function App() {
           onClick={() => setIsHealthModalOpen(false)}
         >
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-xl">
-            <DatabaseStatusCard type="healthy" onClose={() => setIsHealthModalOpen(false)} />
+            <DatabaseStatusCard
+              type="healthy"
+              viewWarning={viewWarning}
+              onClose={() => setIsHealthModalOpen(false)}
+            />
           </div>
         </div>
       )}
