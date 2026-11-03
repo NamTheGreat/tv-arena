@@ -36,6 +36,21 @@ jobs:
       - name: Typecheck and Build
         run: npm run build
 
+      - name: Enforce 350 kB Max JS Chunk Size
+        run: |
+          MAX_BYTES=$((350 * 1024))
+          FAILED=0
+          for f in dist/assets/*.js; do
+            SIZE=$(wc -c < "$f")
+            KB=$((SIZE / 1024))
+            echo "Chunk $(basename "$f"): ${KB} kB"
+            if [ "$SIZE" -gt "$MAX_BYTES" ]; then
+              echo "::error file=$f::JS chunk $(basename "$f") is ${KB} kB (exceeds 350 kB limit)."
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
   pipeline:
     name: Rust Pipeline (Format, Clippy, Test)
     runs-on: ubuntu-latest
@@ -128,3 +143,24 @@ jobs:
           EOF
           PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_schema_test -v ON_ERROR_STOP=1 -f supabase/schema.sql
           PGPASSWORD=postgrespassword psql -h localhost -U postgres -d tv_arena_schema_test -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql
+
+  security-audit:
+    name: Supply-Chain & RustSec Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: NPM Supply-Chain Audit (High & Critical)
+        run: npm audit --audit-level=high
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Run RustSec Advisory Check
+        run: cargo audit --file pipeline/Cargo.lock
