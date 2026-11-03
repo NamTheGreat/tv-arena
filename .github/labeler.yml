@@ -2,11 +2,14 @@ frontend:
   - changed-files:
       - any-glob-to-any-file:
           - 'src/**'
+          - 'functions/**'
+          - 'public/**'
           - 'index.html'
           - 'package.json'
           - 'package-lock.json'
           - 'tailwind.config.js'
           - 'vite.config.ts'
+          - 'vitest.config.ts'
           - 'tsconfig*.json'
 
 rust-pipeline:

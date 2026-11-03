@@ -48,8 +48,9 @@ export function ShowDetailView({ seriesList }: ShowDetailViewProps) {
   const sampled = sampleDailyValues(show.daily_series, '7D');
   const maxSampled = Math.max(...sampled, 1);
   const { pathD, points } = buildMobileChartGeometry(sampled, maxSampled);
-  const isSteady = Math.abs(show.delta_pct) < 0.5;
-  const isUp = show.delta_pct > 0;
+  const isNew = show.delta_pct === null || show.delta_pct === undefined;
+  const isSteady = !isNew && Math.abs(show.delta_pct as number) < 0.5;
+  const isUp = !isNew && (show.delta_pct as number) > 0;
   const score = show.buzz_score ?? 0;
 
   return (
@@ -97,12 +98,14 @@ export function ShowDetailView({ seriesList }: ShowDetailViewProps) {
             {score.toLocaleString()}
           </div>
           <div className="text-xs font-medium mt-1">
-            {isSteady ? (
+            {isNew ? (
+              <span className="text-brand-terracotta font-semibold">NEW</span>
+            ) : isSteady ? (
               <span className="text-stone-500">Steady</span>
             ) : isUp ? (
-              <span className="text-emerald-600">+{show.delta_pct}%</span>
+              <span className="text-emerald-600">+{(show.delta_pct as number).toFixed(1)}%</span>
             ) : (
-              <span className="text-rose-600">{show.delta_pct}%</span>
+              <span className="text-rose-600">{(show.delta_pct as number).toFixed(1)}%</span>
             )}
           </div>
         </div>

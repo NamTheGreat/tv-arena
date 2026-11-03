@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS series_daily_telemetry (
   id BIGSERIAL PRIMARY KEY,
   series_id UUID REFERENCES series(id) ON DELETE CASCADE,
   recorded_date DATE NOT NULL DEFAULT CURRENT_DATE,
-  daily_score BIGINT NOT NULL,
+  daily_score BIGINT NOT NULL DEFAULT 0,
   wiki_views INT DEFAULT 0,
   reddit_comments INT DEFAULT 0,
   reddit_upvotes INT DEFAULT 0,
@@ -65,9 +65,17 @@ SELECT
 FROM series_daily_telemetry t
 CROSS JOIN (SELECT wiki_weight, comment_weight, upvote_weight FROM score_weights WHERE id = 1 LIMIT 1) w;
 
-CREATE OR REPLACE VIEW series_leaderboard 
+GRANT SELECT ON series_daily_scores TO anon, authenticated;
+
+DROP VIEW IF EXISTS series_leaderboard CASCADE;
+
+CREATE VIEW series_leaderboard 
 WITH (security_invoker = on) AS
-WITH daily_buckets AS (
+WITH anchor AS (
+  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  FROM series_daily_telemetry
+),
+daily_buckets AS (
   SELECT
     s.id AS series_id,
     s.tmdb_id,
@@ -77,11 +85,12 @@ WITH daily_buckets AS (
     s.genre_group,
     s.release_years,
     s.chart_color,
-    COALESCE(SUM(CASE WHEN d.recorded_date > CURRENT_DATE - INTERVAL '7 days' AND d.recorded_date <= CURRENT_DATE THEN d.daily_score ELSE 0 END), 0)::BIGINT AS current_7d_score,
-    COALESCE(SUM(CASE WHEN d.recorded_date > CURRENT_DATE - INTERVAL '14 days' AND d.recorded_date <= CURRENT_DATE - INTERVAL '7 days' THEN d.daily_score ELSE 0 END), 0)::BIGINT AS previous_7d_score
+    COALESCE(SUM(CASE WHEN d.recorded_date > a.max_date - INTERVAL '7 days' AND d.recorded_date <= a.max_date THEN d.daily_score ELSE 0 END), 0)::BIGINT AS current_7d_score,
+    COALESCE(SUM(CASE WHEN d.recorded_date > a.max_date - INTERVAL '14 days' AND d.recorded_date <= a.max_date - INTERVAL '7 days' THEN d.daily_score ELSE 0 END), 0)::BIGINT AS previous_7d_score
   FROM series s
+  CROSS JOIN anchor a
   LEFT JOIN series_daily_scores d ON s.id = d.series_id
-  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.genre_group, s.release_years, s.chart_color
+  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.genre_group, s.release_years, s.chart_color, a.max_date
 )
 SELECT
   series_id AS id,
@@ -92,16 +101,53 @@ SELECT
   genre_group,
   release_years,
   chart_color,
-  current_7d_score AS buzz_score,
   current_7d_score,
+  current_7d_score AS buzz_score,
   previous_7d_score,
   CASE
     WHEN previous_7d_score > 0 THEN
       ROUND(((current_7d_score - previous_7d_score)::numeric / previous_7d_score::numeric) * 100, 2)
-    ELSE 0.0
-  END AS delta_pct
-FROM daily_buckets
-ORDER BY current_7d_score DESC;
+    ELSE NULL
+  END AS delta_pct,
+  ROW_NUMBER() OVER (ORDER BY current_7d_score DESC, title ASC) as rank
+FROM daily_buckets;
+
+GRANT SELECT ON series_leaderboard TO anon, authenticated;
+
+-- Aggregate recent 90-day telemetry as arrays to guarantee 1 row per show (bypasses 1,000-row PostgREST limits)
+DROP VIEW IF EXISTS series_recent_telemetry CASCADE;
+
+CREATE VIEW series_recent_telemetry 
+WITH (security_invoker = on) AS
+WITH anchor AS (
+  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  FROM series_daily_telemetry
+),
+recent_scores AS (
+  SELECT
+    d.series_id,
+    d.recorded_date,
+    d.daily_score
+  FROM series_daily_scores d
+  CROSS JOIN anchor a
+  WHERE d.recorded_date > a.max_date - INTERVAL '90 days'
+    AND d.recorded_date <= a.max_date
+)
+SELECT
+  s.id AS series_id,
+  COALESCE(
+    array_agg(r.daily_score ORDER BY r.recorded_date ASC) FILTER (WHERE r.daily_score IS NOT NULL),
+    ARRAY[]::BIGINT[]
+  ) AS daily_series,
+  COALESCE(
+    array_agg(r.recorded_date::text ORDER BY r.recorded_date ASC) FILTER (WHERE r.recorded_date IS NOT NULL),
+    ARRAY[]::TEXT[]
+  ) AS daily_dates
+FROM series s
+LEFT JOIN recent_scores r ON s.id = r.series_id
+GROUP BY s.id;
+
+GRANT SELECT ON series_recent_telemetry TO anon, authenticated;
 
 -- Enable public read-only access for the React frontend
 ALTER TABLE series ENABLE ROW LEVEL SECURITY;
@@ -198,6 +244,7 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read on profiles" ON profiles;
 CREATE POLICY "Allow public read on profiles" ON profiles FOR SELECT USING (true);
 
+GRANT SELECT ON profiles TO anon, authenticated;
 REVOKE UPDATE ON profiles FROM authenticated;
 GRANT UPDATE (username, display_name) ON profiles TO authenticated;
 
@@ -263,8 +310,8 @@ DECLARE
   v_uid UUID;
   v_deck UUID[];
   v_calculated_score INT := 0;
-  v_today DATE := CURRENT_DATE;
-  v_yesterday DATE := CURRENT_DATE - INTERVAL '1 day';
+  v_today DATE := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE;
+  v_yesterday DATE := v_today - INTERVAL '1 day';
   i INT;
   v_show_a_id UUID;
   v_show_b_id UUID;

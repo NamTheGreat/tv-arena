@@ -2,8 +2,10 @@ import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { ArenaContenders } from '../components/ArenaContenders';
 import { LeaderboardTable } from '../components/LeaderboardTable';
+import { ShowDetailView } from '../components/ShowDetailView';
 import { computeArenaStats } from '../lib/svgMath';
 import { SeriesItem } from '../lib/supabase';
 
@@ -135,6 +137,69 @@ describe('Core components headless tests', () => {
       expect(firstRow).not.toBeNull();
       fireEvent.click(firstRow!);
       expect(onSelectBattle).toHaveBeenCalledWith('severance', 'the-bear');
+    });
+
+    it('renders NEW badge when delta_pct is null', () => {
+      const showWithNullDelta: SeriesItem = {
+        ...mockShows[0],
+        id: 'id-new',
+        slug: 'new-show',
+        title: 'New Show Debut',
+        delta_pct: null,
+      };
+
+      render(
+        <LeaderboardTable
+          rankedShows={[showWithNullDelta]}
+          platformFilter="ALL"
+          genreFilter="ALL"
+          availablePlatforms={['ALL', 'Apple TV+']}
+          availableGenres={['ALL', 'Drama & Sci-Fi']}
+          maxLeaderboardViewers={1_200_000}
+          setPlatformFilter={vi.fn()}
+          setGenreFilter={vi.fn()}
+          onSelectBattle={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText('New Show Debut')).toBeInTheDocument();
+      expect(screen.getByText('NEW')).toBeInTheDocument();
+    });
+  });
+
+  describe('ShowDetailView', () => {
+    it('renders NEW badge for show with null delta_pct', () => {
+      const showWithNullDelta: SeriesItem = {
+        ...mockShows[0],
+        id: 'id-new',
+        slug: 'brand-new-show',
+        title: 'Brand New Show',
+        delta_pct: null,
+      };
+
+      render(
+        <MemoryRouter initialEntries={['/show/brand-new-show']}>
+          <Routes>
+            <Route path="/show/:slug" element={<ShowDetailView seriesList={[showWithNullDelta]} />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('Brand New Show')).toBeInTheDocument();
+      expect(screen.getByText('NEW')).toBeInTheDocument();
+    });
+
+    it('formats numeric delta_pct to one decimal place', () => {
+      render(
+        <MemoryRouter initialEntries={['/show/severance']}>
+          <Routes>
+            <Route path="/show/:slug" element={<ShowDetailView seriesList={mockShows} />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('Severance')).toBeInTheDocument();
+      expect(screen.getByText('+14.2%')).toBeInTheDocument();
     });
   });
 });
