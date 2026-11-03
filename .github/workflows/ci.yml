@@ -151,9 +151,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v7
 
-      - name: Dependency Review (NPM & Cargo PR Diff)
-        if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: NPM Supply-Chain Audit (High & Critical)
+        run: npm audit --audit-level=high
 
       - name: Install cargo-audit
         uses: taiki-e/install-action@cargo-audit
