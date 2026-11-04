@@ -85,6 +85,23 @@ BEGIN
     RAISE EXCEPTION 'Expected delta_pct to be 0.00 for flat show, got %', v_delta;
   END IF;
 
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
+  SELECT v_test_show_id, v_anchor_date - day_offset, 0, 100, 0, 0
+  FROM generate_series(1, 6) AS days(day_offset)
+  WHERE day_offset <> 2
+  ON CONFLICT (series_id, recorded_date) DO NOTHING;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM series_deck_candidates c
+    JOIN series_leaderboard l ON l.id = c.id
+    WHERE c.id = v_test_show_id
+      AND c.telemetry_days = 7
+      AND c.current_7d_score = l.current_7d_score
+      AND c.current_7d_score > 0
+  ) THEN
+    RAISE EXCEPTION 'Expected eligible candidate to use leaderboard score with seven days of history';
+  END IF;
+
   RAISE NOTICE '✓ delta_pct logic verified (NULL for new shows, 0.00 for steady).';
 END $$;
 

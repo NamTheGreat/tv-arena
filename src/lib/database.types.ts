@@ -353,6 +353,14 @@ export type Database = {
         }
         Relationships: []
       }
+      series_deck_candidates: {
+        Row: {
+          id: string
+          current_7d_score: number
+          telemetry_days: number
+        }
+        Relationships: []
+      }
       series_recent_telemetry: {
         Row: {
           series_id: string

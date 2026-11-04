@@ -89,6 +89,11 @@ fn test_sync_full_run_against_mock_server() {
         then.status(201).json_body(json!({}));
     });
 
+    let deck_candidates_mock = server.mock(|when, then| {
+        when.method(GET).path("/rest/v1/series_deck_candidates");
+        then.status(200).json_body(json!([]));
+    });
+
     let config = Config {
         supabase_url: server.base_url(),
         supabase_key: "test-anon-key".to_string(),
@@ -107,8 +112,9 @@ fn test_sync_full_run_against_mock_server() {
     assert_eq!(result.unwrap(), 1);
 
     // Verify all mock interactions were invoked with expected payloads (series fetched by sync and daily-deck, telemetry fetched for prior score and breakout detection)
-    series_mock.assert_hits(2);
+    series_mock.assert_hits(1);
     prior_telemetry_mock.assert_hits(2);
     patch_mock.assert();
     telemetry_batch_mock.assert();
+    deck_candidates_mock.assert();
 }
