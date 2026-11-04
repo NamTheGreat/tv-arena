@@ -9,7 +9,6 @@ import {
   fetchMyDailyScore,
   fetchDailyLeaderboard,
   fetchStreakLeaderboard,
-  getDailyChallengeNumber,
   getTodayDateString,
   isCorrectDailyAnswer,
   LeaderboardEntry,
@@ -20,7 +19,10 @@ import {
 } from '../lib/dailyChallenge';
 import { GameOverModal } from './GameOverModal';
 import { DailyResultCard } from './DailyResultCard';
-import { drawNextEndlessIndex, getEndlessDeck, shuffledIndexes } from '../lib/endlessGame';
+import { drawNextEndlessIndex, shuffledIndexes } from '../lib/endlessGame';
+import { useDailyChallenge } from '../lib/useDailyChallenge';
+import { useEndlessGame } from '../lib/useEndlessGame';
+import { useTriviaGameState } from '../lib/triviaGameState';
 
 type GameMode = 'endless' | 'daily';
 type DeckFilter = 'all' | 'streaming' | 'classics' | 'scifi';
@@ -43,15 +45,12 @@ export function TriviaGame({
   const [deckFilter, setDeckFilter] = useState<DeckFilter>('all');
   const [dailySubView, setDailySubView] = useState<'play' | 'leaderboard'>('play');
   const [leaderboardTab, setLeaderboardTab] = useState<'daily' | 'streak'>('daily');
+  const { todayStr, setTodayStr, challengeNumber, dailyRunDateRef } = useDailyChallenge(gameMode === 'daily');
 
   // Daily Challenge state
-  const [todayStr, setTodayStr] = useState(getTodayDateString);
-  const challengeNumber = useMemo(() => getDailyChallengeNumber(todayStr), [todayStr]);
   const [dailyDeckIds, setDailyDeckIds] = useState<string[] | null>(null);
   const [isLoadingDailyDeck, setIsLoadingDailyDeck] = useState(true);
   const [dailyDeckError, setDailyDeckError] = useState(false);
-  const [userAnswers, setUserAnswers] = useState<('higher' | 'lower')[]>([]);
-  const [verifiedScore, setVerifiedScore] = useState<number | null>(null);
   const [isSubmittingScore, setIsSubmittingScore] = useState(false);
   const [dailyResult, setDailyResult] = useState<StoredDailyResult | null>(null);
   const [dailySubmissionError, setDailySubmissionError] = useState<string | null>(null);
@@ -61,24 +60,26 @@ export function TriviaGame({
   const [dailyStartBlocked, setDailyStartBlocked] = useState(false);
   const [dailyCheckAttempt, setDailyCheckAttempt] = useState(0);
   const dailyFinishedRef = useRef(false);
-  const dailyRunDateRef = useRef<string | null>(null);
   const dailySubmissionInFlightRef = useRef(false);
   const dailyTransferAttemptRef = useRef<string | null>(null);
   const dailyAutoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dailySlideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dailyFinishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gameOverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tabIdRef = useRef(`${Date.now()}-${Math.random()}`);
-  const clearDailyTimers = () => {
+  const clearGameTimers = () => {
     if (dailyAutoAdvanceTimerRef.current) clearTimeout(dailyAutoAdvanceTimerRef.current);
     if (dailySlideTimerRef.current) clearTimeout(dailySlideTimerRef.current);
     if (dailyFinishTimerRef.current) clearTimeout(dailyFinishTimerRef.current);
+    if (gameOverTimerRef.current) clearTimeout(gameOverTimerRef.current);
     dailyAutoAdvanceTimerRef.current = null;
     dailySlideTimerRef.current = null;
     dailyFinishTimerRef.current = null;
+    gameOverTimerRef.current = null;
   };
 
   useEffect(() => () => {
-    clearDailyTimers();
+    clearGameTimers();
   }, []);
 
   // Leaderboard data
@@ -87,20 +88,6 @@ export function TriviaGame({
   const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
 
   // Load daily challenge deck from Supabase
-  useEffect(() => {
-    const refreshUtcDate = () => {
-      if (gameMode === 'daily') return;
-      const currentDate = getTodayDateString();
-      setTodayStr((previous) => (previous === currentDate ? previous : currentDate));
-    };
-    const interval = window.setInterval(refreshUtcDate, 30_000);
-    window.addEventListener('focus', refreshUtcDate);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener('focus', refreshUtcDate);
-    };
-  }, [gameMode]);
-
   useEffect(() => {
     dailyFinishedRef.current = false;
     setDailyResult(null);
@@ -119,6 +106,7 @@ export function TriviaGame({
   };
 
   const startDailyGame = () => {
+    clearGameTimers();
     const currentDate = getTodayDateString();
     dailyRunDateRef.current = currentDate;
     if (currentDate !== todayStr) {
@@ -273,34 +261,7 @@ export function TriviaGame({
   }, [dailySubView, todayStr]);
 
   // Filtered deck for endless mode
-  const endlessDeck = useMemo(() => {
-    if (seriesList.length === 0) return [];
-    const filtered = seriesList.filter((s) => {
-      if (deckFilter === 'streaming') {
-        return ['Netflix', 'Apple TV+', 'HBO', 'FX / Hulu', 'Prime Video', 'Disney+'].some((n) =>
-          s.network.includes(n)
-        );
-      }
-      if (deckFilter === 'classics') {
-        const yr = parseInt(s.release_years.slice(0, 4), 10);
-        return (
-          (!isNaN(yr) && yr <= 2018) ||
-          ['The Sopranos', 'The Wire', 'Breaking Bad', 'Mad Men', 'Friends', 'The Office'].includes(
-            s.title
-          )
-        );
-      }
-      if (deckFilter === 'scifi') {
-        return (
-          s.genre_group.includes('Sci-Fi') ||
-          s.genre_group.includes('Mystery') ||
-          s.genre_group.includes('Animation')
-        );
-      }
-      return true;
-    });
-    return getEndlessDeck(filtered);
-  }, [seriesList, deckFilter]);
+  const endlessDeck = useEndlessGame(seriesList, deckFilter);
 
   // Daily deck resolved from daily_challenges table
   const dailyDeckShows = useMemo(() => {
@@ -314,42 +275,21 @@ export function TriviaGame({
   const activeDeck = gameMode === 'daily' ? dailyDeckShows : endlessDeck;
 
   // Game state
-  const [dailyRound, setDailyRound] = useState(0); // 0 to 9
-  const [dailyScore, setDailyScore] = useState(0);
-  const [knownIdx, setKnownIdx] = useState(0);
-  const [challengerIdx, setChallengerIdx] = useState(1);
-  const [endlessBag, setEndlessBag] = useState<number[]>([]);
-  const [streak, setStreak] = useState(0);
-  const [recordedFinalStreak, setRecordedFinalStreak] = useState(0);
-  const [bestStreak, setBestStreak] = useState(() => {
-    return parseInt(localStorage.getItem('tv_arena_best_streak') || '0', 10);
-  });
-  const [revealed, setRevealed] = useState(false);
-  const [lastGuessCorrect, setLastGuessCorrect] = useState<boolean | null>(null);
-  const [guessHistory, setGuessHistory] = useState<boolean[]>([]);
-  const [isSliding, setIsSliding] = useState(false);
-  const [isGameOverModalOpen, setIsGameOverModalOpen] = useState(false);
+  const [game, dispatchGame] = useTriviaGameState(Number(localStorage.getItem('tv_arena_best_streak') || 0));
+  const {
+    dailyRound, dailyScore, knownIdx, challengerIdx, endlessBag, streak, recordedFinalStreak,
+    bestStreak, revealed, lastGuessCorrect, guessHistory, userAnswers, isSliding, isGameOverModalOpen,
+  } = game;
 
   // Initialize or reset indices when deck changes
   useEffect(() => {
     if (activeDeck.length >= 2) {
       if (gameMode === 'daily') {
-        setKnownIdx(0);
-        setChallengerIdx(1);
-        setDailyRound(0);
-        setDailyScore(0);
-        setUserAnswers([]);
-        setGuessHistory([]);
-        setVerifiedScore(null);
-        setIsGameOverModalOpen(false);
+        dispatchGame({ type: 'initialize-daily' });
       } else {
         const bag = shuffledIndexes(activeDeck.length);
-        setKnownIdx(bag[0]);
-        setChallengerIdx(bag[1]);
-        setEndlessBag(bag.slice(2));
+        dispatchGame({ type: 'initialize-endless', knownIdx: bag[0], challengerIdx: bag[1], endlessBag: bag.slice(2) });
       }
-      setRevealed(false);
-      setLastGuessCorrect(null);
     }
   }, [deckFilter, gameMode, activeDeck, todayStr]);
 
@@ -388,8 +328,7 @@ export function TriviaGame({
     setRetryDailyAnswers(completedAnswers);
     const submission = await submitDailyScore(result.date, completedAnswers);
     if (submission.success) {
-      setVerifiedScore(submission.score);
-      setDailyScore(submission.score);
+      dispatchGame({ type: 'server-score', score: submission.score });
       const verifiedResult = { ...result, score: submission.score, verified: true };
       storeDailyResult(verifiedResult);
       setDailyResult(verifiedResult);
@@ -472,7 +411,7 @@ export function TriviaGame({
 
   const advanceToNextRound = () => {
     if (activeDeck.length < 2) return;
-    clearDailyTimers();
+    clearGameTimers();
 
     if (gameMode === 'daily') {
       const nextRound = dailyRound + 1;
@@ -480,19 +419,13 @@ export function TriviaGame({
         finishDailyRun(userAnswers, guessHistory);
         return;
       }
-      setDailyRound(nextRound);
-      setKnownIdx(nextRound);
-      setChallengerIdx(nextRound + 1);
+      dispatchGame({ type: 'advance-daily', round: nextRound });
     } else {
       const next = drawNextEndlessIndex(endlessBag, activeDeck.length, challengerIdx);
       if (next.index < 0) return;
-      setKnownIdx(challengerIdx);
-      setChallengerIdx(next.index);
-      setEndlessBag(next.bag);
+      dispatchGame({ type: 'advance-endless', knownIdx: challengerIdx, challengerIdx: next.index, endlessBag: next.bag });
     }
 
-    setRevealed(false);
-    setLastGuessCorrect(null);
   };
 
   const handleMakeGuess = (choice: 'higher' | 'lower') => {
@@ -504,28 +437,18 @@ export function TriviaGame({
         (choice === 'lower' && challengerScore < knownScore);
     const pts = gameMode === 'daily' ? 1 : isNailbiter ? 2 : 1;
 
-    setRevealed(true);
-    setLastGuessCorrect(correct);
     const updatedCorrectness = [...guessHistory, correct];
-    setGuessHistory(updatedCorrectness);
-
     const updatedAnswers = [...userAnswers, choice];
-    setUserAnswers(updatedAnswers);
+    dispatchGame({ type: 'answer', correct, answer: choice, mode: gameMode, points: pts });
+
+    if (correct && gameMode === 'endless') {
+      const nextStreak = streak + pts;
+      if (nextStreak > bestStreak) {
+        localStorage.setItem('tv_arena_best_streak', String(nextStreak));
+      }
+    }
 
     if (correct) {
-      if (gameMode === 'daily') {
-        const nextDailyScore = dailyScore + pts;
-        setDailyScore(nextDailyScore);
-      } else {
-        const nextStreak = streak + pts;
-        setStreak(nextStreak);
-        setRecordedFinalStreak(nextStreak);
-        if (nextStreak > bestStreak) {
-          setBestStreak(nextStreak);
-          localStorage.setItem('tv_arena_best_streak', String(nextStreak));
-        }
-      }
-
       // Check if daily run is complete on 10th round
       if (gameMode === 'daily' && dailyRound >= 9) {
         dailyFinishTimerRef.current = setTimeout(() => {
@@ -538,19 +461,18 @@ export function TriviaGame({
       // Auto-slide advance after count-up settles
       dailyAutoAdvanceTimerRef.current = setTimeout(() => {
         dailyAutoAdvanceTimerRef.current = null;
-        setIsSliding(true);
+        dispatchGame({ type: 'sliding', value: true });
         dailySlideTimerRef.current = setTimeout(() => {
           dailySlideTimerRef.current = null;
           advanceToNextRound();
-          setIsSliding(false);
+          dispatchGame({ type: 'sliding', value: false });
         }, 320);
       }, 1250);
     } else {
-      setRecordedFinalStreak(streak);
       if (gameMode === 'endless') {
-        setStreak(0);
-        setTimeout(() => {
-          setIsGameOverModalOpen(true);
+        gameOverTimerRef.current = setTimeout(() => {
+          gameOverTimerRef.current = null;
+          dispatchGame({ type: 'game-over', value: true });
         }, 1100);
       } else {
         // Daily mode continues through all 10 rounds or opens modal on final round
@@ -565,18 +487,9 @@ export function TriviaGame({
   };
 
   const handlePlayAgain = () => {
-    setIsGameOverModalOpen(false);
-    setGuessHistory([]);
-    setUserAnswers([]);
-    setVerifiedScore(null);
-    setStreak(0);
-    setRecordedFinalStreak(0);
-    setDailyScore(0);
-    setDailyRound(0);
-    setKnownIdx(0);
-    setChallengerIdx(1 % Math.max(1, activeDeck.length));
-    setRevealed(false);
-    setLastGuessCorrect(null);
+    const bag = shuffledIndexes(activeDeck.length);
+    dispatchGame({ type: 'reset' });
+    dispatchGame({ type: 'initialize-endless', knownIdx: bag[0], challengerIdx: bag[1], endlessBag: bag.slice(2) });
   };
 
   return (
@@ -588,7 +501,7 @@ export function TriviaGame({
           <button
             type="button"
             onClick={() => {
-              clearDailyTimers();
+              clearGameTimers();
               releaseDailyTabLock();
               dailyRunDateRef.current = null;
               setTodayStr(getTodayDateString());
@@ -797,7 +710,7 @@ export function TriviaGame({
             <button
               type="button"
               onClick={() => {
-                clearDailyTimers();
+                clearGameTimers();
                 dailyRunDateRef.current = null;
                 setTodayStr(getTodayDateString());
                 setGameMode('endless');
@@ -1017,7 +930,7 @@ export function TriviaGame({
         challengerScore={challengerScore}
         guessHistory={guessHistory}
         onPlayAgain={handlePlayAgain}
-        onClose={() => setIsGameOverModalOpen(false)}
+        onClose={() => dispatchGame({ type: 'game-over', value: false })}
         onViewLeaderboard={onViewLeaderboard}
       />
     </main>
