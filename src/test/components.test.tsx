@@ -114,6 +114,7 @@ describe('Core components headless tests', () => {
       // Check titles rendered
       expect(screen.getByText('Severance')).toBeInTheDocument();
       expect(screen.getByText('The Bear')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /watchlist/i })).not.toBeInTheDocument();
       expect(screen.getByText('Apple TV+')).toBeInTheDocument();
       expect(screen.getByText('FX / Hulu')).toBeInTheDocument();
 
@@ -129,6 +130,37 @@ describe('Core components headless tests', () => {
   });
 
   describe('LeaderboardTable', () => {
+    it('toggles a saved show without activating the row battle link', () => {
+      const onSelectBattle = vi.fn();
+      const onToggleWatchlist = vi.fn();
+
+      render(
+        <LeaderboardTable
+          rankedShows={mockShows}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={vi.fn()}
+          onSortChange={vi.fn()}
+          onShowMore={vi.fn()}
+          platformFilter="ALL"
+          genreFilter="ALL"
+          availablePlatforms={['ALL']}
+          availableGenres={['ALL']}
+          maxLeaderboardViewers={1_200_000}
+          setPlatformFilter={vi.fn()}
+          setGenreFilter={vi.fn()}
+          onSelectBattle={onSelectBattle}
+          watchlistIds={[]}
+          onToggleWatchlist={onToggleWatchlist}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add Severance to watchlist' }));
+      expect(onToggleWatchlist).toHaveBeenCalledWith('id-1');
+      expect(onSelectBattle).not.toHaveBeenCalled();
+    });
+
     it('renders the leaderboard view score without a stored series score field', () => {
       const databaseViewRow = { current_7d_score: 1_200_000 };
       const viewOnlyShow = { ...mockShows[0], buzz_score: leaderboardScore(databaseViewRow) };

@@ -15,6 +15,7 @@ import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
 import { leaderboardScore } from './lib/derivedScore';
 import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
+import { useWatchlist } from './lib/useWatchlist';
 
 const AuthModal = React.lazy(() =>
   import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
@@ -46,7 +47,7 @@ const NotFoundView = React.lazy(() =>
   import('./components/NotFoundView').then((m) => ({ default: m.NotFoundView }))
 );
 
-type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess';
+type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'watchlist';
 
 function RouteLoadingFallback() {
   return (
@@ -68,6 +69,12 @@ function LeaderboardRouteWrapper({
   availableGenres,
   setPlatformFilter,
   setGenreFilter,
+  watchlistIds,
+  pendingWatchlistIds,
+  onToggleWatchlist,
+  watchlistOnly = false,
+  watchlistLoading,
+  watchlistError,
 }: {
   seriesList: SeriesItem[];
   platformFilter: string;
@@ -76,6 +83,12 @@ function LeaderboardRouteWrapper({
   availableGenres: string[];
   setPlatformFilter: (p: string) => void;
   setGenreFilter: (g: string) => void;
+  watchlistIds: string[];
+  pendingWatchlistIds: string[];
+  onToggleWatchlist?: (seriesId: string) => void;
+  watchlistOnly?: boolean;
+  watchlistLoading: boolean;
+  watchlistError: string | null;
 }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -91,13 +104,14 @@ function LeaderboardRouteWrapper({
   };
 
   useEffect(() => {
-    document.title = 'TV Arena — Viewership Leaderboard';
-  }, []);
+    document.title = watchlistOnly ? 'TV Arena — Your Watchlist' : 'TV Arena — Viewership Leaderboard';
+  }, [watchlistOnly]);
 
   const rankedShows = useMemo(() => {
     return [...seriesList]
       .filter((s) => (platformFilter === 'ALL' ? true : s.network === platformFilter))
       .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group === genreFilter))
+      .filter((s) => (!watchlistOnly || watchlistIds.includes(s.id)))
       .filter((s) => s.title.toLowerCase().includes(searchTerm.trim().toLowerCase()))
       .sort((a, b) => {
         if (sortBy === 'growth') {
@@ -113,7 +127,7 @@ function LeaderboardRouteWrapper({
           || (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER)
           || a.title.localeCompare(b.title);
       });
-  }, [seriesList, platformFilter, genreFilter, searchTerm, sortBy]);
+  }, [seriesList, platformFilter, genreFilter, searchTerm, sortBy, watchlistOnly, watchlistIds]);
 
   const maxScore = useMemo(() => {
     const top = rankedShows[0];
@@ -138,7 +152,29 @@ function LeaderboardRouteWrapper({
       setPlatformFilter={setPlatformFilter}
       setGenreFilter={setGenreFilter}
       onSelectBattle={(a, b) => navigate(`/arena/${a}/${b}`)}
+      watchlistIds={watchlistIds}
+      pendingWatchlistIds={pendingWatchlistIds}
+      onToggleWatchlist={onToggleWatchlist}
+      watchlistOnly={watchlistOnly}
+      watchlistLoading={watchlistLoading}
+      watchlistError={watchlistError}
     />
+  );
+}
+
+function WatchlistSignInPrompt({ onOpenAuth }: { onOpenAuth: () => void }) {
+  return (
+    <main className="w-full max-w-4xl rounded-[28px] bg-white/90 p-8 text-center shadow-card">
+      <h2 className="font-serif text-2xl text-arena-charcoal">Sign in to use your watchlist</h2>
+      <p className="mt-2 text-sm text-arena-muted">Your saved shows are private to your account.</p>
+      <button
+        type="button"
+        onClick={onOpenAuth}
+        className="mt-5 rounded-full bg-arena-terracotta px-5 py-2 text-sm font-semibold text-white"
+      >
+        Sign in
+      </button>
+    </main>
   );
 }
 
@@ -295,6 +331,7 @@ function GuessRouteWrapper({
 
 export default function App() {
   const { user, signOut } = useAuth();
+  const watchlist = useWatchlist(user?.id);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -319,6 +356,7 @@ export default function App() {
     if (location.pathname.startsWith('/arena')) return 'arena';
     if (location.pathname.startsWith('/charts')) return 'charts';
     if (location.pathname.startsWith('/guess')) return 'guess';
+    if (location.pathname.startsWith('/watchlist')) return 'watchlist';
     return 'leaderboard';
   }, [location.pathname]);
 
@@ -502,7 +540,23 @@ export default function App() {
     { label: 'Contenders', tabKey: 'arena' as TabKey, path: '/arena' },
     { label: 'Charts', tabKey: 'charts' as TabKey, path: '/charts' },
     { label: 'Guess', tabKey: 'guess' as TabKey, path: '/guess' },
+    ...(user ? [{ label: 'Watchlist', tabKey: 'watchlist' as TabKey, path: '/watchlist' }] : []),
   ];
+
+  const leaderboardProps = {
+    seriesList,
+    platformFilter,
+    genreFilter,
+    availablePlatforms,
+    availableGenres,
+    setPlatformFilter,
+    setGenreFilter,
+    watchlistIds: watchlist.seriesIds,
+    pendingWatchlistIds: watchlist.pendingSeriesIds,
+    onToggleWatchlist: user ? watchlist.toggle : undefined,
+    watchlistLoading: watchlist.isLoading,
+    watchlistError: watchlist.error,
+  };
 
   return (
     <div className="min-h-screen bg-arena-sand flex flex-col items-center justify-start py-4 sm:py-10 px-3 sm:px-6 text-arena-charcoal">
@@ -557,19 +611,12 @@ export default function App() {
       {/* Code-Split Route Views */}
       <Suspense fallback={<RouteLoadingFallback />}>
         <Routes>
+          <Route path="/" element={<LeaderboardRouteWrapper {...leaderboardProps} />} />
           <Route
-            path="/"
-            element={
-              <LeaderboardRouteWrapper
-                seriesList={seriesList}
-                platformFilter={platformFilter}
-                genreFilter={genreFilter}
-                availablePlatforms={availablePlatforms}
-                availableGenres={availableGenres}
-                setPlatformFilter={setPlatformFilter}
-                setGenreFilter={setGenreFilter}
-              />
-            }
+            path="/watchlist"
+            element={user
+              ? <LeaderboardRouteWrapper {...leaderboardProps} watchlistOnly />
+              : <WatchlistSignInPrompt onOpenAuth={() => setIsAuthModalOpen(true)} />}
           />
           <Route
             path="/arena"

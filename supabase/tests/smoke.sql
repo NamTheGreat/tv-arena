@@ -158,7 +158,80 @@ BEGIN
   RAISE NOTICE '✓ Profiles security verified (best_streak protected, username editable).';
 END $$;
 
--- 4. Direct user_scores Table Protection
+-- 4. Watchlist ownership and write protection
+DO $$
+DECLARE
+  v_user_id UUID := '11111111-1111-1111-1111-111111111111'::UUID;
+  v_other_user_id UUID := '22222222-2222-2222-2222-222222222222'::UUID;
+  v_series_id UUID;
+  v_count BIGINT;
+  v_rows BIGINT;
+  v_caught BOOLEAN := FALSE;
+BEGIN
+  RAISE NOTICE 'Testing user_watchlist ownership...';
+
+  INSERT INTO auth.users (id, email)
+  VALUES (v_user_id, 'watchlist_owner@example.com'),
+         (v_other_user_id, 'watchlist_other@example.com')
+  ON CONFLICT (id) DO NOTHING;
+
+  SELECT id INTO v_series_id FROM series WHERE slug = 'stranger-things';
+  IF v_series_id IS NULL THEN
+    RAISE EXCEPTION 'Watchlist smoke test could not find the seeded series';
+  END IF;
+
+  IF NOT has_table_privilege('authenticated', 'user_watchlist', 'SELECT')
+     OR NOT has_table_privilege('authenticated', 'user_watchlist', 'INSERT')
+     OR NOT has_table_privilege('authenticated', 'user_watchlist', 'DELETE')
+     OR has_table_privilege('authenticated', 'user_watchlist', 'UPDATE') THEN
+    RAISE EXCEPTION 'Watchlist grants do not match the intended select/insert/delete contract';
+  END IF;
+
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
+  INSERT INTO user_watchlist (user_id, series_id) VALUES (v_user_id, v_series_id);
+
+  SELECT COUNT(*) INTO v_count FROM user_watchlist WHERE series_id = v_series_id;
+  IF v_count <> 1 THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'Watchlist owner could not read their own saved show';
+  END IF;
+
+  PERFORM set_config('request.jwt.claim.sub', v_other_user_id::text, true);
+  SELECT COUNT(*) INTO v_count FROM user_watchlist WHERE series_id = v_series_id;
+  IF v_count <> 0 THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'A different user could read another user''s saved show';
+  END IF;
+
+  DELETE FROM user_watchlist WHERE user_id = v_user_id AND series_id = v_series_id;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 0 THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'A different user could delete another user''s saved show';
+  END IF;
+
+  BEGIN
+    INSERT INTO user_watchlist (user_id, series_id) VALUES (v_user_id, v_series_id);
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_caught := TRUE;
+  END;
+  RESET ROLE;
+
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'A user was able to insert a watchlist row for another user';
+  END IF;
+
+  SELECT COUNT(*) INTO v_count FROM user_watchlist
+  WHERE user_id = v_user_id AND series_id = v_series_id;
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'Unauthorized delete changed the owner''s watchlist';
+  END IF;
+
+  RAISE NOTICE '✓ Watchlist ownership and write protection verified.';
+END $$;
+
+-- 5. Direct user_scores Table Protection
 DO $$
 DECLARE
   v_user_id UUID := '11111111-1111-1111-1111-111111111111'::UUID;
