@@ -18,6 +18,7 @@ import {
   StoredDailyResult,
 } from '../lib/dailyChallenge';
 import { GameOverModal } from './GameOverModal';
+import { DailyResultCard } from './DailyResultCard';
 
 type GameMode = 'endless' | 'daily';
 type DeckFilter = 'all' | 'streaming' | 'classics' | 'scifi';
@@ -51,6 +52,8 @@ export function TriviaGame({
   const [verifiedScore, setVerifiedScore] = useState<number | null>(null);
   const [isSubmittingScore, setIsSubmittingScore] = useState(false);
   const [dailyResult, setDailyResult] = useState<StoredDailyResult | null>(null);
+  const [dailySubmissionError, setDailySubmissionError] = useState<string | null>(null);
+  const [retryDailyAnswers, setRetryDailyAnswers] = useState<('higher' | 'lower')[] | null>(null);
   const [isCheckingDailyResult, setIsCheckingDailyResult] = useState(true);
   const [dailyStatusUnavailable, setDailyStatusUnavailable] = useState(false);
   const [dailyStartBlocked, setDailyStartBlocked] = useState(false);
@@ -343,6 +346,52 @@ export function TriviaGame({
     }
   }, [streak, lastGuessCorrect]);
 
+  const submitCompletedDailyRun = async (
+    result: StoredDailyResult,
+    completedAnswers: ('higher' | 'lower')[]
+  ) => {
+    setIsSubmittingScore(true);
+    setDailySubmissionError(null);
+    setRetryDailyAnswers(completedAnswers);
+    const submission = await submitDailyScore(result.date, completedAnswers);
+    if (submission.success) {
+      setVerifiedScore(submission.score);
+      setDailyScore(submission.score);
+      const verifiedResult = { ...result, score: submission.score, verified: true };
+      storeDailyResult(verifiedResult);
+      setDailyResult(verifiedResult);
+      setRetryDailyAnswers(null);
+      setIsSubmittingScore(false);
+      return;
+    }
+
+    // A rejected retry may mean an earlier request succeeded. Read the user's
+    // own RLS-protected row before asking them to retry.
+    const serverResult = await fetchMyDailyScore(result.date);
+    if (serverResult.score !== null) {
+      const verifiedResult = { ...result, score: serverResult.score, verified: true };
+      storeDailyResult(verifiedResult);
+      setDailyResult(verifiedResult);
+      setRetryDailyAnswers(null);
+      setDailySubmissionError(null);
+    } else if (serverResult.unavailable) {
+      setDailySubmissionError("We couldn't verify whether your score was saved. Please retry.");
+    } else if (/already submitted/i.test(submission.error)) {
+      setDailySubmissionError("Your score was already submitted, but we couldn't load it. Please retry.");
+    } else if (/challenge|deck|expired/i.test(submission.error)) {
+      setDailySubmissionError("The daily challenge expired before your score could be saved.");
+    } else {
+      setDailySubmissionError("Your score could not be saved. Please retry.");
+    }
+    setIsSubmittingScore(false);
+  };
+
+  const retryDailySubmission = () => {
+    if (dailyResult && retryDailyAnswers && user) {
+      void submitCompletedDailyRun(dailyResult, retryDailyAnswers);
+    }
+  };
+
   const finishDailyRun = async (
     completedAnswers: ('higher' | 'lower')[],
     completedCorrectness: boolean[]
@@ -367,25 +416,10 @@ export function TriviaGame({
     };
     storeDailyResult(result);
     setDailyResult(result);
+    setDailySubmissionError(null);
 
     if (user) {
-      setIsSubmittingScore(true);
-      const res = await submitDailyScore(todayStr, completedAnswers);
-      if (res && res.success) {
-        setVerifiedScore(res.score);
-        setDailyScore(res.score);
-        const verifiedResult = { ...result, score: res.score, verified: true };
-        storeDailyResult(verifiedResult);
-        setDailyResult(verifiedResult);
-      } else {
-        const serverResult = await fetchMyDailyScore(todayStr);
-        if (serverResult.score !== null) {
-          const verifiedResult = { ...result, score: serverResult.score, verified: true };
-          storeDailyResult(verifiedResult);
-          setDailyResult(verifiedResult);
-        }
-      }
-      setIsSubmittingScore(false);
+      await submitCompletedDailyRun(result, completedAnswers);
     }
   };
 
@@ -674,25 +708,14 @@ export function TriviaGame({
           )}
         </section>
       ) : gameMode === 'daily' && dailyResult && dailySubView === 'play' ? (
-        <section className="w-full max-w-xl mx-auto py-12 px-6 text-center bg-white/80 backdrop-blur rounded-[28px] border border-stone-200/80 shadow-soft-card my-6">
-          <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center font-serif text-xl mb-4 border border-emerald-200/60">✓</div>
-          <h2 className="font-serif text-2xl text-stone-900 font-semibold mb-2">Today's Challenge Complete</h2>
-          <p className="text-sm text-stone-600 mb-2">Score: {dailyResult.score}/10</p>
-          <p className="text-xs text-stone-500 mb-5">
-            {dailyResult.verified ? 'Verified and saved to your account.' : 'Saved on this device.'}
-          </p>
-          {dailyResult.correctness.length > 0 && (
-            <div className="flex justify-center gap-1.5 mb-6" aria-label="Daily challenge result">
-              {dailyResult.correctness.map((correct, index) => (
-                <span key={`${dailyResult.date}-${index}`} aria-label={correct ? 'Correct' : 'Incorrect'}>
-                  {correct ? '🟩' : '🟥'}
-                </span>
-              ))}
-            </div>
-          )}
-          {isSubmittingScore && <p className="text-xs text-stone-400">Verifying your score…</p>}
-          <p className="text-xs text-stone-400 mt-6">Come back tomorrow for a new challenge.</p>
-        </section>
+        <DailyResultCard
+          result={dailyResult}
+          isAuthenticated={Boolean(user)}
+          isSubmitting={isSubmittingScore}
+          submissionError={dailySubmissionError}
+          onRetry={retryDailySubmission}
+          onOpenAuth={onOpenAuth}
+        />
       ) : gameMode === 'daily' && isCheckingDailyResult ? (
         <div className="text-center py-12 text-sm text-arena-muted">Checking today's challenge status…</div>
       ) : gameMode === 'daily' && user && dailyStatusUnavailable ? (

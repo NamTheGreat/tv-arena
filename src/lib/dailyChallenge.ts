@@ -74,21 +74,25 @@ export async function fetchDailyDeck(dateStr?: string): Promise<string[] | null>
 export async function submitDailyScore(
   dateStr: string,
   answers: ('higher' | 'lower')[]
-): Promise<{ success: boolean; score: number; date: string } | null> {
-  if (!supabase) return null;
+): Promise<{ success: true; score: number; date: string } | { success: false; error: string }> {
+  if (!supabase) return { success: false, error: 'Supabase is not configured.' };
   try {
     const { data, error } = await supabase.rpc('submit_daily_score', {
       p_date: dateStr,
       p_answers: answers,
     });
     if (error || !data) {
-      console.warn('Daily score submission failed or rejected:', error?.message);
-      return null;
+      const message = error?.message || 'The server did not return a score.';
+      console.warn('Daily score submission failed or rejected:', message);
+      return { success: false, error: message };
     }
-    return data as { success: boolean; score: number; date: string };
+    return data as { success: true; score: number; date: string };
   } catch (err) {
     console.warn('Error calling submit_daily_score RPC:', err);
-    return null;
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Network error while saving score.',
+    };
   }
 }
 
