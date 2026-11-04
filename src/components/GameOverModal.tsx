@@ -149,29 +149,21 @@ export function GameOverModal({
           </span>
         </div>
 
-        {/* Action Group: Primary Terracotta Play Again + Clean Share Result */}
+        {/* Daily runs have no replay action; endless runs can be restarted. */}
         <div className="space-y-2.5">
           {/* Primary Action */}
-          <button
-            type="button"
-            onClick={onPlayAgain}
-            className="w-full py-3.5 px-6 rounded-xl bg-arena-terracotta hover:bg-arena-terracottaHover text-white font-medium text-[14.5px] shadow-sm transition-all duration-150 transform active:scale-[0.99] flex items-center justify-center gap-2 group cursor-pointer"
-          >
-            <svg
-              className="w-4 h-4 text-white/90 group-hover:rotate-180 transition-transform duration-300"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="2"
+          {!isDaily && (
+            <button
+              type="button"
+              onClick={onPlayAgain}
+              className="w-full py-3.5 px-6 rounded-xl bg-arena-terracotta hover:bg-arena-terracottaHover text-white font-medium text-[14.5px] shadow-sm transition-all duration-150 transform active:scale-[0.99] flex items-center justify-center gap-2 group cursor-pointer"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            {isDaily ? 'Replay Daily Run' : 'Play Again'}
-          </button>
+              <svg className="w-4 h-4 text-white/90 group-hover:rotate-180 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Play Again
+            </button>
+          )}
 
           {/* Secondary Action */}
           <button

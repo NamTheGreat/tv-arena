@@ -293,31 +293,25 @@ export type Database = {
       }
       user_scores: {
         Row: {
-          id: string
           user_id: string
-          mode: string
-          challenge_date: string | null
+          date: string
           score: number
-          best_streak: number
-          created_at: string | null
+          answers: Json
+          completed_at: string | null
         }
         Insert: {
-          id?: string
           user_id: string
-          mode: string
-          challenge_date?: string | null
+          date: string
           score: number
-          best_streak?: number
-          created_at?: string | null
+          answers?: Json
+          completed_at?: string | null
         }
         Update: {
-          id?: string
           user_id?: string
-          mode?: string
-          challenge_date?: string | null
+          date?: string
           score?: number
-          best_streak?: number
-          created_at?: string | null
+          answers?: Json
+          completed_at?: string | null
         }
         Relationships: []
       }
