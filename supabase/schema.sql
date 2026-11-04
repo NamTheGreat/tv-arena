@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS series (
   wiki_slug TEXT NOT NULL,
   reddit_query TEXT NOT NULL,
   buzz_score BIGINT DEFAULT 0,
-  delta_pct NUMERIC(9,2) DEFAULT 0.0,
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -23,8 +22,9 @@ CREATE TABLE IF NOT EXISTS series_daily_telemetry (
   recorded_date DATE NOT NULL DEFAULT CURRENT_DATE,
   daily_score BIGINT NOT NULL DEFAULT 0,
   wiki_views INT DEFAULT 0,
-  reddit_comments INT DEFAULT 0,
-  reddit_upvotes INT DEFAULT 0,
+  reddit_comments INT,
+  reddit_upvotes INT,
+  reddit_observed BOOLEAN NOT NULL DEFAULT TRUE,
   UNIQUE (series_id, recorded_date)
 );
 
@@ -59,7 +59,7 @@ SELECT
   COALESCE(t.reddit_upvotes, 0) AS reddit_upvotes,
   ROUND(
     (t.wiki_views * w.wiki_weight) +
-    (t.reddit_comments * w.comment_weight) +
+    (COALESCE(t.reddit_comments, 0) * w.comment_weight) +
     (COALESCE(t.reddit_upvotes, 0) * w.upvote_weight)
   )::BIGINT AS daily_score
 FROM series_daily_telemetry t
@@ -114,6 +114,31 @@ FROM daily_buckets;
 
 GRANT SELECT ON series_leaderboard TO anon, authenticated;
 
+CREATE OR REPLACE VIEW series_deck_candidates
+WITH (security_invoker = on) AS
+WITH anchor AS (
+  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  FROM series_daily_telemetry
+)
+SELECT
+  l.id,
+  l.current_7d_score,
+  COUNT(t.recorded_date) FILTER (
+    WHERE t.recorded_date > a.max_date - INTERVAL '7 days'
+      AND t.recorded_date <= a.max_date
+  )::BIGINT AS telemetry_days
+FROM series_leaderboard l
+CROSS JOIN anchor a
+LEFT JOIN series_daily_telemetry t ON t.series_id = l.id
+GROUP BY l.id, l.current_7d_score, a.max_date
+HAVING l.current_7d_score > 0
+   AND COUNT(t.recorded_date) FILTER (
+     WHERE t.recorded_date > a.max_date - INTERVAL '7 days'
+       AND t.recorded_date <= a.max_date
+   ) >= 7;
+
+GRANT SELECT ON series_deck_candidates TO anon, authenticated;
+
 -- Aggregate recent 90-day telemetry as arrays to guarantee 1 row per show (bypasses 1,000-row PostgREST limits)
 DROP VIEW IF EXISTS series_recent_telemetry CASCADE;
 
@@ -160,20 +185,20 @@ DROP POLICY IF EXISTS "Allow public read on telemetry" ON series_daily_telemetry
 CREATE POLICY "Allow public read on telemetry" ON series_daily_telemetry FOR SELECT USING (true);
 
 -- Seed initial flagship shows with zeroed metrics ready for telemetry sync
-INSERT INTO series (tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score, delta_pct)
+INSERT INTO series (tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
 VALUES
-  (66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', '"Stranger Things" (Netflix OR episode OR season)', 0, 0.0),
-  (119051, 'wednesday', 'Wednesday', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Wednesday_(TV_series)', '"Wednesday" (Netflix OR Jenna Ortega OR season)', 0, 0.0),
-  (94997, 'house-of-the-dragon', 'House of the Dragon', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'House_of_the_Dragon', '"House of the Dragon" (HBO OR episode OR season)', 0, 0.0),
-  (95396, 'severance', 'Severance', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Severance_(TV_series)', '"Severance" (Apple OR Lumon OR episode)', 0, 0.0),
-  (100088, 'the-last-of-us', 'The Last of Us', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#886F99', 'The_Last_of_Us_(TV_series)', '"The Last of Us" (HBO OR Joel OR Ellie)', 0, 0.0),
-  (136315, 'the-bear', 'The Bear', 'FX / Hulu', 'Comedy & Drama', '2024–2025', '#5C828C', 'The_Bear_(TV_series)', '"The Bear" (Hulu OR FX OR Carmy)', 0, 0.0),
-  (91239, 'bridgerton', 'Bridgerton', 'Netflix', 'Drama', '2024–2025', '#6E8761', 'Bridgerton', '"Bridgerton" (Netflix OR season OR episode)', 0, 0.0),
-  (111803, 'the-white-lotus', 'The White Lotus', 'HBO', 'Drama', '2024–2025', '#A65D67', 'The_White_Lotus', '"The White Lotus" (HBO OR episode OR finale)', 0, 0.0),
-  (76479, 'the-boys', 'The Boys', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'The_Boys_(TV_series)', '"The Boys" (Prime OR Homelander OR episode)', 0, 0.0),
-  (106379, 'fallout', 'Fallout', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#6E8761', 'Fallout_(American_TV_series)', '"Fallout" (Prime OR Vault OR episode)', 0, 0.0),
-  (76331, 'succession', 'Succession', 'HBO', 'Drama', '2023–2024', '#886F99', 'Succession_(TV_series)', '"Succession" (HBO OR Kendall OR Roy)', 0, 0.0),
-  (125988, 'silo', 'Silo', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Silo_(TV_series)', '"Silo" (Apple OR Juliette OR episode)', 0, 0.0)
+  (66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', '"Stranger Things" (Netflix OR episode OR season)', 0),
+  (119051, 'wednesday', 'Wednesday', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Wednesday_(TV_series)', '"Wednesday" (Netflix OR Jenna Ortega OR season)', 0),
+  (94997, 'house-of-the-dragon', 'House of the Dragon', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'House_of_the_Dragon', '"House of the Dragon" (HBO OR episode OR season)', 0),
+  (95396, 'severance', 'Severance', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Severance_(TV_series)', '"Severance" (Apple OR Lumon OR episode)', 0),
+  (100088, 'the-last-of-us', 'The Last of Us', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#886F99', 'The_Last_of_Us_(TV_series)', '"The Last of Us" (HBO OR Joel OR Ellie)', 0),
+  (136315, 'the-bear', 'The Bear', 'FX / Hulu', 'Comedy & Drama', '2024–2025', '#5C828C', 'The_Bear_(TV_series)', '"The Bear" (Hulu OR FX OR Carmy)', 0),
+  (91239, 'bridgerton', 'Bridgerton', 'Netflix', 'Drama', '2024–2025', '#6E8761', 'Bridgerton', '"Bridgerton" (Netflix OR season OR episode)', 0),
+  (111803, 'the-white-lotus', 'The White Lotus', 'HBO', 'Drama', '2024–2025', '#A65D67', 'The_White_Lotus', '"The White Lotus" (HBO OR episode OR finale)', 0),
+  (76479, 'the-boys', 'The Boys', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'The_Boys_(TV_series)', '"The Boys" (Prime OR Homelander OR episode)', 0),
+  (106379, 'fallout', 'Fallout', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#6E8761', 'Fallout_(American_TV_series)', '"Fallout" (Prime OR Vault OR episode)', 0),
+  (76331, 'succession', 'Succession', 'HBO', 'Drama', '2023–2024', '#886F99', 'Succession_(TV_series)', '"Succession" (HBO OR Kendall OR Roy)', 0),
+  (125988, 'silo', 'Silo', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Silo_(TV_series)', '"Silo" (Apple OR Juliette OR episode)', 0)
 ON CONFLICT (tmdb_id) DO NOTHING;
 
 
@@ -318,7 +343,6 @@ DECLARE
   v_score_a BIGINT;
   v_score_b BIGINT;
   v_guess TEXT;
-  v_is_higher BOOLEAN;
   v_deck_len INT;
 BEGIN
   v_uid := auth.uid();
@@ -352,24 +376,20 @@ BEGIN
     RAISE EXCEPTION 'Score already submitted for this daily challenge';
   END IF;
 
-  -- Score answers against dynamic series_leaderboard with fallback to stored buzz_score
+  -- Grade against the same dynamic leaderboard score used to build the deck.
   FOR i IN 0 .. (LEAST(v_deck_len - 2, 9)) LOOP
     v_show_a_id := v_deck[i + 1];
     v_show_b_id := v_deck[i + 2];
     v_guess := p_answers->>i;
 
-    SELECT COALESCE(l.current_7d_score, s.buzz_score, 0) INTO v_score_a 
-    FROM series s 
-    LEFT JOIN series_leaderboard l ON s.id = l.id 
-    WHERE s.id = v_show_a_id;
+    SELECT COALESCE(current_7d_score, 0) INTO v_score_a
+    FROM series_leaderboard WHERE id = v_show_a_id;
 
-    SELECT COALESCE(l.current_7d_score, s.buzz_score, 0) INTO v_score_b 
-    FROM series s 
-    LEFT JOIN series_leaderboard l ON s.id = l.id 
-    WHERE s.id = v_show_b_id;
+    SELECT COALESCE(current_7d_score, 0) INTO v_score_b
+    FROM series_leaderboard WHERE id = v_show_b_id;
 
-    v_is_higher := v_score_b >= v_score_a;
-    IF (v_guess = 'higher' AND v_is_higher) OR (v_guess = 'lower' AND NOT v_is_higher) THEN
+    IF (v_guess = 'higher' AND v_score_b > v_score_a)
+      OR (v_guess = 'lower' AND v_score_b < v_score_a) THEN
       v_calculated_score := v_calculated_score + 1;
     END IF;
   END LOOP;
