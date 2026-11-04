@@ -199,6 +199,9 @@ DECLARE
   v_show_c UUID;
   v_deck UUID[];
   v_res JSONB;
+  v_share JSONB;
+  v_public_share JSONB;
+  v_correctness BOOLEAN[];
   v_caught BOOLEAN;
   v_rpc_definition TEXT;
 BEGIN
@@ -247,10 +250,41 @@ BEGIN
     RAISE EXCEPTION 'submit_daily_score allowed malformed payload with wrong length';
   END IF;
 
+  v_caught := FALSE;
+  BEGIN
+    PERFORM submit_daily_score(v_today, '["higher", "unknown"]'::jsonb);
+  EXCEPTION WHEN OTHERS THEN
+    v_caught := TRUE;
+  END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'submit_daily_score allowed an unknown answer value';
+  END IF;
+
   -- 5c. Valid submission must succeed
   v_res := submit_daily_score(v_today, '["higher", "lower"]'::jsonb);
   IF (v_res->>'success')::BOOLEAN <> TRUE THEN
     RAISE EXCEPTION 'submit_daily_score did not return success: true';
+  END IF;
+
+  SELECT correctness INTO v_correctness FROM user_scores WHERE user_id = v_user_id AND date = v_today;
+  IF v_correctness IS NULL OR array_length(v_correctness, 1) <> 2
+     OR cardinality(ARRAY(SELECT value FROM unnest(v_correctness) value WHERE value)) <> (v_res->>'score')::INT THEN
+    RAISE EXCEPTION 'submit_daily_score did not persist its server-calculated correctness grid';
+  END IF;
+  INSERT INTO user_scores (user_id, date, score, answers, correctness, completed_at)
+  VALUES (
+    v_user_id, v_today - 1, 7,
+    '["higher","higher","lower","higher","higher","higher","lower","higher","lower","higher"]'::jsonb,
+    ARRAY[TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE], now()
+  );
+  v_share := create_daily_score_share(v_today - 1);
+  v_public_share := get_daily_score_share((v_share->>'token')::UUID);
+  IF v_share->>'token' IS NULL
+     OR v_public_share IS NULL
+     OR v_share->>'score' <> '7'
+     OR v_public_share->>'score' <> '7'
+     OR v_public_share->'correctness' <> to_jsonb(ARRAY[TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE]) THEN
+    RAISE EXCEPTION 'Daily share resolver did not return the server-verified score row';
   END IF;
 
   -- 5d. Duplicate submission for same date must fail

@@ -34,6 +34,7 @@ describe('daily replay prevention', () => {
     screen.getByRole('button', { name: 'Share Result' }).click();
     expect(await screen.findByRole('status')).toHaveTextContent('Copied result to clipboard.');
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('🟩🟩🟥🟩🟩🟩🟥🟩🟥🟩'));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/daily/21?g=1101110101'));
 
     if (originalClipboard) {
       Object.defineProperty(navigator, 'clipboard', originalClipboard);
