@@ -189,6 +189,94 @@ BEGIN
   RAISE NOTICE '✓ user_scores direct insert protection verified.';
 END $$;
 
+-- 6. Weekly mover prediction access, eligibility, and server-side grading
+DO $$
+DECLARE
+  v_user_id UUID := '11111111-1111-1111-1111-111111111111'::UUID;
+  v_next_week DATE := date_trunc('week', (now() AT TIME ZONE 'UTC'))::DATE + 7;
+  v_prediction_show UUID := gen_random_uuid();
+  v_week DATE := DATE '1900-01-01'; -- Monday; isolates ranking from other fixture data.
+  v_grade_series UUID[] := ARRAY[gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid()];
+  v_grade_users UUID[] := ARRAY[
+    '11111111-1111-1111-1111-111111111111'::UUID,
+    '22222222-2222-2222-2222-222222222222'::UUID,
+    '33333333-3333-3333-3333-333333333333'::UUID
+  ];
+  v_points SMALLINT[];
+  v_visible_count BIGINT;
+  v_caught BOOLEAN := FALSE;
+  v_sync_id BIGINT;
+BEGIN
+  RAISE NOTICE 'Testing weekly mover prediction security and grading...';
+
+  INSERT INTO auth.users (id, email) VALUES
+    (v_grade_users[1], 'mover_top_test@example.com'),
+    (v_grade_users[2], 'mover_top3_test@example.com'),
+    (v_grade_users[3], 'mover_outside_test@example.com')
+  ON CONFLICT (id) DO NOTHING;
+
+  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES (v_prediction_show, 999960, 'mover-prediction-eligibility-test', 'Mover Prediction Eligibility Test', 'TestNet', 'Drama', '2026', '#111', 'Mover_Test', 'test', 0);
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
+  SELECT v_prediction_show, v_next_week - day_offset, 0, 100, 0, 0
+  FROM generate_series(1, 7) AS days(day_offset);
+
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
+  BEGIN
+    INSERT INTO mover_predictions (week_start, user_id, series_id)
+    VALUES (v_next_week, v_user_id, v_prediction_show);
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_caught := TRUE;
+  END;
+  IF NOT v_caught THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'Authenticated user was able to insert mover predictions directly';
+  END IF;
+  PERFORM submit_mover_prediction(v_next_week, v_prediction_show);
+  IF NOT EXISTS (
+    SELECT 1 FROM mover_predictions
+    WHERE week_start = v_next_week AND user_id = v_user_id AND series_id = v_prediction_show
+  ) THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'Prediction RPC did not store the authenticated user''s eligible pick';
+  END IF;
+  RESET ROLE;
+
+  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  SELECT s_id, 999970 + n, 'mover-grade-test-' || n, 'Mover Grade Test ' || n, 'TestNet', 'Drama', '1900', '#111', 'Mover_Grade_Test', 'test', 0
+  FROM unnest(v_grade_series) WITH ORDINALITY AS s(s_id, n);
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
+  SELECT v_grade_series[n], v_week + day_offset - 7, 0,
+         CASE WHEN day_offset < 7 THEN 10 ELSE (ARRAY[40, 30, 20, 15])[n] END,
+         0, 0
+  FROM generate_series(1, 4) AS shows(n)
+  CROSS JOIN generate_series(0, 13) AS days(day_offset);
+
+  INSERT INTO mover_predictions (week_start, user_id, series_id)
+  SELECT v_week, user_id, series_id
+  FROM unnest(v_grade_users, ARRAY[v_grade_series[1], v_grade_series[2], v_grade_series[4]]) AS picks(user_id, series_id);
+
+  INSERT INTO sync_runs (status) VALUES ('running') RETURNING id INTO v_sync_id;
+  UPDATE sync_runs SET status = 'success', completed_at = now() WHERE id = v_sync_id;
+
+  SELECT array_agg(points ORDER BY user_id) INTO v_points
+  FROM mover_predictions WHERE week_start = v_week;
+  IF v_points IS DISTINCT FROM ARRAY[3::SMALLINT, 1::SMALLINT, 0::SMALLINT] THEN
+    RAISE EXCEPTION 'Expected mover prediction points [3, 1, 0], got %', v_points;
+  END IF;
+
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claim.sub', v_grade_users[1]::text, true);
+  SELECT COUNT(*) INTO v_visible_count FROM mover_predictions WHERE week_start = v_week;
+  RESET ROLE;
+  IF v_visible_count <> 1 THEN
+    RAISE EXCEPTION 'RLS exposed % mover predictions instead of the authenticated user''s own row', v_visible_count;
+  END IF;
+
+  RAISE NOTICE '✓ Mover predictions are RPC-only and grade to 3, 1, and 0 points.';
+END $$;
+
 -- 5. RPC submit_daily_score Logic & Edge Cases
 DO $$
 DECLARE
