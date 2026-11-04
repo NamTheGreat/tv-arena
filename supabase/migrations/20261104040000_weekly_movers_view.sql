@@ -25,7 +25,7 @@ WITH periods AS (
   JOIN series_daily_telemetry t
     ON t.recorded_date >= w.period_start - 7 AND t.recorded_date < w.period_start + 7
   JOIN series_daily_scores d ON d.telemetry_id = t.id
-  GROUP BY w.week_start, t.series_id
+  GROUP BY w.period_start, t.series_id
 ), eligible AS (
   SELECT
     ws.period_start,
