@@ -1,0 +1,49 @@
+name: Lighthouse Preview Budgets
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Wait for Cloudflare Pages preview
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          PREVIEW_BRANCH=$(printf '%s' "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+          PREVIEW_URL="https://${PREVIEW_BRANCH}.tv-arena.pages.dev"
+          echo "PREVIEW_URL=$PREVIEW_URL" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 40); do
+            if curl --silent --show-error --fail --output /dev/null "$PREVIEW_URL"; then
+              echo "Cloudflare preview is ready: $PREVIEW_URL"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Cloudflare preview did not become available: $PREVIEW_URL"
+          exit 1
+      - name: Run Lighthouse CI
+        env:
+          LHCI_ENFORCE_BUDGETS: ${{ vars.LHCI_ENFORCE_BUDGETS || 'false' }}
+        run: npx --yes @lhci/cli@0.15.1 autorun --config=./lighthouserc.cjs --collect.url="$PREVIEW_URL"
+      - name: Comment Lighthouse scores on the pull request
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 .github/scripts/comment_lighthouse.py
