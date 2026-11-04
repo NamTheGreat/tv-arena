@@ -8,7 +8,7 @@ CREATE TABLE mover_predictions (
   week_start DATE NOT NULL CHECK (EXTRACT(ISODOW FROM week_start) = 1),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   series_id UUID NOT NULL REFERENCES series(id) ON DELETE CASCADE,
-  points SMALLINT CHECK (points IS NULL OR points IN (0, 1, 3)),
+  points BIGINT CHECK (points IS NULL OR points IN (0, 1, 3)),
   actual_rank BIGINT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   graded_at TIMESTAMPTZ,
@@ -23,7 +23,7 @@ CREATE POLICY "Users can read own mover predictions"
 GRANT SELECT ON mover_predictions TO authenticated;
 REVOKE INSERT, UPDATE, DELETE ON mover_predictions FROM anon, authenticated;
 
-CREATE OR REPLACE FUNCTION submit_mover_prediction(p_week_start DATE, p_series_id UUID)
+CREATE FUNCTION submit_mover_prediction(p_week_start DATE, p_series_id UUID)
 RETURNS mover_predictions
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -58,7 +58,7 @@ $$;
 REVOKE EXECUTE ON FUNCTION submit_mover_prediction(DATE, UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION submit_mover_prediction(DATE, UUID) TO authenticated;
 
-CREATE OR REPLACE FUNCTION grade_mover_predictions_after_sync()
+CREATE FUNCTION grade_mover_predictions_after_sync()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -94,7 +94,7 @@ BEGIN
       r.actual_rank,
       CASE WHEN r.actual_rank = 1 THEN 3
            WHEN r.actual_rank <= 3 THEN 1
-           ELSE 0 END::SMALLINT AS points
+           ELSE 0 END::BIGINT AS points
     FROM mover_predictions p
     LEFT JOIN ranked r ON r.week_start = p.week_start AND r.series_id = p.series_id
     WHERE p.graded_at IS NULL

@@ -227,7 +227,7 @@ DECLARE
     '22222222-2222-2222-2222-222222222222'::UUID,
     '33333333-3333-3333-3333-333333333333'::UUID
   ];
-  v_points SMALLINT[];
+  v_points BIGINT[];
   v_visible_count BIGINT;
   v_caught BOOLEAN := FALSE;
   v_sync_id BIGINT;
@@ -287,7 +287,7 @@ BEGIN
 
   SELECT array_agg(points ORDER BY user_id) INTO v_points
   FROM mover_predictions WHERE week_start = v_week;
-  IF v_points IS DISTINCT FROM ARRAY[3::SMALLINT, 1::SMALLINT, 0::SMALLINT] THEN
+  IF v_points IS DISTINCT FROM ARRAY[3::BIGINT, 1::BIGINT, 0::BIGINT] THEN
     RAISE EXCEPTION 'Expected mover prediction points [3, 1, 0], got %', v_points;
   END IF;
 
