@@ -65,6 +65,8 @@ export type Database = {
           daily_score: number
           wiki_views: number | null
           reddit_comments: number | null
+          reddit_upvotes: number | null
+          reddit_observed: boolean
         }
         Insert: {
           id?: number
@@ -73,6 +75,8 @@ export type Database = {
           daily_score: number
           wiki_views?: number | null
           reddit_comments?: number | null
+          reddit_upvotes?: number | null
+          reddit_observed?: boolean
         }
         Update: {
           id?: number
@@ -81,6 +85,8 @@ export type Database = {
           daily_score?: number
           wiki_views?: number | null
           reddit_comments?: number | null
+          reddit_upvotes?: number | null
+          reddit_observed?: boolean
         }
         Relationships: [
           {
@@ -293,31 +299,25 @@ export type Database = {
       }
       user_scores: {
         Row: {
-          id: string
           user_id: string
-          mode: string
-          challenge_date: string | null
+          date: string
           score: number
-          best_streak: number
-          created_at: string | null
+          answers: Json
+          completed_at: string | null
         }
         Insert: {
-          id?: string
           user_id: string
-          mode: string
-          challenge_date?: string | null
+          date: string
           score: number
-          best_streak?: number
-          created_at?: string | null
+          answers?: Json
+          completed_at?: string | null
         }
         Update: {
-          id?: string
           user_id?: string
-          mode?: string
-          challenge_date?: string | null
+          date?: string
           score?: number
-          best_streak?: number
-          created_at?: string | null
+          answers?: Json
+          completed_at?: string | null
         }
         Relationships: []
       }
@@ -350,6 +350,14 @@ export type Database = {
           reddit_comments: number
           reddit_upvotes: number
           daily_score: number
+        }
+        Relationships: []
+      }
+      series_deck_candidates: {
+        Row: {
+          id: string
+          current_7d_score: number
+          telemetry_days: number
         }
         Relationships: []
       }

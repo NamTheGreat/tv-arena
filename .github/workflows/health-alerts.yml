@@ -1,0 +1,32 @@
+name: TV Arena Health Alerts
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_run:
+    workflows:
+      - TV Arena Nightly Rust Sync
+      - TV Arena Weekly TMDb Events Ingestion
+      - TV Arena Seed Catalog (TMDb Auto-Discover)
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  issues: write
+
+jobs:
+  alerts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+      - name: Update health alert issues
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_EVENT_PATH: ${{ github.event_path }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python3 .github/scripts/health_alerts.py

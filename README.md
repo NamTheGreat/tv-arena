@@ -242,6 +242,15 @@ cd pipeline
    - Fetches milestone premiere and finale events via TMDb into `series_events`.
    - Records execution status, duration, and failure counts into `sync_runs`.
 
+4. **Wikipedia History Backfill:**
+   ```bash
+   cargo run --release -- backfill --days 90
+   cargo run --release -- backfill --days 90 --slug severance
+   ```
+   - Fetches up to 90 completed days per Wikipedia article, ending yesterday UTC.
+   - Inserts only missing dates and leaves Reddit metrics NULL/unobserved. Re-running is safe.
+   - Run explicitly after catalog seeding; it is not coupled to regular seeding or nightly sync so a large batch cannot delay those jobs.
+
 ---
 
 ## ⚙️ Automated Workflows & CI Quality Gates
