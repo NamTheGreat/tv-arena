@@ -20,6 +20,8 @@ pub struct SeriesRow {
     pub slug: String,
     pub title: String,
     pub network: String,
+    #[serde(default)]
+    pub network_group: String,
     pub genre_group: String,
     pub release_years: String,
     pub chart_color: String,
@@ -40,6 +42,7 @@ pub struct SeedSeriesPayload {
     pub slug: String,
     pub title: String,
     pub network: String,
+    pub network_group: String,
     pub genre_group: String,
     pub release_years: String,
     pub chart_color: String,

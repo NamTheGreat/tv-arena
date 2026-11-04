@@ -17,6 +17,7 @@ const mockShows: SeriesItem[] = [
     slug: 'severance',
     title: 'Severance',
     network: 'Apple TV+',
+    network_group: 'Apple TV+',
     genre_group: 'Drama & Sci-Fi',
     release_years: '2024–2025',
     chart_color: '#C66A3D',
@@ -33,6 +34,7 @@ const mockShows: SeriesItem[] = [
     slug: 'the-bear',
     title: 'The Bear',
     network: 'FX / Hulu',
+    network_group: 'FX / Hulu',
     genre_group: 'Comedy & Drama',
     release_years: '2024–2025',
     chart_color: '#5C828C',
@@ -86,6 +88,37 @@ describe('Core components headless tests', () => {
       }
     });
 
+    it('supports arrow and enter selection in the contender combobox', () => {
+      const onSelectLeftShow = vi.fn();
+      const stats = computeArenaStats(mockShows[0], mockShows[1]);
+      render(
+        <ArenaContenders
+          seriesList={mockShows}
+          leftShow={mockShows[0]}
+          rightShow={mockShows[1]}
+          leftSearch=""
+          rightSearch=""
+          leftDropdownOpen={true}
+          rightDropdownOpen={false}
+          setLeftSearch={vi.fn()}
+          setRightSearch={vi.fn()}
+          setLeftDropdownOpen={vi.fn()}
+          setRightDropdownOpen={vi.fn()}
+          onSelectLeftShow={onSelectLeftShow}
+          onSelectRightShow={vi.fn()}
+          onSwapShows={vi.fn()}
+          arenaStats={stats}
+        />
+      );
+
+      const combobox = screen.getByRole('combobox', { name: 'Search left contender' });
+      fireEvent.focus(combobox);
+      fireEvent.keyDown(combobox, { key: 'ArrowDown' });
+      expect(combobox).toHaveAttribute('aria-activedescendant', 'left-show-option-the-bear');
+      fireEvent.keyDown(combobox, { key: 'Enter' });
+      expect(onSelectLeftShow).toHaveBeenCalledWith(mockShows[1]);
+    });
+
     it('renders both contenders and shows the leading show', () => {
       const stats = computeArenaStats(mockShows[0], mockShows[1]);
       const setLeftSearch = vi.fn();
@@ -120,11 +153,42 @@ describe('Core components headless tests', () => {
       // Check winner declared in footer
       expect(screen.getByText(/Severance leads/i)).toBeInTheDocument();
       expect(screen.getByText(/\+50\.0%/i)).toBeInTheDocument();
+      expect(screen.getByText('No shared daily history is available for these shows yet.')).toBeInTheDocument();
 
       // Check search input triggers callback
       const inputs = screen.getAllByPlaceholderText('Type a series...');
       fireEvent.change(inputs[0], { target: { value: 'Stranger' } });
       expect(setLeftSearch).toHaveBeenCalledWith('Stranger');
+    });
+
+    it('overlays matching daily history and reports each show’s lead days', () => {
+      const leftShow = { ...mockShows[0], daily_dates: ['2026-01-01', '2026-01-02'], daily_series: [10, 5] };
+      const rightShow = { ...mockShows[1], daily_dates: ['2026-01-01', '2026-01-02'], daily_series: [5, 7] };
+      const stats = computeArenaStats(leftShow, rightShow);
+
+      render(
+        <ArenaContenders
+          seriesList={[leftShow, rightShow]}
+          leftShow={leftShow}
+          rightShow={rightShow}
+          leftSearch=""
+          rightSearch=""
+          leftDropdownOpen={false}
+          rightDropdownOpen={false}
+          setLeftSearch={vi.fn()}
+          setRightSearch={vi.fn()}
+          setLeftDropdownOpen={vi.fn()}
+          setRightDropdownOpen={vi.fn()}
+          onSelectLeftShow={vi.fn()}
+          onSelectRightShow={vi.fn()}
+          onSwapShows={vi.fn()}
+          arenaStats={stats}
+        />
+      );
+
+      expect(screen.getByText('Severance led on 1 of 30 days')).toBeInTheDocument();
+      expect(screen.getByText('The Bear led on 1 of 30 days')).toBeInTheDocument();
+      expect(screen.getByText(/2 days had recorded values for both shows/)).toBeInTheDocument();
     });
   });
 
