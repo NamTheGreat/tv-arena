@@ -11,6 +11,32 @@ export interface ArenaStats {
   diffPct: string;
 }
 
+function handleComboboxKeyDown(
+  event: React.KeyboardEvent<HTMLInputElement>,
+  options: SeriesItem[],
+  isOpen: boolean,
+  setOpen: (open: boolean) => void,
+  activeIndex: number,
+  setActiveIndex: (index: number) => void,
+  onSelect: (show: SeriesItem) => void
+) {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    if (!options.length) return;
+    event.preventDefault();
+    setOpen(true);
+    const step = event.key === 'ArrowDown' ? 1 : -1;
+    setActiveIndex(activeIndex < 0 ? (step > 0 ? 0 : options.length - 1) : (activeIndex + step + options.length) % options.length);
+  } else if (event.key === 'Enter' && isOpen && options[activeIndex]) {
+    event.preventDefault();
+    onSelect(options[activeIndex]);
+    setOpen(false);
+    setActiveIndex(-1);
+  } else if (event.key === 'Escape') {
+    setOpen(false);
+    setActiveIndex(-1);
+  }
+}
+
 interface ArenaContendersProps {
   seriesList: SeriesItem[];
   leftShow: SeriesItem;
@@ -48,6 +74,21 @@ export function ArenaContenders({
 }: ArenaContendersProps) {
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
+  const [leftActiveIndex, setLeftActiveIndex] = useState(0);
+  const [rightActiveIndex, setRightActiveIndex] = useState(0);
+  const leftOptions = seriesList.filter((show) => show.title.toLowerCase().includes(leftSearch.toLowerCase())).slice(0, 6);
+  const rightOptions = seriesList.filter((show) => show.title.toLowerCase().includes(rightSearch.toLowerCase())).slice(0, 6);
+
+  const selectLeft = (show: SeriesItem) => {
+    onSelectLeftShow(show);
+    setLeftDropdownOpen(false);
+    setLeftActiveIndex(-1);
+  };
+  const selectRight = (show: SeriesItem) => {
+    onSelectRightShow(show);
+    setRightDropdownOpen(false);
+    setRightActiveIndex(-1);
+  };
 
   const handleCopyLink = async () => {
     setCopied(false);
@@ -70,35 +111,41 @@ export function ArenaContenders({
           <div className="relative w-full">
             <input
               type="text"
+              role="combobox"
+              aria-label="Search left contender"
+              aria-autocomplete="list"
+              aria-expanded={leftDropdownOpen}
+              aria-controls={leftDropdownOpen ? 'left-show-options' : undefined}
+              aria-activedescendant={leftDropdownOpen && leftOptions[leftActiveIndex] ? `left-show-option-${leftOptions[leftActiveIndex].slug}` : undefined}
               value={leftSearch}
-              onFocus={() => setLeftDropdownOpen(true)}
+              onFocus={() => { setLeftDropdownOpen(true); setLeftActiveIndex(leftOptions.length ? 0 : -1); }}
               onBlur={() => setTimeout(() => setLeftDropdownOpen(false), 180)}
               onChange={(e) => {
                 setLeftSearch(e.target.value);
                 setLeftDropdownOpen(true);
+                setLeftActiveIndex(0);
               }}
+              onKeyDown={(event) => handleComboboxKeyDown(event, leftOptions, leftDropdownOpen, setLeftDropdownOpen, leftActiveIndex, setLeftActiveIndex, selectLeft)}
               placeholder="Type a series..."
               className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm focus:border-arena-terracotta focus:ring-0 outline-none"
             />
             {leftDropdownOpen && (
-              <div className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden">
-                {seriesList
-                  .filter((s) => s.title.toLowerCase().includes(leftSearch.toLowerCase()))
-                  .slice(0, 6)
-                  .map((s) => (
-                    <button
-                      key={s.slug}
-                      type="button"
-                      onMouseDown={() => {
-                        onSelectLeftShow(s);
-                        setLeftDropdownOpen(false);
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-arena-cream flex items-center justify-between text-sm font-serif"
-                    >
-                      <span className="font-semibold">{s.title}</span>
-                      <span className="text-xs font-sans text-arena-muted">{s.network}</span>
-                    </button>
-                  ))}
+              <div id="left-show-options" role="listbox" className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden">
+                {leftOptions.map((show, index) => (
+                  <div
+                    id={`left-show-option-${show.slug}`}
+                    key={show.slug}
+                    role="option"
+                    aria-selected={index === leftActiveIndex}
+                    onMouseEnter={() => setLeftActiveIndex(index)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectLeft(show)}
+                    className={`w-full text-left px-4 py-2.5 flex items-center justify-between text-sm font-serif cursor-pointer ${index === leftActiveIndex ? 'bg-arena-cream' : ''}`}
+                  >
+                    <span className="font-semibold">{show.title}</span>
+                    <span className="text-xs font-sans text-arena-muted">{show.network}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -117,35 +164,41 @@ export function ArenaContenders({
           <div className="relative w-full">
             <input
               type="text"
+              role="combobox"
+              aria-label="Search right contender"
+              aria-autocomplete="list"
+              aria-expanded={rightDropdownOpen}
+              aria-controls={rightDropdownOpen ? 'right-show-options' : undefined}
+              aria-activedescendant={rightDropdownOpen && rightOptions[rightActiveIndex] ? `right-show-option-${rightOptions[rightActiveIndex].slug}` : undefined}
               value={rightSearch}
-              onFocus={() => setRightDropdownOpen(true)}
+              onFocus={() => { setRightDropdownOpen(true); setRightActiveIndex(rightOptions.length ? 0 : -1); }}
               onBlur={() => setTimeout(() => setRightDropdownOpen(false), 180)}
               onChange={(e) => {
                 setRightSearch(e.target.value);
                 setRightDropdownOpen(true);
+                setRightActiveIndex(0);
               }}
+              onKeyDown={(event) => handleComboboxKeyDown(event, rightOptions, rightDropdownOpen, setRightDropdownOpen, rightActiveIndex, setRightActiveIndex, selectRight)}
               placeholder="Type a series..."
               className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm focus:border-arena-sage focus:ring-0 outline-none"
             />
             {rightDropdownOpen && (
-              <div className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden">
-                {seriesList
-                  .filter((s) => s.title.toLowerCase().includes(rightSearch.toLowerCase()))
-                  .slice(0, 6)
-                  .map((s) => (
-                    <button
-                      key={s.slug}
-                      type="button"
-                      onMouseDown={() => {
-                        onSelectRightShow(s);
-                        setRightDropdownOpen(false);
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-arena-cream flex items-center justify-between text-sm font-serif"
-                    >
-                      <span className="font-semibold">{s.title}</span>
-                      <span className="text-xs font-sans text-arena-muted">{s.network}</span>
-                    </button>
-                  ))}
+              <div id="right-show-options" role="listbox" className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden">
+                {rightOptions.map((show, index) => (
+                  <div
+                    id={`right-show-option-${show.slug}`}
+                    key={show.slug}
+                    role="option"
+                    aria-selected={index === rightActiveIndex}
+                    onMouseEnter={() => setRightActiveIndex(index)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectRight(show)}
+                    className={`w-full text-left px-4 py-2.5 flex items-center justify-between text-sm font-serif cursor-pointer ${index === rightActiveIndex ? 'bg-arena-cream' : ''}`}
+                  >
+                    <span className="font-semibold">{show.title}</span>
+                    <span className="text-xs font-sans text-arena-muted">{show.network}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

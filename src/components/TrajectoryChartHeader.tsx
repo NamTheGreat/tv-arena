@@ -26,7 +26,7 @@ export function TrajectoryChartHeader({ breakoutShow, addShow, selectedSlugs, ch
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="inline-block w-2 h-2 rounded-full bg-brand-terracotta ring-4 ring-brand-terracotta/20 animate-pulse" />
-              <span className="text-xs font-semibold tracking-widest uppercase text-stone-500">
+              <span className="text-xs font-semibold tracking-widest uppercase text-stone-600">
                 Workbench: Daily Active Household Viewers
               </span>
               {breakoutShow && (
@@ -40,20 +40,20 @@ export function TrajectoryChartHeader({ breakoutShow, addShow, selectedSlugs, ch
                   <span>
                     Breakout: <strong>{breakoutShow.title}</strong> (+{(breakoutShow.delta_pct ?? 0).toFixed(1)}%)
                   </span>
-                  <span className="text-stone-400 font-mono">·</span>
+                  <span className="text-stone-600 font-mono">·</span>
                   <span className="text-brand-terracotta font-medium hover:underline">
                     {selectedSlugs.includes(breakoutShow.slug) ? '✓ Plotted' : '+ Pin to Plot'}
                   </span>
                 </button>
               )}
             </div>
-            <p className="text-xs text-stone-400 mt-1">
+            <p className="text-xs text-stone-600 mt-1">
               Multivariate syndicated trajectory analyzer · Comparing {selectedSlugs.length} of 8 maximum series
             </p>
           </div>
 
           <div className="flex items-center gap-2 self-start lg:self-auto">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 mr-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-600 mr-1">
               Range:
             </span>
             <div className="inline-flex items-center bg-[#F3EFE9] p-0.5 rounded-full text-[11px] font-medium border border-[#E7DFD5]">
@@ -67,7 +67,7 @@ export function TrajectoryChartHeader({ breakoutShow, addShow, selectedSlugs, ch
                     className={`px-2.5 py-0.5 rounded-full whitespace-nowrap transition-colors ${
                       chartRange === r
                         ? 'bg-white text-stone-800 shadow-sm font-semibold'
-                        : 'text-stone-500 hover:text-stone-900'
+                        : 'text-stone-600 hover:text-stone-900'
                     }`}
                   >
                     {label}
@@ -81,7 +81,7 @@ export function TrajectoryChartHeader({ breakoutShow, addShow, selectedSlugs, ch
         {/* Cohort Presets Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-stone-100">
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 mr-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-600 mr-1.5">
               Cohort Presets:
             </span>
             <button
@@ -155,7 +155,7 @@ export function TrajectoryChartHeader({ breakoutShow, addShow, selectedSlugs, ch
                 <span>
                   {activePreset.startsWith('genre:') ? activePreset.replace('genre:', '') : 'Genre'}
                 </span>
-                <span className="text-[10px] text-stone-400">▾</span>
+                <span className="text-[10px] text-stone-600">▾</span>
               </button>
               {genreDropdownOpen && (
                 <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-2xl shadow-nav border border-[#ECE5DC] py-1.5 z-30 text-xs">

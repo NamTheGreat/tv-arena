@@ -86,6 +86,37 @@ describe('Core components headless tests', () => {
       }
     });
 
+    it('supports arrow and enter selection in the contender combobox', () => {
+      const onSelectLeftShow = vi.fn();
+      const stats = computeArenaStats(mockShows[0], mockShows[1]);
+      render(
+        <ArenaContenders
+          seriesList={mockShows}
+          leftShow={mockShows[0]}
+          rightShow={mockShows[1]}
+          leftSearch=""
+          rightSearch=""
+          leftDropdownOpen={true}
+          rightDropdownOpen={false}
+          setLeftSearch={vi.fn()}
+          setRightSearch={vi.fn()}
+          setLeftDropdownOpen={vi.fn()}
+          setRightDropdownOpen={vi.fn()}
+          onSelectLeftShow={onSelectLeftShow}
+          onSelectRightShow={vi.fn()}
+          onSwapShows={vi.fn()}
+          arenaStats={stats}
+        />
+      );
+
+      const combobox = screen.getByRole('combobox', { name: 'Search left contender' });
+      fireEvent.focus(combobox);
+      fireEvent.keyDown(combobox, { key: 'ArrowDown' });
+      expect(combobox).toHaveAttribute('aria-activedescendant', 'left-show-option-the-bear');
+      fireEvent.keyDown(combobox, { key: 'Enter' });
+      expect(onSelectLeftShow).toHaveBeenCalledWith(mockShows[1]);
+    });
+
     it('renders both contenders and shows the leading show', () => {
       const stats = computeArenaStats(mockShows[0], mockShows[1]);
       const setLeftSearch = vi.fn();

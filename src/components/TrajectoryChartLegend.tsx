@@ -55,7 +55,7 @@ export function TrajectoryChartLegend({ selectedSlugs, activeShows, isolatedSlug
                   style={{ backgroundColor: show.assignedColor }}
                 />
                 <span className="text-stone-800">{show.title}</span>
-                <span className="text-[10px] text-stone-400 font-mono uppercase">
+                <span className="text-[10px] text-stone-600 font-mono uppercase">
                   {show.network}
                 </span>
                 {selectedSlugs.length > 1 && (
@@ -65,7 +65,7 @@ export function TrajectoryChartLegend({ selectedSlugs, activeShows, isolatedSlug
                       e.stopPropagation();
                       removeShow(show.slug);
                     }}
-                    className="text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-full w-4 h-4 inline-flex items-center justify-center transition-colors -mr-0.5"
+                    className="text-stone-600 hover:text-stone-700 hover:bg-stone-100 rounded-full w-4 h-4 inline-flex items-center justify-center transition-colors -mr-0.5"
                     title={`Remove ${show.title}`}
                     aria-label={`Remove ${show.title}`}
                   >
@@ -107,7 +107,7 @@ export function TrajectoryChartLegend({ selectedSlugs, activeShows, isolatedSlug
               <div className="absolute left-0 sm:right-0 sm:left-auto mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-nav border border-[#ECE5DC] p-3 z-40 text-xs">
                 {/* Search Bar */}
                 <div className="flex items-center gap-2 pb-2 mb-2 border-b border-stone-100">
-                  <span className="text-stone-400">🔍</span>
+                  <span className="text-stone-600">🔍</span>
                   <input
                     type="text"
                     value={pickerQuery}
@@ -120,7 +120,7 @@ export function TrajectoryChartLegend({ selectedSlugs, activeShows, isolatedSlug
                     <button
                       type="button"
                       onClick={() => setPickerQuery('')}
-                      className="w-4 h-4 rounded-full inline-flex items-center justify-center text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-colors"
+                      className="w-4 h-4 rounded-full inline-flex items-center justify-center text-stone-600 hover:text-stone-600 hover:bg-stone-100 transition-colors"
                       aria-label="Clear search"
                     >
                       <svg
@@ -156,7 +156,7 @@ export function TrajectoryChartLegend({ selectedSlugs, activeShows, isolatedSlug
                 </div>
 
                 {/* Status Bar */}
-                <div className="flex items-center justify-between text-[10px] text-stone-400 font-medium px-1 pb-1.5 border-b border-stone-100">
+                <div className="flex items-center justify-between text-[10px] text-stone-600 font-medium px-1 pb-1.5 border-b border-stone-100">
                   <span>{pickerUnplottedCount} available to add</span>
                   <span>{selectedSlugs.length}/8 active</span>
                 </div>
@@ -164,7 +164,7 @@ export function TrajectoryChartLegend({ selectedSlugs, activeShows, isolatedSlug
                 {/* Scrollable Series List */}
                 <div className="max-h-72 overflow-y-auto space-y-1 pr-0.5 mt-1">
                   {filteredPickerShows.length === 0 ? (
-                    <p className="text-center py-6 text-stone-400 text-xs">
+                    <p className="text-center py-6 text-stone-600 text-xs">
                       No matching series found.
                     </p>
                   ) : (
@@ -179,7 +179,7 @@ export function TrajectoryChartLegend({ selectedSlugs, activeShows, isolatedSlug
                         >
                           <div className="flex flex-col min-w-0 pr-2">
                             <span className="font-semibold text-stone-800 truncate">{s.title}</span>
-                            <span className="text-[10px] text-stone-400 truncate">
+                            <span className="text-[10px] text-stone-600 truncate">
                               {s.network} · {s.genre_group}
                             </span>
                           </div>
@@ -214,7 +214,7 @@ export function TrajectoryChartLegend({ selectedSlugs, activeShows, isolatedSlug
 
                 {/* Footer with Done button */}
                 <div className="pt-2 mt-2 border-t border-stone-100 flex items-center justify-between text-xs">
-                  <span className="text-[10px] text-stone-400">
+                  <span className="text-[10px] text-stone-600">
                     {selectedSlugs.length >= 8 ? 'Capacity full (replaces oldest)' : 'Select up to 8'}
                   </span>
                   <button
