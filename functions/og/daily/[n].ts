@@ -9,7 +9,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, params, env }) =>
   if (!result) return new Response('Invalid or unavailable daily result share.', { status: 404 });
 
   const cells = result.correctness.map((correct) => `
-    <div style="width: 70px; height: 70px; border-radius: 12px; background-color: ${correct ? '#397b55' : '#a84238'};"></div>
+    <div style="display: flex; width: 70px; height: 70px; border-radius: 12px; background-color: ${correct ? '#397b55' : '#a84238'};"></div>
   `).join('');
   const html = `
     <div style="display: flex; flex-direction:column; width:1200px; height:630px; padding:56px 72px; background-color:#faf6f0; border:12px solid #f0e7de; font-family:sans-serif; color:#231e1a; justify-content:space-between;">
