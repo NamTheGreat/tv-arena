@@ -15,6 +15,7 @@ import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
 import { leaderboardScore } from './lib/derivedScore';
 import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
+import type { AuthModalMode } from './components/AuthModal';
 
 const AuthModal = React.lazy(() =>
   import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
@@ -294,11 +295,12 @@ function GuessRouteWrapper({
 }
 
 export default function App() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, passwordRecovery } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<AuthModalMode>('signin');
   const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
   const [isLearnModalOpen, setIsLearnModalOpen] = useState(false);
   const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
@@ -306,6 +308,19 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
   const [dbError, setDbError] = useState<string | null>(null);
   const [viewWarning, setViewWarning] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user && passwordRecovery) {
+      setAuthModalMode('update-password');
+      setIsAuthModalOpen(true);
+    }
+  }, [user, passwordRecovery]);
+
+  const closeAuthModal = () => {
+    setIsAuthModalOpen(false);
+    setAuthModalMode('signin');
+    if (location.search.includes('password-reset=1')) navigate('/', { replace: true });
+  };
 
   // Leaderboard Filter State
   const [platformFilter, setPlatformFilter] = useState<string>('ALL');
@@ -686,7 +701,7 @@ export default function App() {
 
       <Suspense fallback={null}>
         {isAuthModalOpen && (
-          <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+          <AuthModal isOpen={isAuthModalOpen} onClose={closeAuthModal} initialMode={authModalMode} />
         )}
         {isMethodologyOpen && (
           <MethodologyModal

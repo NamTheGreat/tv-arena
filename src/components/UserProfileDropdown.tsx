@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { isBlockedUsername } from '../lib/usernameBlocklist';
 
 export interface UserProfileDropdownProps {
   user: any;
@@ -70,6 +71,10 @@ export function UserProfileDropdown({
       setUsernameError('3–20 lowercase chars (letters, numbers, _ only)');
       return;
     }
+    if (isBlockedUsername(trimmed)) {
+      setUsernameError('That username is reserved or unavailable.');
+      return;
+    }
     setIsSaving(true);
     setUsernameError(null);
     try {
@@ -86,6 +91,8 @@ export function UserProfileDropdown({
       if (error) {
         if (error.code === '23505') {
           setUsernameError('Username already taken');
+        } else if (error.code === '23514') {
+          setUsernameError('That username is reserved or unavailable.');
         } else {
           setUsernameError(error.message || 'Failed to update username');
         }
