@@ -89,6 +89,48 @@ describe('Core components headless tests', () => {
   });
 
   describe('LeaderboardTable', () => {
+    it('provides URL-backed search, sorting, and show-more controls', () => {
+      const shows = Array.from({ length: 21 }, (_, index) => ({
+        ...mockShows[index % mockShows.length],
+        id: `leader-${index}`,
+        slug: `leader-${index}`,
+        title: `Show ${index}`,
+      }));
+      const onSearchTermChange = vi.fn();
+      const onSortChange = vi.fn();
+      const onShowMore = vi.fn();
+
+      render(
+        <LeaderboardTable
+          rankedShows={shows}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={onSearchTermChange}
+          onSortChange={onSortChange}
+          onShowMore={onShowMore}
+          platformFilter="ALL"
+          genreFilter="ALL"
+          availablePlatforms={['ALL']}
+          availableGenres={['ALL']}
+          maxLeaderboardViewers={1_200_000}
+          setPlatformFilter={vi.fn()}
+          setGenreFilter={vi.fn()}
+          onSelectBattle={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText('Showing 20 of 21')).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search shows' }), {
+        target: { value: 'Severance' },
+      });
+      expect(onSearchTermChange).toHaveBeenCalledWith('Severance');
+      fireEvent.change(screen.getByLabelText('Sort leaderboard'), { target: { value: 'growth' } });
+      expect(onSortChange).toHaveBeenCalledWith('growth');
+      fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+      expect(onShowMore).toHaveBeenCalledOnce();
+    });
+
     it('renders ranked rows and filters', () => {
       const setPlatformFilter = vi.fn();
       const setGenreFilter = vi.fn();
@@ -97,6 +139,12 @@ describe('Core components headless tests', () => {
       render(
         <LeaderboardTable
           rankedShows={mockShows}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={vi.fn()}
+          onSortChange={vi.fn()}
+          onShowMore={vi.fn()}
           platformFilter="ALL"
           genreFilter="ALL"
           availablePlatforms={['ALL', 'Apple TV+', 'FX / Hulu']}
@@ -151,6 +199,12 @@ describe('Core components headless tests', () => {
       render(
         <LeaderboardTable
           rankedShows={[showWithNullDelta]}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={vi.fn()}
+          onSortChange={vi.fn()}
+          onShowMore={vi.fn()}
           platformFilter="ALL"
           genreFilter="ALL"
           availablePlatforms={['ALL', 'Apple TV+']}
