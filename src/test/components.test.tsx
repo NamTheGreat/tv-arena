@@ -132,6 +132,8 @@ describe('Core components headless tests', () => {
     it('renders the leaderboard view score without a stored series score field', () => {
       const databaseViewRow = { current_7d_score: 1_200_000 };
       const viewOnlyShow = { ...mockShows[0], buzz_score: leaderboardScore(databaseViewRow) };
+      const staleStoredScoreRow = { current_7d_score: 1_200_000, buzz_score: 0 };
+      expect(leaderboardScore(staleStoredScoreRow)).toBe(1_200_000);
 
       render(
         <LeaderboardTable
