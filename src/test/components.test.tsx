@@ -120,11 +120,42 @@ describe('Core components headless tests', () => {
       // Check winner declared in footer
       expect(screen.getByText(/Severance leads/i)).toBeInTheDocument();
       expect(screen.getByText(/\+50\.0%/i)).toBeInTheDocument();
+      expect(screen.getByText('No shared daily history is available for these shows yet.')).toBeInTheDocument();
 
       // Check search input triggers callback
       const inputs = screen.getAllByPlaceholderText('Type a series...');
       fireEvent.change(inputs[0], { target: { value: 'Stranger' } });
       expect(setLeftSearch).toHaveBeenCalledWith('Stranger');
+    });
+
+    it('overlays matching daily history and reports each show’s lead days', () => {
+      const leftShow = { ...mockShows[0], daily_dates: ['2026-01-01', '2026-01-02'], daily_series: [10, 5] };
+      const rightShow = { ...mockShows[1], daily_dates: ['2026-01-01', '2026-01-02'], daily_series: [5, 7] };
+      const stats = computeArenaStats(leftShow, rightShow);
+
+      render(
+        <ArenaContenders
+          seriesList={[leftShow, rightShow]}
+          leftShow={leftShow}
+          rightShow={rightShow}
+          leftSearch=""
+          rightSearch=""
+          leftDropdownOpen={false}
+          rightDropdownOpen={false}
+          setLeftSearch={vi.fn()}
+          setRightSearch={vi.fn()}
+          setLeftDropdownOpen={vi.fn()}
+          setRightDropdownOpen={vi.fn()}
+          onSelectLeftShow={vi.fn()}
+          onSelectRightShow={vi.fn()}
+          onSwapShows={vi.fn()}
+          arenaStats={stats}
+        />
+      );
+
+      expect(screen.getByText('Severance led on 1 of 30 days')).toBeInTheDocument();
+      expect(screen.getByText('The Bear led on 1 of 30 days')).toBeInTheDocument();
+      expect(screen.getByText(/2 days had recorded values for both shows/)).toBeInTheDocument();
     });
   });
 
