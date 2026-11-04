@@ -7,6 +7,7 @@ import { ArenaContenders } from '../components/ArenaContenders';
 import { LeaderboardTable } from '../components/LeaderboardTable';
 import { ShowDetailView } from '../components/ShowDetailView';
 import { computeArenaStats } from '../lib/svgMath';
+import { leaderboardScore } from '../lib/derivedScore';
 import { SeriesItem } from '../lib/supabase';
 
 const mockShows: SeriesItem[] = [
@@ -89,6 +90,27 @@ describe('Core components headless tests', () => {
   });
 
   describe('LeaderboardTable', () => {
+    it('renders the leaderboard view score without a stored series score field', () => {
+      const databaseViewRow = { current_7d_score: 1_200_000 };
+      const viewOnlyShow = { ...mockShows[0], buzz_score: leaderboardScore(databaseViewRow) };
+
+      render(
+        <LeaderboardTable
+          rankedShows={[viewOnlyShow]}
+          platformFilter="ALL"
+          genreFilter="ALL"
+          availablePlatforms={['ALL']}
+          availableGenres={['ALL']}
+          maxLeaderboardViewers={1_200_000}
+          setPlatformFilter={vi.fn()}
+          setGenreFilter={vi.fn()}
+          onSelectBattle={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText('1,200,000')).toBeInTheDocument();
+    });
+
     it('renders ranked rows and filters', () => {
       const setPlatformFilter = vi.fn();
       const setGenreFilter = vi.fn();
