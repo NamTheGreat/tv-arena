@@ -100,6 +100,7 @@ BEGIN
       AND c.current_7d_score > 0
   ) THEN
     RAISE EXCEPTION 'Expected eligible candidate to use leaderboard score with seven days of history';
+  END IF;
 
   -- A NULL Reddit observation is unavailable data, and still scores wiki only.
   INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
