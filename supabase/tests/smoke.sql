@@ -114,6 +114,31 @@ BEGIN
   RAISE NOTICE '✓ delta_pct logic verified (NULL for new shows, 0.00 for steady).';
 END $$;
 
+-- 2b. Historical weekly mover rankings shared with prediction grading
+DO $$
+DECLARE
+  v_series_id UUID := gen_random_uuid();
+  v_week_start DATE := DATE '1900-01-01';
+  v_delta NUMERIC;
+  v_rank BIGINT;
+BEGIN
+  RAISE NOTICE 'Testing historical weekly mover view...';
+  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES (v_series_id, 999959, 'test-weekly-mover-view', 'Test Weekly Mover View', 'TestNet', 'Drama', '1900', '#111', 'Mover_View_Test', 'test', 0);
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
+  SELECT v_series_id, v_week_start + day_offset - 7, 0,
+         CASE WHEN day_offset < 7 THEN 10 ELSE 30 END, 0, 0
+  FROM generate_series(0, 13) AS days(day_offset);
+
+  SELECT delta_pct, mover_rank INTO v_delta, v_rank
+  FROM series_weekly_movers
+  WHERE period_start = v_week_start AND series_id = v_series_id;
+  IF v_delta <> 200.00 OR v_rank <> 1 THEN
+    RAISE EXCEPTION 'Expected weekly mover view to return +200%% at rank 1, got %% at rank %%', v_delta, v_rank;
+  END IF;
+  RAISE NOTICE '✓ Weekly mover view returns historical delta and stable rank.';
+END $$;
+
 -- 3. Profile Column-Level Security Privileges
 DO $$
 DECLARE

@@ -11,14 +11,15 @@ function escapeXml(value) {
     .replace(/'/g, '&apos;');
 }
 
-function buildMoversFeed({ leaderboard = [], breakouts = [], siteUrl = 'https://tv-arena.pages.dev', now = new Date() } = {}) {
+function buildMoversFeed({ movers = [], shows = [], breakouts = [], siteUrl = 'https://tv-arena.pages.dev', now = new Date() } = {}) {
   const base = siteUrl.replace(/\/$/, '');
-  const eligible = leaderboard.filter((show) => Number.isFinite(Number(show.delta_pct)));
-  const risers = eligible.filter((show) => Number(show.delta_pct) > 0)
-    .sort((a, b) => Number(b.delta_pct) - Number(a.delta_pct)).slice(0, 10);
-  const fallers = eligible.filter((show) => Number(show.delta_pct) < 0)
-    .sort((a, b) => Number(a.delta_pct) - Number(b.delta_pct)).slice(0, 10);
-  const seriesById = new Map(leaderboard.map((show) => [show.id, show]));
+  const latestPeriod = movers.reduce((latest, show) => show.period_start > latest ? show.period_start : latest, '');
+  const eligible = movers.filter((show) => show.period_start === latestPeriod && show.delta_pct != null && Number.isFinite(Number(show.delta_pct)));
+  const risers = eligible.filter((show) => Number(show.delta_pct) > 0 && show.mover_rank <= 10)
+    .sort((a, b) => a.mover_rank - b.mover_rank);
+  const fallers = eligible.filter((show) => Number(show.delta_pct) < 0 && show.faller_rank <= 10)
+    .sort((a, b) => a.faller_rank - b.faller_rank);
+  const seriesById = new Map(shows.map((show) => [show.id, show]));
   const items = [];
   const addShowItem = (show, category) => {
     const url = `${base}/show/${encodeURIComponent(show.slug)}`;
@@ -77,7 +78,8 @@ async function fetchRows(baseUrl, key, table, query) {
 
 async function generate() {
   const siteUrl = process.env.VITE_SITE_URL || 'https://tv-arena.pages.dev';
-  let leaderboard = [];
+  let movers = [];
+  let shows = [];
   let breakouts = [];
   const baseUrl = process.env.VITE_SUPABASE_URL;
   const key = process.env.VITE_SUPABASE_ANON_KEY;
@@ -85,8 +87,9 @@ async function generate() {
     const since = new Date();
     since.setUTCDate(since.getUTCDate() - 6);
     const date = since.toISOString().slice(0, 10);
-    [leaderboard, breakouts] = await Promise.all([
-      fetchRows(baseUrl, key, 'series_leaderboard', 'select=id,slug,title,current_7d_score,previous_7d_score,delta_pct&order=rank.asc&limit=1000'),
+    [movers, shows, breakouts] = await Promise.all([
+      fetchRows(baseUrl, key, 'series_weekly_movers', 'select=period_start,series_id,slug,title,network,current_7d_score,previous_7d_score,delta_pct,mover_rank,faller_rank&order=period_start.desc,mover_rank.asc&limit=1000'),
+      fetchRows(baseUrl, key, 'series', 'select=id,slug,title&limit=1000'),
       fetchRows(baseUrl, key, 'series_breakouts', `select=series_id,detected_date,signal,reason&detected_date=gte.${date}&order=detected_date.desc&limit=50`),
     ]);
   } else {
@@ -95,7 +98,7 @@ async function generate() {
 
   const destination = path.join(process.cwd(), 'public', 'movers.xml');
   fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.writeFileSync(destination, buildMoversFeed({ leaderboard, breakouts, siteUrl }), 'utf8');
+  fs.writeFileSync(destination, buildMoversFeed({ movers, shows, breakouts, siteUrl }), 'utf8');
 }
 
 if (require.main === module) {
