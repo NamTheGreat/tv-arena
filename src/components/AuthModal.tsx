@@ -139,12 +139,18 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
             <input
               type="password"
               required
-              minLength={6}
+              minLength={mode === 'signup' ? 8 : undefined}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              aria-describedby={mode === 'signup' ? 'password-requirement' : undefined}
               className="w-full bg-white border border-arena-border px-3.5 py-2.5 rounded-xl text-sm outline-none focus:border-arena-terracotta"
             />
+            {mode === 'signup' && (
+              <p id="password-requirement" className="mt-1 text-[11px] text-arena-muted">
+                Use at least 8 characters.
+              </p>
+            )}
           </div>
 
           <button
