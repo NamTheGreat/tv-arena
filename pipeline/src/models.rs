@@ -27,10 +27,6 @@ pub struct SeriesRow {
     pub chart_color: String,
     pub wiki_slug: String,
     pub reddit_query: String,
-    #[serde(default)]
-    pub buzz_score: i64,
-    #[serde(default)]
-    pub delta_pct: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
