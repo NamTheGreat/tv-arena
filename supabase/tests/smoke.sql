@@ -17,11 +17,11 @@ BEGIN
   RAISE NOTICE 'Testing View Schema & Column Integrity...';
 
   -- Seed baseline series if empty to test view projections
-  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score, delta_pct)
+  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   VALUES 
-    (gen_random_uuid(), 66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', 'test', 0, 0),
-    (gen_random_uuid(), 1399, 'game-of-thrones', 'Game of Thrones', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Game_of_Thrones', 'test', 0, 0),
-    (gen_random_uuid(), 114472, 'severance', 'Severance', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#4A7C59', 'Severance', 'test', 0, 0)
+    (gen_random_uuid(), 66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', 'test', 0),
+    (gen_random_uuid(), 1399, 'game-of-thrones', 'Game of Thrones', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Game_of_Thrones', 'test', 0),
+    (gen_random_uuid(), 114472, 'severance', 'Severance', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#4A7C59', 'Severance', 'test', 0)
   ON CONFLICT (slug) DO NOTHING;
 
   SELECT COUNT(*) INTO v_count FROM series_leaderboard;
@@ -58,12 +58,13 @@ DECLARE
   v_test_show_id UUID;
   v_anchor_date DATE := CURRENT_DATE;
   v_delta NUMERIC;
+  v_daily_score BIGINT;
 BEGIN
   RAISE NOTICE 'Testing delta_pct anchor & nullability...';
 
   -- Create an isolated show for testing delta logic
-  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score, delta_pct)
-  VALUES (gen_random_uuid(), 999991, 'test-new-show', 'Test New Show', 'TestNet', 'Drama', '2026', '#111', 'Test_New', 'test', 0, 0)
+  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES (gen_random_uuid(), 999991, 'test-new-show', 'Test New Show', 'TestNet', 'Drama', '2026', '#111', 'Test_New', 'test', 0)
   RETURNING id INTO v_test_show_id;
 
   -- Case A: Show with no previous week telemetry must return delta_pct IS NULL
@@ -83,6 +84,15 @@ BEGIN
   SELECT delta_pct INTO v_delta FROM series_leaderboard WHERE id = v_test_show_id;
   IF v_delta <> 0.00 THEN
     RAISE EXCEPTION 'Expected delta_pct to be 0.00 for flat show, got %', v_delta;
+  END IF;
+
+  -- A NULL Reddit observation is unavailable data, and still scores wiki only.
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  VALUES (v_test_show_id, v_anchor_date - INTERVAL '2 days', 0, 1000, NULL, NULL, FALSE);
+  SELECT daily_score INTO v_daily_score FROM series_daily_scores
+  WHERE series_id = v_test_show_id AND recorded_date = v_anchor_date - INTERVAL '2 days';
+  IF v_daily_score <> 10000 THEN
+    RAISE EXCEPTION 'Expected NULL Reddit to retain wiki-only score 10000, got %', v_daily_score;
   END IF;
 
   RAISE NOTICE '✓ delta_pct logic verified (NULL for new shows, 0.00 for steady).';
