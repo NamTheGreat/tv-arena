@@ -103,8 +103,8 @@ SELECT
   genre_group,
   release_years,
   chart_color,
-  current_7d_score AS buzz_score,
   current_7d_score,
+  current_7d_score AS buzz_score,
   previous_7d_score,
   CASE
     WHEN previous_7d_score > 0 THEN
