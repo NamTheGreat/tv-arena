@@ -46,6 +46,45 @@ const mockShows: SeriesItem[] = [
 
 describe('Core components headless tests', () => {
   describe('ArenaContenders', () => {
+    it('shows copied only after the clipboard write succeeds', async () => {
+      const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+      });
+      const stats = computeArenaStats(mockShows[0], mockShows[1]);
+
+      render(
+        <ArenaContenders
+          seriesList={mockShows}
+          leftShow={mockShows[0]}
+          rightShow={mockShows[1]}
+          leftSearch=""
+          rightSearch=""
+          leftDropdownOpen={false}
+          rightDropdownOpen={false}
+          setLeftSearch={vi.fn()}
+          setRightSearch={vi.fn()}
+          setLeftDropdownOpen={vi.fn()}
+          setRightDropdownOpen={vi.fn()}
+          onSelectLeftShow={vi.fn()}
+          onSelectRightShow={vi.fn()}
+          onSwapShows={vi.fn()}
+          arenaStats={stats}
+        />
+      );
+
+      fireEvent.click(screen.getByTitle('Copy battle URL to clipboard'));
+      expect(await screen.findByText('Could not copy')).toBeInTheDocument();
+      expect(screen.queryByText('Copied!')).not.toBeInTheDocument();
+
+      if (originalClipboard) {
+        Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      } else {
+        Reflect.deleteProperty(navigator, 'clipboard');
+      }
+    });
+
     it('renders both contenders and shows the leading show', () => {
       const stats = computeArenaStats(mockShows[0], mockShows[1]);
       const setLeftSearch = vi.fn();
