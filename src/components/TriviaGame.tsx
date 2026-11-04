@@ -11,6 +11,7 @@ import {
   fetchStreakLeaderboard,
   getDailyChallengeNumber,
   getTodayDateString,
+  isCorrectDailyAnswer,
   LeaderboardEntry,
   submitDailyScore,
   readStoredDailyResult,
@@ -58,9 +59,26 @@ export function TriviaGame({
   const [dailyStatusUnavailable, setDailyStatusUnavailable] = useState(false);
   const [dailyStartBlocked, setDailyStartBlocked] = useState(false);
   const [dailyCheckAttempt, setDailyCheckAttempt] = useState(0);
-  const [utcRolloverMessage, setUtcRolloverMessage] = useState('');
   const dailyFinishedRef = useRef(false);
+  const dailyRunDateRef = useRef<string | null>(null);
+  const dailySubmissionInFlightRef = useRef(false);
+  const dailyTransferAttemptRef = useRef<string | null>(null);
+  const dailyAutoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dailySlideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dailyFinishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tabIdRef = useRef(`${Date.now()}-${Math.random()}`);
+  const clearDailyTimers = () => {
+    if (dailyAutoAdvanceTimerRef.current) clearTimeout(dailyAutoAdvanceTimerRef.current);
+    if (dailySlideTimerRef.current) clearTimeout(dailySlideTimerRef.current);
+    if (dailyFinishTimerRef.current) clearTimeout(dailyFinishTimerRef.current);
+    dailyAutoAdvanceTimerRef.current = null;
+    dailySlideTimerRef.current = null;
+    dailyFinishTimerRef.current = null;
+  };
+
+  useEffect(() => () => {
+    clearDailyTimers();
+  }, []);
 
   // Leaderboard data
   const [dailyLeaderboardData, setDailyLeaderboardData] = useState<LeaderboardEntry[]>([]);
@@ -70,6 +88,7 @@ export function TriviaGame({
   // Load daily challenge deck from Supabase
   useEffect(() => {
     const refreshUtcDate = () => {
+      if (gameMode === 'daily') return;
       const currentDate = getTodayDateString();
       setTodayStr((previous) => (previous === currentDate ? previous : currentDate));
     };
@@ -79,11 +98,10 @@ export function TriviaGame({
       window.clearInterval(interval);
       window.removeEventListener('focus', refreshUtcDate);
     };
-  }, []);
+  }, [gameMode]);
 
   useEffect(() => {
     dailyFinishedRef.current = false;
-    setUtcRolloverMessage('');
     setDailyResult(null);
   }, [todayStr]);
 
@@ -100,15 +118,23 @@ export function TriviaGame({
   };
 
   const startDailyGame = () => {
+    const currentDate = getTodayDateString();
+    dailyRunDateRef.current = currentDate;
+    if (currentDate !== todayStr) {
+      setTodayStr(currentDate);
+      setDailyResult(null);
+    }
     setDailyStartBlocked(false);
     if (!user && !authLoading) {
-      if (readStoredDailyResult(todayStr)) {
-        setDailyResult(readStoredDailyResult(todayStr));
+      const storedResult = readStoredDailyResult(currentDate);
+      if (storedResult) {
+        setDailyResult(storedResult);
         setGameMode('daily');
         return;
       }
       try {
-        const active = JSON.parse(localStorage.getItem(dailyLockKey) || 'null') as
+        const lockKey = `tv_arena_daily_active_${currentDate}`;
+        const active = JSON.parse(localStorage.getItem(lockKey) || 'null') as
           | { owner?: string; expiresAt?: number }
           | null;
         if (active?.owner !== tabIdRef.current && (active?.expiresAt || 0) > Date.now()) {
@@ -117,10 +143,10 @@ export function TriviaGame({
           return;
         }
         localStorage.setItem(
-          dailyLockKey,
+          lockKey,
           JSON.stringify({ owner: tabIdRef.current, expiresAt: Date.now() + 2 * 60 * 60 * 1000 })
         );
-        const confirmed = JSON.parse(localStorage.getItem(dailyLockKey) || 'null') as
+        const confirmed = JSON.parse(localStorage.getItem(lockKey) || 'null') as
           | { owner?: string }
           | null;
         if (confirmed?.owner !== tabIdRef.current) setDailyStartBlocked(true);
@@ -350,6 +376,8 @@ export function TriviaGame({
     result: StoredDailyResult,
     completedAnswers: ('higher' | 'lower')[]
   ) => {
+    if (dailySubmissionInFlightRef.current) return;
+    dailySubmissionInFlightRef.current = true;
     setIsSubmittingScore(true);
     setDailySubmissionError(null);
     setRetryDailyAnswers(completedAnswers);
@@ -362,6 +390,7 @@ export function TriviaGame({
       setDailyResult(verifiedResult);
       setRetryDailyAnswers(null);
       setIsSubmittingScore(false);
+      dailySubmissionInFlightRef.current = false;
       return;
     }
 
@@ -384,7 +413,25 @@ export function TriviaGame({
       setDailySubmissionError("Your score could not be saved. Please retry.");
     }
     setIsSubmittingScore(false);
+    dailySubmissionInFlightRef.current = false;
   };
+
+  useEffect(() => {
+    if (
+      authLoading ||
+      !user ||
+      isCheckingDailyResult ||
+      isSubmittingScore ||
+      !dailyResult ||
+      dailyResult.verified ||
+      !dailyResult.answers?.length ||
+      dailyResult.date !== todayStr
+    ) return;
+    const transferAttemptKey = `${user.id}:${dailyResult.date}`;
+    if (dailyTransferAttemptRef.current === transferAttemptKey) return;
+    dailyTransferAttemptRef.current = transferAttemptKey;
+    void submitCompletedDailyRun(dailyResult, dailyResult.answers);
+  }, [authLoading, dailyResult, isCheckingDailyResult, isSubmittingScore, todayStr, user]);
 
   const retryDailySubmission = () => {
     if (dailyResult && retryDailyAnswers && user) {
@@ -399,18 +446,13 @@ export function TriviaGame({
     if (dailyFinishedRef.current) return;
     dailyFinishedRef.current = true;
     releaseDailyTabLock();
-    const submissionDate = getTodayDateString();
-    if (submissionDate !== todayStr) {
-      dailyFinishedRef.current = false;
-      setUtcRolloverMessage('UTC day changed while you were playing. The new daily challenge is loading.');
-      setTodayStr(submissionDate);
-      return;
-    }
+    const challengeDate = dailyRunDateRef.current || todayStr;
 
     const result: StoredDailyResult = {
-      date: todayStr,
+      date: challengeDate,
       score: completedCorrectness.filter(Boolean).length,
       correctness: completedCorrectness,
+      answers: completedAnswers,
       completedAt: new Date().toISOString(),
       verified: false,
     };
@@ -425,6 +467,7 @@ export function TriviaGame({
 
   const advanceToNextRound = () => {
     if (activeDeck.length < 2) return;
+    clearDailyTimers();
 
     if (gameMode === 'daily') {
       const nextRound = dailyRound + 1;
@@ -453,8 +496,10 @@ export function TriviaGame({
   const handleMakeGuess = (choice: 'higher' | 'lower') => {
     if (revealed || !knownShow || !challengerShow) return;
 
-    const isHigher = challengerScore >= knownScore;
-    const correct = (choice === 'higher' && isHigher) || (choice === 'lower' && !isHigher);
+    const correct = gameMode === 'daily'
+      ? isCorrectDailyAnswer(choice, knownScore, challengerScore)
+      : (choice === 'higher' && challengerScore >= knownScore) ||
+        (choice === 'lower' && challengerScore < knownScore);
     const pts = gameMode === 'daily' ? 1 : isNailbiter ? 2 : 1;
 
     setRevealed(true);
@@ -481,16 +526,19 @@ export function TriviaGame({
 
       // Check if daily run is complete on 10th round
       if (gameMode === 'daily' && dailyRound >= 9) {
-        setTimeout(() => {
+        dailyFinishTimerRef.current = setTimeout(() => {
+          dailyFinishTimerRef.current = null;
           finishDailyRun(updatedAnswers, updatedCorrectness);
         }, 1250);
         return;
       }
 
       // Auto-slide advance after count-up settles
-      setTimeout(() => {
+      dailyAutoAdvanceTimerRef.current = setTimeout(() => {
+        dailyAutoAdvanceTimerRef.current = null;
         setIsSliding(true);
-        setTimeout(() => {
+        dailySlideTimerRef.current = setTimeout(() => {
+          dailySlideTimerRef.current = null;
           advanceToNextRound();
           setIsSliding(false);
         }, 320);
@@ -505,7 +553,8 @@ export function TriviaGame({
       } else {
         // Daily mode continues through all 10 rounds or opens modal on final round
         if (dailyRound >= 9) {
-          setTimeout(() => {
+          dailyFinishTimerRef.current = setTimeout(() => {
+            dailyFinishTimerRef.current = null;
             finishDailyRun(updatedAnswers, updatedCorrectness);
           }, 1100);
         }
@@ -537,7 +586,10 @@ export function TriviaGame({
           <button
             type="button"
             onClick={() => {
+              clearDailyTimers();
               releaseDailyTabLock();
+              dailyRunDateRef.current = null;
+              setTodayStr(getTodayDateString());
               setGameMode('endless');
             }}
             className={`px-3.5 py-1 rounded-full transition-colors cursor-pointer ${
@@ -737,12 +789,17 @@ export function TriviaGame({
             Today's Challenge Isn't Ready
           </h2>
           <p className="text-sm text-stone-600 leading-relaxed max-w-md mx-auto mb-6">
-            {utcRolloverMessage || `The daily deck for ${todayStr} is being prepared. Check back shortly or test your knowledge in Endless Streak mode!`}
+            {`The daily deck for ${todayStr} is being prepared. Check back shortly or test your knowledge in Endless Streak mode!`}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button
               type="button"
-              onClick={() => setGameMode('endless')}
+              onClick={() => {
+                clearDailyTimers();
+                dailyRunDateRef.current = null;
+                setTodayStr(getTodayDateString());
+                setGameMode('endless');
+              }}
               className="px-5 py-2.5 rounded-full bg-arena-terracotta hover:bg-arena-terracottaHover text-white text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer"
             >
               Play Endless Streak

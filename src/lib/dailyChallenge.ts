@@ -117,6 +117,7 @@ export interface StoredDailyResult {
   date: string;
   score: number;
   correctness: boolean[];
+  answers?: ('higher' | 'lower')[];
   completedAt: string;
   verified: boolean;
 }
@@ -144,7 +145,11 @@ export function readStoredDailyResult(dateStr: string): StoredDailyResult | null
       typeof value.score !== 'number' ||
       !('correctness' in value) ||
       !Array.isArray(value.correctness) ||
-      !value.correctness.every((item) => typeof item === 'boolean')
+      !value.correctness.every((item) => typeof item === 'boolean') ||
+      ('answers' in value &&
+        (!Array.isArray(value.answers) ||
+          value.answers.length !== value.correctness.length ||
+          !value.answers.every((item) => item === 'higher' || item === 'lower')))
     ) {
       return null;
     }
@@ -152,6 +157,14 @@ export function readStoredDailyResult(dateStr: string): StoredDailyResult | null
   } catch {
     return null;
   }
+}
+
+export function isCorrectDailyAnswer(
+  answer: 'higher' | 'lower',
+  knownScore: number,
+  challengerScore: number
+): boolean {
+  return answer === 'higher' ? challengerScore > knownScore : challengerScore < knownScore;
 }
 
 export function storeDailyResult(result: StoredDailyResult): void {

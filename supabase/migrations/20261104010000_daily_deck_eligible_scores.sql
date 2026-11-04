@@ -1,5 +1,9 @@
 -- Expose eligible deck inputs from the score view used by challenge grading.
-CREATE OR REPLACE VIEW series_deck_candidates
+BEGIN;
+SET LOCAL lock_timeout = '1s';
+SET LOCAL statement_timeout = '5s';
+
+CREATE VIEW series_deck_candidates
 WITH (security_invoker = on) AS
 WITH anchor AS (
   SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
@@ -26,6 +30,8 @@ GRANT SELECT ON series_deck_candidates TO anon, authenticated;
 
 -- Remove the stored buzz_score fallback so deck selection and grading always
 -- consume the same current_7d_score view.
+-- Preserve the established RPC signature and replace only its score source.
+-- squawk-ignore ban-replace-view-function
 CREATE OR REPLACE FUNCTION submit_daily_score(
   p_date DATE,
   p_answers JSONB
@@ -100,3 +106,5 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION submit_daily_score(DATE, JSONB) FROM anon;
 GRANT EXECUTE ON FUNCTION submit_daily_score(DATE, JSONB) TO authenticated;
+
+COMMIT;

@@ -8,11 +8,40 @@ const storedResult = {
   date: '2026-11-04',
   score: 7,
   correctness: [true, true, false, true, true, true, false, true, false, true],
+  answers: ['higher', 'higher', 'lower', 'higher', 'higher', 'higher', 'lower', 'higher', 'lower', 'higher'] as ('higher' | 'lower')[],
   completedAt: '2026-11-04T12:00:00.000Z',
   verified: false,
 };
 
 describe('daily replay prevention', () => {
+  it('copies the daily score and green/red result grid', async () => {
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    render(
+      <DailyResultCard
+        result={storedResult}
+        isAuthenticated={false}
+        isSubmitting={false}
+        submissionError={null}
+        onRetry={vi.fn()}
+      />
+    );
+
+    screen.getByRole('button', { name: 'Share Result' }).click();
+    expect(await screen.findByRole('status')).toHaveTextContent('Copied result to clipboard.');
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('🟩🟩🟥🟩🟩🟩🟥🟩🟥🟩'));
+
+    if (originalClipboard) {
+      Object.defineProperty(navigator, 'clipboard', originalClipboard);
+    } else {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  });
+
   it('does not offer replay after a daily run', () => {
     render(
       <GameOverModal
