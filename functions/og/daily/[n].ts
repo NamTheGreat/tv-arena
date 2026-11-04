@@ -27,14 +27,9 @@ export const onRequest: PagesFunction<Env> = async ({ request, params, env }) =>
       </div>
     </div>
   `;
-  try {
-    return await new ImageResponse(html, {
+  return new ImageResponse(html, {
     width: 1200,
     height: 630,
-    format: 'svg',
     headers: { 'cache-control': 'public, max-age=3600, s-maxage=86400' },
-    });
-  } catch (error) {
-    return new Response(error instanceof Error ? error.message : 'OG rendering failed.', { status: 500 });
-  }
+  });
 };
