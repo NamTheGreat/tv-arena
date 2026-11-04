@@ -96,7 +96,7 @@ $$;
 REVOKE EXECUTE ON FUNCTION submit_daily_score(DATE, JSONB) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION submit_daily_score(DATE, JSONB) TO authenticated;
 
-CREATE OR REPLACE FUNCTION create_daily_score_share(p_date DATE)
+CREATE FUNCTION create_daily_score_share(p_date DATE)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -131,7 +131,7 @@ $$;
 REVOKE EXECUTE ON FUNCTION create_daily_score_share(DATE) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION create_daily_score_share(DATE) TO authenticated;
 
-CREATE OR REPLACE FUNCTION get_daily_score_share(p_share_token UUID)
+CREATE FUNCTION get_daily_score_share(p_share_token UUID)
 RETURNS JSONB
 LANGUAGE sql
 SECURITY DEFINER
