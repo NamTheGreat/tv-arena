@@ -896,6 +896,9 @@ export function TriviaGame({
 
             {revealed && (
               <div
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
                 className={`mt-3 sm:mt-4 text-xs sm:text-[13px] font-medium ${
                   lastGuessCorrect ? 'text-emerald-600' : 'text-rose-600'
                 }`}

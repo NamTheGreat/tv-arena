@@ -804,7 +804,7 @@ export function TrajectoryChart({
 
       {/* Mobile SVG (viewBox="0 0 340 185") */}
       <div className="block sm:hidden relative w-full overflow-hidden mt-1 mb-6">
-        <svg className="w-full h-auto select-none chart-group" viewBox="0 0 340 185">
+        <svg role="img" aria-label={`Normalized ${chartRange} engagement trajectories for ${activeShows.map((show) => show.title).join(', ')}`} className="w-full h-auto select-none chart-group" viewBox="0 0 340 185">
           <line stroke="#ECE5DA" strokeDasharray="2 3" x1="35" x2="335" y1="20" y2="20" />
           <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="23">
             {chartYTicks[0]?.label || '100%'}
@@ -895,7 +895,7 @@ export function TrajectoryChart({
 
       {/* Desktop SVG (viewBox="0 0 1000 420") */}
       <div className="hidden sm:block relative w-full overflow-hidden mt-1 mb-8" data-purpose="svg-trend-visualization">
-        <svg className="w-full h-auto select-none chart-group" viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg">
+        <svg role="img" aria-label={`Normalized ${chartRange} engagement trajectories for ${activeShows.map((show) => show.title).join(', ')}`} className="w-full h-auto select-none chart-group" viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg">
           <line stroke="#ECE5DA" strokeDasharray="3 4" x1="75" x2="960" y1="40" y2="40" />
           <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="44">
             {chartYTicks[0]?.label || '100%'}

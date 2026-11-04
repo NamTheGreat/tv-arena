@@ -72,6 +72,7 @@ export function GameOverModal({
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby="game-over-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-[#2b2320]/20 backdrop-blur-[6px] transition-opacity"
       onClick={onClose}
     >
@@ -93,7 +94,7 @@ export function GameOverModal({
         </button>
 
         {/* Title in Editorial Serif */}
-        <h1 className="font-serif text-[32px] leading-tight font-medium tracking-tight text-arena-ink mb-2">
+        <h1 id="game-over-title" className="font-serif text-[32px] leading-tight font-medium tracking-tight text-arena-ink mb-2">
           {isDaily ? 'Daily Run Complete' : 'Run Ended'}
         </h1>
 
