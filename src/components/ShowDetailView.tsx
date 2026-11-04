@@ -125,7 +125,9 @@ export function ShowDetailView({ seriesList }: ShowDetailViewProps) {
           <h2 className="text-xs font-semibold text-stone-700">7-Day Score Contributions</h2>
           <span className="text-[11px] text-stone-500">Weighted score points</span>
         </div>
-        {!contributions || contributions.telemetry_days === 0 ? (
+        {!contributions ? (
+          <p className="text-xs text-stone-500">Signal contribution data is temporarily unavailable.</p>
+        ) : contributions.telemetry_days === 0 ? (
           <p className="text-xs text-stone-500">No telemetry history is available for this period.</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 text-sm">

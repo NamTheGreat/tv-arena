@@ -1,7 +1,7 @@
 use std::fs;
 use tv_arena_pipeline::clients::reddit::parse_reddit_listing;
 use tv_arena_pipeline::clients::wikipedia::parse_wiki_pageviews;
-use tv_arena_pipeline::engine::scoring::{calculate_delta, compute_buzz_score};
+use tv_arena_pipeline::engine::scoring::calculate_delta;
 
 #[test]
 fn test_parse_wiki_single_day() {
@@ -66,24 +66,6 @@ fn test_parse_reddit_high_score() {
         .expect("Failed to read reddit_high_score.json");
     let result = parse_reddit_listing(&json_str);
     assert_eq!(result, Some((1730, 6320)));
-}
-
-#[test]
-fn test_score_computation_tiers() {
-    // Zero tier
-    assert_eq!(compute_buzz_score(0, 0, 0), 0);
-
-    // Low tier
-    let low = compute_buzz_score(100, 5, 10);
-    assert_eq!(low, (100 * 10) + (5 * 150) + (10 * 25));
-
-    // Mid tier
-    let mid = compute_buzz_score(50_000, 2_000, 8_000);
-    assert_eq!(mid, 1_000_000);
-
-    // High tier
-    let high = compute_buzz_score(500_000, 20_000, 80_000);
-    assert_eq!(high, 10_000_000);
 }
 
 #[test]

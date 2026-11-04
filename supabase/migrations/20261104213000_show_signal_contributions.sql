@@ -1,5 +1,8 @@
 BEGIN;
 
+SET LOCAL lock_timeout = '1s';
+SET LOCAL statement_timeout = '5s';
+
 CREATE VIEW series_signal_contributions
 WITH (security_invoker = on) AS
 WITH anchor AS (

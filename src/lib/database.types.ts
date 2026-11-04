@@ -16,6 +16,7 @@ export type Database = {
           slug: string
           title: string
           network: string
+          network_group: string
           genre_group: string
           release_years: string
           chart_color: string | null
@@ -31,6 +32,7 @@ export type Database = {
           slug: string
           title: string
           network: string
+          network_group?: string
           genre_group?: string
           release_years?: string
           chart_color?: string | null
@@ -46,6 +48,7 @@ export type Database = {
           slug?: string
           title?: string
           network?: string
+          network_group?: string
           genre_group?: string
           release_years?: string
           chart_color?: string | null
@@ -330,6 +333,7 @@ export type Database = {
           slug: string
           title: string
           network: string
+          network_group: string
           genre_group: string
           release_years: string
           chart_color: string | null

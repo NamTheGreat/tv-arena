@@ -96,7 +96,7 @@ function LeaderboardRouteWrapper({
 
   const rankedShows = useMemo(() => {
     return [...seriesList]
-      .filter((s) => (platformFilter === 'ALL' ? true : s.network === platformFilter))
+      .filter((s) => (platformFilter === 'ALL' ? true : s.network_group === platformFilter))
       .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group === genreFilter))
       .filter((s) => s.title.toLowerCase().includes(searchTerm.trim().toLowerCase()))
       .sort((a, b) => {
@@ -466,7 +466,7 @@ export default function App() {
   const availablePlatforms = useMemo(() => {
     const set = new Set<string>();
     for (const s of seriesList) {
-      if (s.network) set.add(s.network);
+      if (s.network_group) set.add(s.network_group);
     }
     return ['ALL', ...Array.from(set).sort()];
   }, [seriesList]);
