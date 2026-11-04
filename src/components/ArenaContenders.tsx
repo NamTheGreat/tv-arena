@@ -228,7 +228,7 @@ export function ArenaContenders({
               {leftShow.title}
             </h2>
           </div>
-          <div className="absolute left-1/2 bottom-1 sm:bottom-2 -translate-x-1/2 text-arena-muted/80 font-serif italic text-base sm:text-xl select-none">
+          <div className="absolute left-1/2 bottom-1 sm:bottom-2 -translate-x-1/2 text-stone-600 font-serif italic text-base sm:text-xl select-none">
             vs
           </div>
           <div className="text-right pl-2 sm:pl-4">
@@ -299,7 +299,7 @@ export function ArenaContenders({
               <span className="mx-1.5">·</span>
               <span
                 className={`font-semibold ${
-                  arenaStats.leftLeads ? 'text-arena-terracotta' : 'text-arena-sage'
+                  arenaStats.leftLeads ? 'text-arena-terracotta' : 'text-emerald-700'
                 }`}
               >
                 +{arenaStats.diffPct}%

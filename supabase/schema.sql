@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS series (
   slug TEXT UNIQUE NOT NULL,
   title TEXT NOT NULL,
   network TEXT NOT NULL,
+  network_group TEXT NOT NULL DEFAULT 'Other',
   genre_group TEXT NOT NULL DEFAULT 'Drama & Sci-Fi',
   release_years TEXT NOT NULL DEFAULT '2024–2025',
   chart_color TEXT DEFAULT '#C66A3D',
@@ -82,6 +83,7 @@ daily_buckets AS (
     s.slug,
     s.title,
     s.network,
+    s.network_group,
     s.genre_group,
     s.release_years,
     s.chart_color,
@@ -90,7 +92,7 @@ daily_buckets AS (
   FROM series s
   CROSS JOIN anchor a
   LEFT JOIN series_daily_scores d ON s.id = d.series_id
-  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.genre_group, s.release_years, s.chart_color, a.max_date
+  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.network_group, s.genre_group, s.release_years, s.chart_color, a.max_date
 )
 SELECT
   series_id AS id,
@@ -109,7 +111,8 @@ SELECT
       ROUND(((current_7d_score - previous_7d_score)::numeric / previous_7d_score::numeric) * 100, 2)
     ELSE NULL
   END AS delta_pct,
-  ROW_NUMBER() OVER (ORDER BY current_7d_score DESC, title ASC) as rank
+  ROW_NUMBER() OVER (ORDER BY current_7d_score DESC, title ASC) as rank,
+  network_group
 FROM daily_buckets;
 
 GRANT SELECT ON series_leaderboard TO anon, authenticated;
@@ -185,20 +188,20 @@ DROP POLICY IF EXISTS "Allow public read on telemetry" ON series_daily_telemetry
 CREATE POLICY "Allow public read on telemetry" ON series_daily_telemetry FOR SELECT USING (true);
 
 -- Seed initial flagship shows with zeroed metrics ready for telemetry sync
-INSERT INTO series (tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+INSERT INTO series (tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
 VALUES
-  (66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', '"Stranger Things" (Netflix OR episode OR season)', 0),
-  (119051, 'wednesday', 'Wednesday', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Wednesday_(TV_series)', '"Wednesday" (Netflix OR Jenna Ortega OR season)', 0),
-  (94997, 'house-of-the-dragon', 'House of the Dragon', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'House_of_the_Dragon', '"House of the Dragon" (HBO OR episode OR season)', 0),
-  (95396, 'severance', 'Severance', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Severance_(TV_series)', '"Severance" (Apple OR Lumon OR episode)', 0),
-  (100088, 'the-last-of-us', 'The Last of Us', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#886F99', 'The_Last_of_Us_(TV_series)', '"The Last of Us" (HBO OR Joel OR Ellie)', 0),
-  (136315, 'the-bear', 'The Bear', 'FX / Hulu', 'Comedy & Drama', '2024–2025', '#5C828C', 'The_Bear_(TV_series)', '"The Bear" (Hulu OR FX OR Carmy)', 0),
-  (91239, 'bridgerton', 'Bridgerton', 'Netflix', 'Drama', '2024–2025', '#6E8761', 'Bridgerton', '"Bridgerton" (Netflix OR season OR episode)', 0),
-  (111803, 'the-white-lotus', 'The White Lotus', 'HBO', 'Drama', '2024–2025', '#A65D67', 'The_White_Lotus', '"The White Lotus" (HBO OR episode OR finale)', 0),
-  (76479, 'the-boys', 'The Boys', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'The_Boys_(TV_series)', '"The Boys" (Prime OR Homelander OR episode)', 0),
-  (106379, 'fallout', 'Fallout', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#6E8761', 'Fallout_(American_TV_series)', '"Fallout" (Prime OR Vault OR episode)', 0),
-  (76331, 'succession', 'Succession', 'HBO', 'Drama', '2023–2024', '#886F99', 'Succession_(TV_series)', '"Succession" (HBO OR Kendall OR Roy)', 0),
-  (125988, 'silo', 'Silo', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Silo_(TV_series)', '"Silo" (Apple OR Juliette OR episode)', 0)
+  (66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', '"Stranger Things" (Netflix OR episode OR season)', 0),
+  (119051, 'wednesday', 'Wednesday', 'Netflix', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Wednesday_(TV_series)', '"Wednesday" (Netflix OR Jenna Ortega OR season)', 0),
+  (94997, 'house-of-the-dragon', 'House of the Dragon', 'HBO', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'House_of_the_Dragon', '"House of the Dragon" (HBO OR episode OR season)', 0),
+  (95396, 'severance', 'Severance', 'Apple TV+', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Severance_(TV_series)', '"Severance" (Apple OR Lumon OR episode)', 0),
+  (100088, 'the-last-of-us', 'The Last of Us', 'HBO', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#886F99', 'The_Last_of_Us_(TV_series)', '"The Last of Us" (HBO OR Joel OR Ellie)', 0),
+  (136315, 'the-bear', 'The Bear', 'FX / Hulu', 'FX / Hulu', 'Comedy & Drama', '2024–2025', '#5C828C', 'The_Bear_(TV_series)', '"The Bear" (Hulu OR FX OR Carmy)', 0),
+  (91239, 'bridgerton', 'Bridgerton', 'Netflix', 'Netflix', 'Drama', '2024–2025', '#6E8761', 'Bridgerton', '"Bridgerton" (Netflix OR season OR episode)', 0),
+  (111803, 'the-white-lotus', 'The White Lotus', 'HBO', 'HBO', 'Drama', '2024–2025', '#A65D67', 'The_White_Lotus', '"The White Lotus" (HBO OR episode OR finale)', 0),
+  (76479, 'the-boys', 'The Boys', 'Prime Video', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'The_Boys_(TV_series)', '"The Boys" (Prime OR Homelander OR episode)', 0),
+  (106379, 'fallout', 'Fallout', 'Prime Video', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#6E8761', 'Fallout_(American_TV_series)', '"Fallout" (Prime OR Vault OR episode)', 0),
+  (76331, 'succession', 'Succession', 'HBO', 'HBO', 'Drama', '2023–2024', '#886F99', 'Succession_(TV_series)', '"Succession" (HBO OR Kendall OR Roy)', 0),
+  (125988, 'silo', 'Silo', 'Apple TV+', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Silo_(TV_series)', '"Silo" (Apple OR Juliette OR episode)', 0)
 ON CONFLICT (tmdb_id) DO NOTHING;
 
 

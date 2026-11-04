@@ -8,6 +8,7 @@ const show = (id: string, score: number, days: number): SeriesItem => ({
   slug: id,
   title: id,
   network: 'Network',
+  network_group: 'Other',
   genre_group: 'Drama',
   release_years: '2020–2025',
   chart_color: '#C66A3D',

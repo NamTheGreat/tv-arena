@@ -790,7 +790,7 @@ export function TriviaGame({
                   <span className="text-[10px] tracking-[0.22em] uppercase font-bold text-stone-400">
                     Known
                   </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-100 text-stone-500">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-100 text-stone-700">
                     Benchmark
                   </span>
                 </div>
