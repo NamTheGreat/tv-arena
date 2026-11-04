@@ -6,6 +6,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
+  checks: read
   contents: read
   issues: write
   pull-requests: write
@@ -20,22 +21,14 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
+      - name: Verify Cloudflare preview URL parsing
+        run: python3 .github/scripts/test_cloudflare_preview_url.py
       - name: Wait for Cloudflare Pages preview
         env:
-          BRANCH: ${{ github.head_ref }}
-        run: |
-          PREVIEW_BRANCH=$(printf '%s' "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
-          PREVIEW_URL="https://${PREVIEW_BRANCH}.tv-arena.pages.dev"
-          echo "PREVIEW_URL=$PREVIEW_URL" >> "$GITHUB_ENV"
-          for attempt in $(seq 1 40); do
-            if curl --silent --show-error --fail --output /dev/null "$PREVIEW_URL"; then
-              echo "Cloudflare preview is ready: $PREVIEW_URL"
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "::error::Cloudflare preview did not become available: $PREVIEW_URL"
-          exit 1
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/scripts/cloudflare_preview_url.py
       - name: Run Lighthouse CI
         env:
           LHCI_ENFORCE_BUDGETS: ${{ vars.LHCI_ENFORCE_BUDGETS || 'false' }}
