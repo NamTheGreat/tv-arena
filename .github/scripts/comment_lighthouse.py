@@ -6,6 +6,10 @@ import urllib.request
 MARKER = "<!-- lighthouse-preview-scores -->"
 
 
+def comment_endpoint(repository, comment_id):
+    return f"https://api.github.com/repos/{repository}/issues/comments/{comment_id}"
+
+
 def report_body():
     rows = []
     for path in sorted(glob.glob(".lighthouseci/lhr-*.json")):
@@ -41,7 +45,7 @@ def main():
     body = report_body()
     existing = next((comment for comment in comments if MARKER in comment.get("body", "")), None)
     if existing:
-        url = f"{base}/{existing['id']}"
+        url = comment_endpoint(repository, existing["id"])
         method = "PATCH"
     else:
         url = base

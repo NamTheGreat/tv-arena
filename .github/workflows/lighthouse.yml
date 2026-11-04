@@ -23,6 +23,8 @@ jobs:
           node-version: 22
       - name: Verify Cloudflare preview URL parsing
         run: python3 .github/scripts/test_cloudflare_preview_url.py
+      - name: Verify Lighthouse comment endpoint
+        run: python3 .github/scripts/test_lighthouse_comment.py
       - name: Wait for Cloudflare Pages preview
         env:
           GITHUB_TOKEN: ${{ github.token }}
