@@ -3,6 +3,12 @@ import { SeriesItem } from '../lib/supabase';
 
 interface LeaderboardTableProps {
   rankedShows: SeriesItem[];
+  searchTerm: string;
+  sortBy: 'score' | 'growth' | 'new';
+  displayCount: number;
+  onSearchTermChange: (value: string) => void;
+  onSortChange: (value: 'score' | 'growth' | 'new') => void;
+  onShowMore: () => void;
   platformFilter: string;
   genreFilter: string;
   availablePlatforms: string[];
@@ -15,6 +21,12 @@ interface LeaderboardTableProps {
 
 export function LeaderboardTable({
   rankedShows,
+  searchTerm,
+  sortBy,
+  displayCount,
+  onSearchTermChange,
+  onSortChange,
+  onShowMore,
   platformFilter,
   genreFilter,
   availablePlatforms,
@@ -24,6 +36,7 @@ export function LeaderboardTable({
   setGenreFilter,
   onSelectBattle,
 }: LeaderboardTableProps) {
+  const visibleShows = rankedShows.slice(0, displayCount);
   return (
     <main className="w-full max-w-4xl bg-white/90 backdrop-blur-xl rounded-[28px] sm:rounded-[32px] p-4 sm:p-10 shadow-card border border-[#EFEAE2]/90">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-[#F2ECE3]">
@@ -34,6 +47,24 @@ export function LeaderboardTable({
           </span>
         </div>
         <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => onSearchTermChange(event.target.value)}
+            placeholder="Search shows"
+            aria-label="Search shows"
+            className="bg-white text-[#786E63] px-3 py-1 sm:py-1.5 rounded-full border border-[#E9E2D5] outline-none focus:border-brand-terracotta"
+          />
+          <select
+            value={sortBy}
+            onChange={(event) => onSortChange(event.target.value as 'score' | 'growth' | 'new')}
+            aria-label="Sort leaderboard"
+            className="bg-white text-[#786E63] px-3 py-1 sm:py-1.5 rounded-full border border-[#E9E2D5] outline-none focus:border-brand-terracotta"
+          >
+            <option value="score">Sort: Score</option>
+            <option value="growth">Sort: Growth</option>
+            <option value="new">Sort: New shows</option>
+          </select>
           <div className="relative">
             <select
               value={platformFilter}
@@ -77,8 +108,8 @@ export function LeaderboardTable({
       </div>
 
       <div className="mt-3 sm:mt-4 divide-y divide-[#F7F3ED]/75">
-        {rankedShows.map((show, idx) => {
-          const rank = idx + 1;
+        {visibleShows.map((show, idx) => {
+          const rank = sortBy === 'score' ? show.rank ?? idx + 1 : idx + 1;
           const widthPct = Math.round((show.buzz_score / maxLeaderboardViewers) * 100);
           const isNew = show.delta_pct === null || show.delta_pct === undefined;
           const isSteady = !isNew && Math.abs(show.delta_pct as number) < 0.5;
@@ -156,6 +187,14 @@ export function LeaderboardTable({
             </article>
           );
         })}
+      </div>
+      <div className="mt-4 flex items-center justify-between text-xs text-[#786E63]">
+        <span>Showing {visibleShows.length} of {rankedShows.length}</span>
+        {visibleShows.length < rankedShows.length && (
+          <button type="button" onClick={onShowMore} className="px-4 py-2 rounded-full border border-[#E9E2D5] hover:bg-stone-50 font-semibold">
+            Show more
+          </button>
+        )}
       </div>
     </main>
   );
