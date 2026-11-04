@@ -74,21 +74,104 @@ export async function fetchDailyDeck(dateStr?: string): Promise<string[] | null>
 export async function submitDailyScore(
   dateStr: string,
   answers: ('higher' | 'lower')[]
-): Promise<{ success: boolean; score: number; date: string } | null> {
-  if (!supabase) return null;
+): Promise<{ success: true; score: number; date: string } | { success: false; error: string }> {
+  if (!supabase) return { success: false, error: 'Supabase is not configured.' };
   try {
     const { data, error } = await supabase.rpc('submit_daily_score', {
       p_date: dateStr,
       p_answers: answers,
     });
     if (error || !data) {
-      console.warn('Daily score submission failed or rejected:', error?.message);
-      return null;
+      const message = error?.message || 'The server did not return a score.';
+      console.warn('Daily score submission failed or rejected:', message);
+      return { success: false, error: message };
     }
-    return data as { success: boolean; score: number; date: string };
+    return data as { success: true; score: number; date: string };
   } catch (err) {
     console.warn('Error calling submit_daily_score RPC:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Network error while saving score.',
+    };
+  }
+}
+
+export async function fetchMyDailyScore(
+  dateStr: string
+): Promise<{ score: number | null; unavailable: boolean }> {
+  if (!supabase) return { score: null, unavailable: true };
+  try {
+    const { data, error } = await supabase
+      .from('user_scores')
+      .select('score')
+      .eq('date', dateStr)
+      .maybeSingle();
+    if (error) return { score: null, unavailable: true };
+    return { score: data?.score ?? null, unavailable: false };
+  } catch {
+    return { score: null, unavailable: true };
+  }
+}
+
+export interface StoredDailyResult {
+  date: string;
+  score: number;
+  correctness: boolean[];
+  answers?: ('higher' | 'lower')[];
+  completedAt: string;
+  verified: boolean;
+}
+
+export function readStoredDailyResult(dateStr: string): StoredDailyResult | null {
+  try {
+    const raw = localStorage.getItem(`tv_arena_daily_${dateStr}`);
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return {
+        date: dateStr,
+        score: value,
+        correctness: [],
+        completedAt: new Date().toISOString(),
+        verified: false,
+      };
+    }
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      !('date' in value) ||
+      value.date !== dateStr ||
+      !('score' in value) ||
+      typeof value.score !== 'number' ||
+      !('correctness' in value) ||
+      !Array.isArray(value.correctness) ||
+      !value.correctness.every((item) => typeof item === 'boolean') ||
+      ('answers' in value &&
+        (!Array.isArray(value.answers) ||
+          value.answers.length !== value.correctness.length ||
+          !value.answers.every((item) => item === 'higher' || item === 'lower')))
+    ) {
+      return null;
+    }
+    return value as StoredDailyResult;
+  } catch {
     return null;
+  }
+}
+
+export function isCorrectDailyAnswer(
+  answer: 'higher' | 'lower',
+  knownScore: number,
+  challengerScore: number
+): boolean {
+  return answer === 'higher' ? challengerScore > knownScore : challengerScore < knownScore;
+}
+
+export function storeDailyResult(result: StoredDailyResult): void {
+  try {
+    localStorage.setItem(`tv_arena_daily_${result.date}`, JSON.stringify(result));
+  } catch {
+    // Anonymous replay protection is best effort when browser storage is disabled.
   }
 }
 

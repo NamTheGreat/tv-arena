@@ -7,6 +7,7 @@ import { ArenaContenders } from '../components/ArenaContenders';
 import { LeaderboardTable } from '../components/LeaderboardTable';
 import { ShowDetailView } from '../components/ShowDetailView';
 import { computeArenaStats } from '../lib/svgMath';
+import { leaderboardScore } from '../lib/derivedScore';
 import { SeriesItem } from '../lib/supabase';
 
 const mockShows: SeriesItem[] = [
@@ -46,6 +47,45 @@ const mockShows: SeriesItem[] = [
 
 describe('Core components headless tests', () => {
   describe('ArenaContenders', () => {
+    it('shows copied only after the clipboard write succeeds', async () => {
+      const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+      });
+      const stats = computeArenaStats(mockShows[0], mockShows[1]);
+
+      render(
+        <ArenaContenders
+          seriesList={mockShows}
+          leftShow={mockShows[0]}
+          rightShow={mockShows[1]}
+          leftSearch=""
+          rightSearch=""
+          leftDropdownOpen={false}
+          rightDropdownOpen={false}
+          setLeftSearch={vi.fn()}
+          setRightSearch={vi.fn()}
+          setLeftDropdownOpen={vi.fn()}
+          setRightDropdownOpen={vi.fn()}
+          onSelectLeftShow={vi.fn()}
+          onSelectRightShow={vi.fn()}
+          onSwapShows={vi.fn()}
+          arenaStats={stats}
+        />
+      );
+
+      fireEvent.click(screen.getByTitle('Copy battle URL to clipboard'));
+      expect(await screen.findByText('Could not copy')).toBeInTheDocument();
+      expect(screen.queryByText('Copied!')).not.toBeInTheDocument();
+
+      if (originalClipboard) {
+        Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      } else {
+        Reflect.deleteProperty(navigator, 'clipboard');
+      }
+    });
+
     it('renders both contenders and shows the leading show', () => {
       const stats = computeArenaStats(mockShows[0], mockShows[1]);
       const setLeftSearch = vi.fn();
@@ -89,6 +129,75 @@ describe('Core components headless tests', () => {
   });
 
   describe('LeaderboardTable', () => {
+    it('renders the leaderboard view score without a stored series score field', () => {
+      const databaseViewRow = { current_7d_score: 1_200_000 };
+      const viewOnlyShow = { ...mockShows[0], buzz_score: leaderboardScore(databaseViewRow) };
+
+      render(
+        <LeaderboardTable
+          rankedShows={[viewOnlyShow]}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={vi.fn()}
+          onSortChange={vi.fn()}
+          onShowMore={vi.fn()}
+          platformFilter="ALL"
+          genreFilter="ALL"
+          availablePlatforms={['ALL']}
+          availableGenres={['ALL']}
+          maxLeaderboardViewers={1_200_000}
+          setPlatformFilter={vi.fn()}
+          setGenreFilter={vi.fn()}
+          onSelectBattle={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText('1,200,000')).toBeInTheDocument();
+    });
+
+    it('provides URL-backed search, sorting, and show-more controls', () => {
+      const shows = Array.from({ length: 21 }, (_, index) => ({
+        ...mockShows[index % mockShows.length],
+        id: `leader-${index}`,
+        slug: `leader-${index}`,
+        title: `Show ${index}`,
+      }));
+      const onSearchTermChange = vi.fn();
+      const onSortChange = vi.fn();
+      const onShowMore = vi.fn();
+
+      render(
+        <LeaderboardTable
+          rankedShows={shows}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={onSearchTermChange}
+          onSortChange={onSortChange}
+          onShowMore={onShowMore}
+          platformFilter="ALL"
+          genreFilter="ALL"
+          availablePlatforms={['ALL']}
+          availableGenres={['ALL']}
+          maxLeaderboardViewers={1_200_000}
+          setPlatformFilter={vi.fn()}
+          setGenreFilter={vi.fn()}
+          onSelectBattle={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText('Showing 20 of 21')).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search shows' }), {
+        target: { value: 'Severance' },
+      });
+      expect(onSearchTermChange).toHaveBeenCalledWith('Severance');
+      fireEvent.change(screen.getByLabelText('Sort leaderboard'), { target: { value: 'growth' } });
+      expect(onSortChange).toHaveBeenCalledWith('growth');
+      fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+      expect(onShowMore).toHaveBeenCalledOnce();
+    });
+
     it('renders ranked rows and filters', () => {
       const setPlatformFilter = vi.fn();
       const setGenreFilter = vi.fn();
@@ -97,6 +206,12 @@ describe('Core components headless tests', () => {
       render(
         <LeaderboardTable
           rankedShows={mockShows}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={vi.fn()}
+          onSortChange={vi.fn()}
+          onShowMore={vi.fn()}
           platformFilter="ALL"
           genreFilter="ALL"
           availablePlatforms={['ALL', 'Apple TV+', 'FX / Hulu']}
@@ -151,6 +266,12 @@ describe('Core components headless tests', () => {
       render(
         <LeaderboardTable
           rankedShows={[showWithNullDelta]}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={vi.fn()}
+          onSortChange={vi.fn()}
+          onShowMore={vi.fn()}
           platformFilter="ALL"
           genreFilter="ALL"
           availablePlatforms={['ALL', 'Apple TV+']}

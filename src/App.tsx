@@ -13,6 +13,8 @@ import { ArenaStats, computeArenaStats } from './lib/svgMath';
 import { ChartRange } from './components/TrajectoryChart';
 import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
+import { leaderboardScore } from './lib/derivedScore';
+import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
 
 const AuthModal = React.lazy(() =>
   import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
@@ -76,6 +78,17 @@ function LeaderboardRouteWrapper({
   setGenreFilter: (g: string) => void;
 }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { searchTerm, sortBy, displayCount } = readLeaderboardQuery(searchParams);
+
+  const updateSearchParam = (key: string, value: string) => {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (value) next.set(key, value);
+      else next.delete(key);
+      return next;
+    }, { replace: true });
+  };
 
   useEffect(() => {
     document.title = 'TV Arena — Viewership Leaderboard';
@@ -85,12 +98,22 @@ function LeaderboardRouteWrapper({
     return [...seriesList]
       .filter((s) => (platformFilter === 'ALL' ? true : s.network === platformFilter))
       .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group === genreFilter))
+      .filter((s) => s.title.toLowerCase().includes(searchTerm.trim().toLowerCase()))
       .sort((a, b) => {
-        const scoreA = Number(a.buzz_score || 0);
-        const scoreB = Number(b.buzz_score || 0);
-        return scoreB - scoreA;
+        if (sortBy === 'growth') {
+          return (b.delta_pct ?? Number.NEGATIVE_INFINITY) - (a.delta_pct ?? Number.NEGATIVE_INFINITY)
+            || a.title.localeCompare(b.title);
+        }
+        if (sortBy === 'new') {
+          const aIsNew = a.delta_pct == null;
+          const bIsNew = b.delta_pct == null;
+          return Number(bIsNew) - Number(aIsNew) || a.title.localeCompare(b.title);
+        }
+        return Number(b.buzz_score || 0) - Number(a.buzz_score || 0)
+          || (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER)
+          || a.title.localeCompare(b.title);
       });
-  }, [seriesList, platformFilter, genreFilter]);
+  }, [seriesList, platformFilter, genreFilter, searchTerm, sortBy]);
 
   const maxScore = useMemo(() => {
     const top = rankedShows[0];
@@ -101,6 +124,12 @@ function LeaderboardRouteWrapper({
   return (
     <LeaderboardTable
       rankedShows={rankedShows}
+      searchTerm={searchTerm}
+      sortBy={sortBy}
+      displayCount={displayCount}
+      onSearchTermChange={(value) => updateSearchParam('q', value)}
+      onSortChange={(value) => updateSearchParam('sort', value === 'score' ? '' : value)}
+      onShowMore={() => updateSearchParam('show', String(Math.min(200, displayCount + 20)))}
       platformFilter={platformFilter}
       genreFilter={genreFilter}
       availablePlatforms={availablePlatforms}
@@ -302,28 +331,21 @@ export default function App() {
       }
       setIsLoading(true);
       setDbError(null);
-      // Query authoritative SQL leaderboard view with fallback to series table
-      let { data, error } = await supabase
+      // The leaderboard view is the only source for displayed scores.
+      const { data, error } = await supabase
         .from('series_leaderboard')
         .select('*');
 
-      if (error || !data || data.length === 0) {
-        if (error) {
-          console.warn('⚠️ Warning: failed to fetch from series_leaderboard view, falling back to static series table:', error);
-          setViewWarning(`Failed to query dynamic 'series_leaderboard' view (${error.message || 'unknown'}). Displaying static series table fallback.`);
-        }
-        const fallback = await supabase
-          .from('series')
-          .select('*')
-          .order('buzz_score', { ascending: false });
-        data = fallback.data as any;
-        error = fallback.error;
-      } else {
-        setViewWarning(null);
-      }
-
       if (error) {
+        setViewWarning(`Failed to query dynamic 'series_leaderboard' view (${error.message}).`);
         setDbError(error.message);
+        setIsLoading(false);
+        return;
+      }
+      setViewWarning(null);
+
+      if (!data || data.length === 0) {
+        setSeriesList([]);
         setIsLoading(false);
         return;
       }
@@ -349,16 +371,22 @@ export default function App() {
           const startDateStr = ninetyDaysAgo.toISOString().split('T')[0];
           const PAGE_SIZE = 1000;
           let from = 0;
+          const telemetryPages: Array<Array<{ series_id: string; daily_score: number | null; recorded_date: string }>> = [];
           while (true) {
             const { data: page, error: pageErr } = await supabase
               .from('series_daily_scores')
               .select('series_id, daily_score, recorded_date')
               .gte('recorded_date', startDateStr)
               .order('recorded_date', { ascending: true })
+              .order('series_id', { ascending: true })
               .range(from, from + PAGE_SIZE - 1);
 
             if (pageErr || !page || page.length === 0) break;
-            for (const row of page) {
+            telemetryPages.push(page);
+            if (page.length < PAGE_SIZE) break;
+            from += PAGE_SIZE;
+          }
+          for (const row of orderTelemetryPages(telemetryPages)) {
               const arr = telemetryValuesMap.get(row.series_id) || [];
               arr.push(Number(row.daily_score ?? 0));
               telemetryValuesMap.set(row.series_id, arr);
@@ -366,9 +394,6 @@ export default function App() {
               const dateArr = telemetryDatesMap.get(row.series_id) || [];
               dateArr.push(String(row.recorded_date));
               telemetryDatesMap.set(row.series_id, dateArr);
-            }
-            if (page.length < PAGE_SIZE) break;
-            from += PAGE_SIZE;
           }
         }
 
@@ -407,11 +432,9 @@ export default function App() {
 
         const mapped: SeriesItem[] = data.map((row: any) => ({
           ...row,
-          buzz_score: Number(
-            row.current_7d_score ?? row.buzz_score ?? 0
-          ),
+          buzz_score: leaderboardScore(row),
           delta_pct: row.delta_pct !== null && row.delta_pct !== undefined ? Number(row.delta_pct) : null,
-          daily_series: telemetryValuesMap.get(row.id) || [Number(row.current_7d_score ?? row.buzz_score ?? 0)],
+          daily_series: telemetryValuesMap.get(row.id) || [leaderboardScore(row)],
           daily_dates: telemetryDatesMap.get(row.id) || [],
           events: eventsMap.get(row.id) || [],
           is_breakout: breakoutMap.has(row.id),

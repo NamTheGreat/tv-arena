@@ -4,9 +4,19 @@ import {
   generateDailyMatchupIndices,
   getTodayDateString,
   getDailyChallengeNumber,
+  isCorrectDailyAnswer,
+  readStoredDailyResult,
+  storeDailyResult,
 } from '../lib/dailyChallenge';
 
 describe('dailyChallenge helpers', () => {
+  it('uses strict comparisons for ties, matching server grading', () => {
+    expect(isCorrectDailyAnswer('higher', 100, 100)).toBe(false);
+    expect(isCorrectDailyAnswer('lower', 100, 100)).toBe(false);
+    expect(isCorrectDailyAnswer('higher', 100, 101)).toBe(true);
+    expect(isCorrectDailyAnswer('lower', 100, 99)).toBe(true);
+  });
+
   it('returns valid YYYY-MM-DD for getTodayDateString', () => {
     const today = getTodayDateString();
     expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -40,4 +50,28 @@ describe('dailyChallenge helpers', () => {
     // Dates prior to launch are floored at 1
     expect(getDailyChallengeNumber('2026-10-01')).toBe(1);
   });
+
+  it('persists a completed anonymous result under its UTC date', () => {
+    const result = {
+      date: '2026-11-04',
+      score: 7,
+      correctness: [true, true, false, true, true, true, false, true, false, true],
+      answers: ['higher', 'higher', 'lower', 'higher', 'higher', 'higher', 'lower', 'higher', 'lower', 'higher'] as ('higher' | 'lower')[],
+      completedAt: '2026-11-04T12:00:00.000Z',
+      verified: false,
+    };
+    storeDailyResult(result);
+    expect(readStoredDailyResult(result.date)).toEqual(result);
+    expect(readStoredDailyResult('2026-11-05')).toBeNull();
+  });
+
+  it('treats the legacy numeric completion key as already played', () => {
+    localStorage.setItem('tv_arena_daily_2026-11-04', '6');
+    expect(readStoredDailyResult('2026-11-04')).toMatchObject({
+      date: '2026-11-04',
+      score: 6,
+      verified: false,
+    });
+  });
+
 });
