@@ -110,6 +110,8 @@ jobs:
               END IF;
             END $$;
             CREATE SCHEMA IF NOT EXISTS auth;
+            GRANT USAGE ON SCHEMA public, auth TO anon, authenticated;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES, FUNCTIONS, SEQUENCES TO anon, authenticated;
             CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY, email TEXT);
             CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::UUID; $$ LANGUAGE sql STABLE;
           EOF
@@ -138,6 +140,8 @@ jobs:
               END IF;
             END $$;
             CREATE SCHEMA IF NOT EXISTS auth;
+            GRANT USAGE ON SCHEMA public, auth TO anon, authenticated;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES, FUNCTIONS, SEQUENCES TO anon, authenticated;
             CREATE TABLE IF NOT EXISTS auth.users (id UUID PRIMARY KEY, email TEXT);
             CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::UUID; $$ LANGUAGE sql STABLE;
           EOF
