@@ -80,36 +80,13 @@ BEGIN
     SELECT DISTINCT p.week_start
     FROM mover_predictions p
     WHERE p.graded_at IS NULL AND p.week_start + 6 <= v_max_date
-  ), week_scores AS (
-    SELECT
-      w.week_start,
-      t.series_id,
-      SUM(d.daily_score) FILTER (
-        WHERE t.recorded_date >= w.week_start AND t.recorded_date < w.week_start + 7
-      ) AS current_score,
-      SUM(d.daily_score) FILTER (
-        WHERE t.recorded_date >= w.week_start - 7 AND t.recorded_date < w.week_start
-      ) AS previous_score,
-      COUNT(DISTINCT t.recorded_date) FILTER (
-        WHERE t.recorded_date >= w.week_start AND t.recorded_date < w.week_start + 7
-      ) AS current_days
-    FROM pending_weeks w
-    JOIN series_daily_telemetry t
-      ON t.recorded_date >= w.week_start - 7 AND t.recorded_date < w.week_start + 7
-    JOIN series_daily_scores d ON d.telemetry_id = t.id
-    GROUP BY w.week_start, t.series_id
   ), ranked AS (
     SELECT
-      ws.week_start,
-      ws.series_id,
-      ROW_NUMBER() OVER (
-        PARTITION BY ws.week_start
-        ORDER BY ((ws.current_score - ws.previous_score)::NUMERIC / ws.previous_score) DESC,
-                 s.title ASC, s.id ASC
-      ) AS actual_rank
-    FROM week_scores ws
-    JOIN series s ON s.id = ws.series_id
-    WHERE ws.current_days = 7 AND ws.previous_score > 0
+      m.period_start AS week_start,
+      m.series_id,
+      m.mover_rank AS actual_rank
+    FROM series_weekly_movers m
+    JOIN pending_weeks w ON w.week_start = m.period_start
   ), graded AS (
     SELECT
       p.week_start,
