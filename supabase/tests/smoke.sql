@@ -88,7 +88,6 @@ BEGIN
   INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
   SELECT v_test_show_id, v_anchor_date - day_offset, 0, 100, 0, 0
   FROM generate_series(1, 6) AS days(day_offset)
-  WHERE day_offset <> 2
   ON CONFLICT (series_id, recorded_date) DO NOTHING;
 
   IF NOT EXISTS (
