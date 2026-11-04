@@ -70,66 +70,29 @@ pub fn upsert_seed_series(
     }
 }
 
-pub fn fetch_prev_reddit_comments(
+pub fn fetch_prev_reddit_metrics(
     client: &ureq::Agent,
     config: &Config,
     show_id: &str,
-) -> Option<i64> {
-    let prev_telemetry_url = format!(
-        "{}/rest/v1/series_daily_telemetry?series_id=eq.{}&order=recorded_date.desc&limit=1",
+) -> Option<(i64, i64)> {
+    let url = format!(
+        "{}/rest/v1/series_daily_telemetry?select=reddit_comments,reddit_upvotes&series_id=eq.{}&reddit_comments=not.is.null&reddit_upvotes=not.is.null&order=recorded_date.desc&limit=1",
         config.supabase_url, show_id
     );
     client
-        .get(&prev_telemetry_url)
+        .get(&url)
         .set("apikey", &config.supabase_key)
         .set("Authorization", &format!("Bearer {}", config.supabase_key))
         .call()
         .ok()
         .and_then(|r| r.into_json::<Vec<serde_json::Value>>().ok())
         .and_then(|rows| rows.into_iter().next())
-        .and_then(|row| row.get("reddit_comments").and_then(|v| v.as_i64()))
-}
-
-pub fn fetch_prior_day_score(
-    client: &ureq::Agent,
-    config: &Config,
-    show_id: &str,
-    recorded_date: &str,
-) -> Option<i64> {
-    let prior_telemetry_url = format!(
-        "{}/rest/v1/series_daily_telemetry?series_id=eq.{}&recorded_date=lt.{}&order=recorded_date.desc&limit=1",
-        config.supabase_url, show_id, recorded_date
-    );
-    client
-        .get(&prior_telemetry_url)
-        .set("apikey", &config.supabase_key)
-        .set("Authorization", &format!("Bearer {}", config.supabase_key))
-        .call()
-        .ok()
-        .and_then(|r| r.into_json::<Vec<serde_json::Value>>().ok())
-        .and_then(|rows| rows.into_iter().next())
-        .and_then(|row| row.get("daily_score").and_then(|v| v.as_i64()))
-        .map(|dv| dv * 7)
-}
-
-pub fn patch_series_score(
-    client: &ureq::Agent,
-    config: &Config,
-    show_id: &str,
-    new_score: i64,
-    delta_pct: f64,
-) -> Result<()> {
-    let patch_url = format!("{}/rest/v1/series?id=eq.{}", config.supabase_url, show_id);
-    client
-        .patch(&patch_url)
-        .set("apikey", &config.supabase_key)
-        .set("Authorization", &format!("Bearer {}", config.supabase_key))
-        .send_json(json!({
-            "buzz_score": new_score,
-            "delta_pct": delta_pct,
-            "updated_at": Utc::now().to_rfc3339()
-        }))?;
-    Ok(())
+        .and_then(|row| {
+            Some((
+                row.get("reddit_comments")?.as_i64()?,
+                row.get("reddit_upvotes")?.as_i64()?,
+            ))
+        })
 }
 
 pub fn batch_record_daily_telemetry(
@@ -145,7 +108,9 @@ pub fn batch_record_daily_telemetry(
         .post(&telemetry_url)
         .set("apikey", &config.supabase_key)
         .set("Authorization", &format!("Bearer {}", config.supabase_key))
-        .set("Prefer", "resolution=merge-duplicates")
+        // A same-day retry must not replace valid observations with NULLs after
+        // a transient source throttle.
+        .set("Prefer", "resolution=ignore-duplicates")
         .send_json(serde_json::Value::Array(telemetry_batch))?;
     Ok(())
 }

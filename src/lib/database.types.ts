@@ -65,6 +65,8 @@ export type Database = {
           daily_score: number
           wiki_views: number | null
           reddit_comments: number | null
+          reddit_upvotes: number | null
+          reddit_observed: boolean
         }
         Insert: {
           id?: number
@@ -73,6 +75,8 @@ export type Database = {
           daily_score: number
           wiki_views?: number | null
           reddit_comments?: number | null
+          reddit_upvotes?: number | null
+          reddit_observed?: boolean
         }
         Update: {
           id?: number
@@ -81,6 +85,8 @@ export type Database = {
           daily_score?: number
           wiki_views?: number | null
           reddit_comments?: number | null
+          reddit_upvotes?: number | null
+          reddit_observed?: boolean
         }
         Relationships: [
           {
