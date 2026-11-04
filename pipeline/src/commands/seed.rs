@@ -65,6 +65,7 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
     );
 
     let mut seeded = 0;
+    let mut api_errors = 0;
     let mut page = 1;
     // ponytail: 25 pages × 20 results = 500 candidates, plenty for 200 limit
     let max_pages = 25;
@@ -111,6 +112,7 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
                         "⚠️  Failed to fetch TMDb page {} after {} attempts (HTTP {}). Skipping to next page.",
                         page, retry_count, status
                     );
+                    api_errors += 1;
                     page += 1;
                     retry_count = 0;
                     continue;
@@ -129,6 +131,7 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
                         "⚠️  Network error on page {} after {} attempts: {}. Skipping to next page.",
                         page, retry_count, e
                     );
+                    api_errors += 1;
                     page += 1;
                     retry_count = 0;
                     continue;
@@ -149,6 +152,7 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
                     "⚠️  Failed to parse TMDb discover response on page {}: {}. Skipping to next page.",
                     page, e
                 );
+                api_errors += 1;
                 page += 1;
                 continue;
             }
@@ -171,11 +175,27 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
                 detail_req = detail_req.query("api_key", tmdb_key);
             }
 
-            let Ok(detail_res) = detail_req.call() else {
-                continue;
+            let detail_res = match detail_req.call() {
+                Ok(response) => response,
+                Err(error) => {
+                    eprintln!(
+                        "⚠️  Failed to fetch TMDb details for '{}': {}",
+                        item.name, error
+                    );
+                    api_errors += 1;
+                    continue;
+                }
             };
-            let Ok(detail) = detail_res.into_json::<TmdbTvDetail>() else {
-                continue;
+            let detail = match detail_res.into_json::<TmdbTvDetail>() {
+                Ok(detail) => detail,
+                Err(error) => {
+                    eprintln!(
+                        "⚠️  Failed to parse TMDb details for '{}': {}",
+                        item.name, error
+                    );
+                    api_errors += 1;
+                    continue;
+                }
             };
 
             let raw_network = detail
@@ -265,14 +285,43 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
         page += 1;
     }
 
-    if limit > 0 && seeded == 0 {
+    if should_fail_empty_seed(seeded, api_errors) {
         anyhow::bail!(
-            "TMDb seed failed: 0 series seeded. Check TMDB_API_KEY and network connectivity."
+            "TMDb seed failed: 0 series seeded and {api_errors} API errors occurred. Check TMDB_API_KEY and network connectivity."
         );
+    }
+    if seeded == 0 {
+        println!("Catalog is already up to date; no new series were found.");
+    } else if api_errors > 0 {
+        println!("Completed with {seeded} new series and {api_errors} API errors.");
     }
 
     println!("\n🎉 Finished seeding {} new series into Supabase!", seeded);
     Ok(())
+}
+
+fn should_fail_empty_seed(seeded: usize, api_errors: usize) -> bool {
+    seeded == 0 && api_errors > 0
+}
+
+#[cfg(test)]
+mod seed_outcome_tests {
+    use super::should_fail_empty_seed;
+
+    #[test]
+    fn an_empty_catalog_result_is_success_when_api_calls_succeeded() {
+        assert!(!should_fail_empty_seed(0, 0));
+    }
+
+    #[test]
+    fn an_empty_result_fails_when_api_errors_occurred() {
+        assert!(should_fail_empty_seed(0, 1));
+    }
+
+    #[test]
+    fn partial_seed_success_does_not_fail_when_some_api_calls_failed() {
+        assert!(!should_fail_empty_seed(1, 3));
+    }
 }
 
 /// Legacy CSV seed path — kept as fallback via `--csv <file>`.

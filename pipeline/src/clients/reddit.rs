@@ -16,7 +16,7 @@ pub fn fetch_reddit_stats(
     title: &str,
 ) -> Option<(i64, i64)> {
     let reddit_url = format!(
-        "https://www.reddit.com/r/television/search.json?q={}&restrict_sr=1&t=week&limit=100",
+        "https://www.reddit.com/r/television/search.json?q={}&restrict_sr=1&t=day&limit=100",
         urlencoding::encode(reddit_query)
     );
 

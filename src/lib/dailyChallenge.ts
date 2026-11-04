@@ -92,6 +92,72 @@ export async function submitDailyScore(
   }
 }
 
+export async function fetchMyDailyScore(
+  dateStr: string
+): Promise<{ score: number | null; unavailable: boolean }> {
+  if (!supabase) return { score: null, unavailable: true };
+  try {
+    const { data, error } = await supabase
+      .from('user_scores')
+      .select('score')
+      .eq('date', dateStr)
+      .maybeSingle();
+    if (error) return { score: null, unavailable: true };
+    return { score: data?.score ?? null, unavailable: false };
+  } catch {
+    return { score: null, unavailable: true };
+  }
+}
+
+export interface StoredDailyResult {
+  date: string;
+  score: number;
+  correctness: boolean[];
+  completedAt: string;
+  verified: boolean;
+}
+
+export function readStoredDailyResult(dateStr: string): StoredDailyResult | null {
+  try {
+    const raw = localStorage.getItem(`tv_arena_daily_${dateStr}`);
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return {
+        date: dateStr,
+        score: value,
+        correctness: [],
+        completedAt: new Date().toISOString(),
+        verified: false,
+      };
+    }
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      !('date' in value) ||
+      value.date !== dateStr ||
+      !('score' in value) ||
+      typeof value.score !== 'number' ||
+      !('correctness' in value) ||
+      !Array.isArray(value.correctness) ||
+      !value.correctness.every((item) => typeof item === 'boolean')
+    ) {
+      return null;
+    }
+    return value as StoredDailyResult;
+  } catch {
+    return null;
+  }
+}
+
+export function storeDailyResult(result: StoredDailyResult): void {
+  try {
+    localStorage.setItem(`tv_arena_daily_${result.date}`, JSON.stringify(result));
+  } catch {
+    // Anonymous replay protection is best effort when browser storage is disabled.
+  }
+}
+
 export interface LeaderboardEntry {
   username: string;
   score: number;
