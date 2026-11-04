@@ -166,6 +166,10 @@ DECLARE
 BEGIN
   RAISE NOTICE 'Testing user_scores direct insert protection...';
 
+  IF NOT has_table_privilege('authenticated', 'user_scores', 'INSERT') THEN
+    RAISE EXCEPTION 'CI role setup is invalid: authenticated lacks INSERT privilege on user_scores; RLS test would be meaningless.';
+  END IF;
+
   SET LOCAL ROLE authenticated;
   PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
 
