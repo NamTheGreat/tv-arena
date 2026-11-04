@@ -388,5 +388,65 @@ describe('Core components headless tests', () => {
       expect(screen.getByText('Severance')).toBeInTheDocument();
       expect(screen.getByText('+14.2%')).toBeInTheDocument();
     });
+
+    it('shows honest empty states for a show without telemetry history', () => {
+      const showWithoutHistory = {
+        ...mockShows[0],
+        daily_series: [],
+        daily_dates: [],
+        signal_contributions: { wiki_contribution: 0, reddit_contribution: 0, telemetry_days: 0, reddit_observed_days: 0 },
+      };
+      render(
+        <MemoryRouter initialEntries={['/show/severance']}>
+          <Routes>
+            <Route path="/show/:slug" element={<ShowDetailView seriesList={[showWithoutHistory]} />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('No telemetry history is available for this period.')).toBeInTheDocument();
+      expect(screen.getByText('No viewing history is available yet.')).toBeInTheDocument();
+    });
+
+    it('distinguishes unavailable contribution data from an empty history', () => {
+      render(
+        <MemoryRouter initialEntries={['/show/severance']}>
+          <Routes>
+            <Route path="/show/:slug" element={<ShowDetailView seriesList={[mockShows[0]]} />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('Signal contribution data is temporarily unavailable.')).toBeInTheDocument();
+    });
+
+    it('renders weighted signal contributions, recent events, and breakout details', () => {
+      const dates = Array.from({ length: 90 }, (_, index) => {
+        const date = new Date(Date.UTC(2026, 0, 1 + index));
+        return date.toISOString().slice(0, 10);
+      });
+      const showWithDetails = {
+        ...mockShows[0],
+        daily_series: Array.from({ length: 90 }, (_, index) => index + 1),
+        daily_dates: dates,
+        events: [{ series_id: mockShows[0].id, event_date: dates[50], kind: 'premiere' as const, label: 'Season premiere' }],
+        is_breakout: true,
+        breakout_reason: 'Growth exceeded the expected range.',
+        signal_contributions: { wiki_contribution: 1200, reddit_contribution: 350, telemetry_days: 7, reddit_observed_days: 5 },
+      };
+
+      render(
+        <MemoryRouter initialEntries={['/show/severance']}>
+          <Routes>
+            <Route path="/show/:slug" element={<ShowDetailView seriesList={[showWithDetails, mockShows[1]]} />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('1,200')).toBeInTheDocument();
+      expect(screen.getByText('350')).toBeInTheDocument();
+      expect(screen.getByText(/Season premiere/)).toBeInTheDocument();
+      expect(screen.getByText(/Breakout detected: Growth exceeded the expected range/)).toBeInTheDocument();
+    });
   });
 });
