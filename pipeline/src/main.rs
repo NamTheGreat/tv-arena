@@ -30,6 +30,14 @@ enum Commands {
         #[arg(short, long)]
         date: Option<String>,
     },
+    /// Backfill missing Wikipedia pageviews for the most recent days (1-90)
+    Backfill {
+        #[arg(long, default_value_t = 90, value_parser = clap::value_parser!(u32).range(1..=90))]
+        days: u32,
+        /// Limit the backfill to one TV Arena series slug
+        #[arg(long)]
+        slug: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -41,6 +49,9 @@ fn main() -> Result<()> {
         Commands::Sync => commands::sync::run_sync(&config)?,
         Commands::Events => commands::events::run_events(&config)?,
         Commands::DailyDeck { date } => commands::daily_deck::run_daily_deck(&config, date)?,
+        Commands::Backfill { days, slug } => {
+            commands::backfill::run_backfill(&config, days, slug.as_deref())?
+        }
     }
 
     Ok(())

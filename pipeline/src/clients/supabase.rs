@@ -115,6 +115,27 @@ pub fn batch_record_daily_telemetry(
     Ok(())
 }
 
+pub fn insert_backfill_telemetry(
+    client: &ureq::Agent,
+    config: &Config,
+    rows: Vec<serde_json::Value>,
+) -> Result<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let url = format!(
+        "{}/rest/v1/series_daily_telemetry?on_conflict=series_id,recorded_date",
+        config.supabase_url
+    );
+    client
+        .post(&url)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .set("Prefer", "resolution=ignore-duplicates")
+        .send_json(serde_json::Value::Array(rows))?;
+    Ok(())
+}
+
 pub fn insert_daily_challenge(
     client: &ureq::Agent,
     config: &Config,
