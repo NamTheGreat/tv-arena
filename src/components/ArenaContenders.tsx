@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { SeriesItem } from '../lib/supabase';
+import { ArenaTrajectoryOverlay } from './ArenaTrajectoryOverlay';
 
 export interface ArenaStats {
   leftPct: number;
@@ -332,6 +333,7 @@ export function ArenaContenders({
             </button>
           </div>
         </footer>
+        <ArenaTrajectoryOverlay leftShow={leftShow} rightShow={rightShow} />
       </main>
     </div>
   );
