@@ -134,7 +134,7 @@ BEGIN
   FROM series_weekly_movers
   WHERE period_start = v_week_start AND series_id = v_series_id;
   IF v_delta <> 200.00 OR v_rank <> 1 THEN
-    RAISE EXCEPTION 'Expected weekly mover view to return +200%% at rank 1, got %% at rank %%', v_delta, v_rank;
+    RAISE EXCEPTION 'Expected weekly mover view to return +200%% at rank 1, got % at rank %', v_delta, v_rank;
   END IF;
   RAISE NOTICE '✓ Weekly mover view returns historical delta and stable rank.';
 END $$;
