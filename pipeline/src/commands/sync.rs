@@ -5,14 +5,12 @@ use std::{thread, time::Duration, time::Instant};
 
 use crate::clients::http::create_http_client;
 use crate::clients::supabase::{
-    batch_record_daily_telemetry, create_sync_run, fetch_prev_reddit_comments,
-    fetch_prior_day_score, fetch_series, fetch_series_signal_history, patch_series_score,
-    record_series_breakout, update_sync_run, SyncRunUpdate,
+    batch_record_daily_telemetry, create_sync_run, fetch_prev_reddit_metrics, fetch_series,
+    fetch_series_signal_history, record_series_breakout, update_sync_run, SyncRunUpdate,
 };
 use crate::clients::{HttpTelemetryFetcher, TelemetryFetcher};
 use crate::config::Config;
 use crate::engine::anomaly::{detect_signal_breakout, REDDIT_COMMENTS_FLOOR, WIKI_VIEWS_FLOOR};
-use crate::engine::scoring::{calculate_delta, compute_buzz_score};
 
 pub fn run_sync(config: &Config) -> Result<()> {
     let client = create_http_client();
@@ -87,105 +85,44 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
             fetch_failures += 1;
             continue;
         }
-
-        let total_wiki: i64 = wiki_days
-            .as_ref()
-            .map(|days| days.iter().map(|d| d.views).sum())
-            .unwrap_or(0);
-
-        // Carry forward previous Reddit metrics if Reddit 403/429 occurs, preventing wild artificial swings
-        let (total_comments, total_upvotes) = if let Some(stats) = reddit_stats {
-            stats
-        } else {
-            let prev_comments = fetch_prev_reddit_comments(client, config, show_id);
-            if let Some(c) = prev_comments {
-                eprintln!(
-                    "ℹ️  Reddit throttled for '{}'; carrying forward last recorded comments ({})",
-                    show.title, c
-                );
-                (c * 7, 0)
-            } else {
-                (0, 0)
-            }
-        };
-
-        let new_score = compute_buzz_score(total_wiki, total_comments, total_upvotes);
-
-        // Guard against overwriting existing valid scores if upstream fetch returned 0
-        if new_score == 0 && show.buzz_score > 0 {
-            eprintln!(
-                "⚠️  Calculated 0 buzz score for '{}'; skipping patch to protect existing score ({})",
-                show.title, show.buzz_score
-            );
-            continue;
-        }
-
-        // To handle same-day manual re-runs gracefully, compare against the previous day's telemetry
-        let prior_day_score = fetch_prior_day_score(client, config, show_id, &recorded_date);
-
-        let delta_pct = if let Some(prior_score) = prior_day_score {
-            calculate_delta(new_score, prior_score)
-        } else if show.buzz_score > 0 {
-            calculate_delta(new_score, show.buzz_score)
-        } else if let Some(ref days) = wiki_days {
-            if days.len() >= 2 {
-                let first_day = days.first().map(|d| d.views).unwrap_or(0);
-                let last_day = days.last().map(|d| d.views).unwrap_or(0);
-                let first_est =
-                    compute_buzz_score(first_day, total_comments / 7, total_upvotes / 7);
-                let last_est = compute_buzz_score(last_day, total_comments / 7, total_upvotes / 7);
-                calculate_delta(last_est, first_est)
-            } else {
-                0.0
-            }
-        } else {
-            0.0
-        };
-
-        if let Err(e) = patch_series_score(client, config, show_id, new_score, delta_pct) {
-            eprintln!("❌ Failed updating series row for '{}': {}", show.title, e);
+        if wiki_days.is_none() {
+            // Do not fabricate zero wiki observations when the source is unavailable.
             fetch_failures += 1;
             continue;
         }
 
-        // True batch upsert: send an array in a single POST request
-        let mut telemetry_batch = Vec::new();
-        if let Some(ref days) = wiki_days {
-            let last_idx = days.len().saturating_sub(1);
-            for (i, day) in days.iter().enumerate() {
-                if day.timestamp.len() >= 8 {
-                    let date_iso = format!(
-                        "{}-{}-{}",
-                        &day.timestamp[0..4],
-                        &day.timestamp[4..6],
-                        &day.timestamp[6..8]
-                    );
-                    let is_latest = i == last_idx;
-                    // Apply current Reddit velocity to latest day; past days retain their pure Wiki views
-                    let daily_comments = if is_latest { total_comments / 7 } else { 0 };
-                    let daily_upvotes = if is_latest { total_upvotes / 7 } else { 0 };
-                    let daily_est = compute_buzz_score(day.views, daily_comments, daily_upvotes);
-
-                    telemetry_batch.push(json!({
-                        "series_id": show_id,
-                        "recorded_date": date_iso,
-                        "daily_score": daily_est,
-                        "wiki_views": day.views,
-                        "reddit_comments": daily_comments,
-                        "reddit_upvotes": daily_upvotes
-                    }));
-                }
-            }
+        let previous_reddit = if reddit_stats.is_none() {
+            fetch_prev_reddit_metrics(client, config, show_id)
         } else {
-            telemetry_batch.push(json!({
-                "series_id": show_id,
-                "recorded_date": recorded_date,
-                "daily_score": new_score / 7,
-                "wiki_views": total_wiki,
-                "reddit_comments": total_comments / 7,
-                "reddit_upvotes": total_upvotes / 7
-            }));
+            None
+        };
+        // The API returns a seven-day window for Wikipedia, but historical dates
+        // must be immutable. Store only the completed day. Reddit is queried for
+        // the last 24 hours, so those signals belong to this observation date.
+        let Some(days) = wiki_days.as_ref() else {
+            continue;
+        };
+        let Some(day) = days.last() else { continue };
+        if day.timestamp.len() < 8 {
+            continue;
         }
+        let date_iso = format!(
+            "{}-{}-{}",
+            &day.timestamp[0..4],
+            &day.timestamp[4..6],
+            &day.timestamp[6..8]
+        );
+        let reddit_metrics = reddit_stats.or(previous_reddit);
+        let reddit_comments = reddit_metrics.map(|(comments, _)| comments);
+        let reddit_upvotes = reddit_metrics.map(|(_, upvotes)| upvotes);
+        let telemetry_batch = vec![json!({
+            "series_id": show_id,
+            "recorded_date": date_iso,
+            "wiki_views": day.views,
+            "reddit_comments": reddit_comments,
+            "reddit_upvotes": reddit_upvotes,
+            "reddit_observed": reddit_stats.is_some()
+        })];
 
         if let Err(e) = batch_record_daily_telemetry(client, config, telemetry_batch) {
             eprintln!(
@@ -198,11 +135,8 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
 
         // Run Anomaly / Breakout Detection for wiki_views and reddit_comments
         let history = fetch_series_signal_history(client, config, show_id, &recorded_date, 14);
-        let today_wiki = wiki_days
-            .as_ref()
-            .and_then(|days| days.last().map(|d| d.views))
-            .unwrap_or(total_wiki / 7);
-        let today_reddit = total_comments / 7;
+        let today_wiki = day.views;
+        let today_reddit = reddit_stats.map(|(comments, _)| comments);
 
         if let Some(wiki_breakout) = detect_signal_breakout(
             &history.wiki_views,
@@ -223,12 +157,14 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
             }
         }
 
-        if let Some(reddit_breakout) = detect_signal_breakout(
-            &history.reddit_comments,
-            today_reddit,
-            "reddit_comments",
-            REDDIT_COMMENTS_FLOOR,
-        ) {
+        if let Some(reddit_breakout) = today_reddit.and_then(|value| {
+            detect_signal_breakout(
+                &history.reddit_comments,
+                value,
+                "reddit_comments",
+                REDDIT_COMMENTS_FLOOR,
+            )
+        }) {
             println!(
                 "🔥 Statistical Breakout (Reddit) for '{}': {} ({} vs baseline {:.0})",
                 show.title,
@@ -246,7 +182,7 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         }
 
         updated_count += 1;
-        println!("✓ {}: score {} ({:+.1}%)", show.title, new_score, delta_pct);
+        println!("✓ {}: recorded telemetry for {}", show.title, recorded_date);
         thread::sleep(Duration::from_millis(600));
     }
 

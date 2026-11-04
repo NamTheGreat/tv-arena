@@ -58,6 +58,7 @@ DECLARE
   v_test_show_id UUID;
   v_anchor_date DATE := CURRENT_DATE;
   v_delta NUMERIC;
+  v_daily_score BIGINT;
 BEGIN
   RAISE NOTICE 'Testing delta_pct anchor & nullability...';
 
@@ -73,6 +74,15 @@ BEGIN
   SELECT delta_pct INTO v_delta FROM series_leaderboard WHERE id = v_test_show_id;
   IF v_delta IS NOT NULL THEN
     RAISE EXCEPTION 'Expected delta_pct to be NULL for new show with no previous week, got %', v_delta;
+  END IF;
+
+  -- A NULL Reddit observation is unavailable data, and still scores wiki only.
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  VALUES (v_test_show_id, v_anchor_date - INTERVAL '2 days', 0, 1000, NULL, NULL, FALSE);
+  SELECT daily_score INTO v_daily_score FROM series_daily_scores
+  WHERE series_id = v_test_show_id AND recorded_date = v_anchor_date - INTERVAL '2 days';
+  IF v_daily_score <> 10000 THEN
+    RAISE EXCEPTION 'Expected NULL Reddit to retain wiki-only score 10000, got %', v_daily_score;
   END IF;
 
   -- Case B: Show with equal 7-day current and previous volume must return exactly 0.00

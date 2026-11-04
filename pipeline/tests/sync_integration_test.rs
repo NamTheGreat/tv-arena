@@ -64,28 +64,23 @@ fn test_sync_full_run_against_mock_server() {
         ]));
     });
 
-    // 2. Mock prior day telemetry query
-    let prior_telemetry_mock = server.mock(|when, then| {
+    // 2. Mock historical signal query used by breakout detection.
+    let history_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/rest/v1/series_daily_telemetry")
             .query_param("series_id", "eq.11111111-1111-1111-1111-111111111111");
         then.status(200).json_body(json!([]));
     });
 
-    // 3. Mock series PATCH score update: expected score = (70000*10) + (1000*150) + (4000*25) = 950,000
-    let patch_mock = server.mock(|when, then| {
-        when.method("PATCH")
-            .path("/rest/v1/series")
-            .query_param("id", "eq.11111111-1111-1111-1111-111111111111")
-            .json_body_partial(r#"{"buzz_score": 950000}"#);
-        then.status(200).json_body(json!({}));
-    });
-
-    // 4. Mock daily telemetry batch insertion
+    // 3. Only the latest observed date is inserted, with daily Reddit signals.
     let telemetry_batch_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/rest/v1/series_daily_telemetry")
-            .query_param("on_conflict", "series_id,recorded_date");
+            .query_param("on_conflict", "series_id,recorded_date")
+            .header("Prefer", "resolution=ignore-duplicates")
+            .json_body_partial(
+                r#"[{"wiki_views": 10000, "reddit_comments": 1000, "reddit_upvotes": 4000}]"#,
+            );
         then.status(201).json_body(json!({}));
     });
 
@@ -106,9 +101,9 @@ fn test_sync_full_run_against_mock_server() {
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), 1);
 
-    // Verify all mock interactions were invoked with expected payloads (series fetched by sync and daily-deck, telemetry fetched for prior score and breakout detection)
+    // Verify the sync reads history and inserts just the latest row without
+    // patching denormalized scores on series.
     series_mock.assert_hits(2);
-    prior_telemetry_mock.assert_hits(2);
-    patch_mock.assert();
+    history_mock.assert_hits(1);
     telemetry_batch_mock.assert();
 }

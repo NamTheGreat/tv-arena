@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS series (
   wiki_slug TEXT NOT NULL,
   reddit_query TEXT NOT NULL,
   buzz_score BIGINT DEFAULT 0,
-  delta_pct NUMERIC(9,2) DEFAULT 0.0,
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -23,8 +22,9 @@ CREATE TABLE IF NOT EXISTS series_daily_telemetry (
   recorded_date DATE NOT NULL DEFAULT CURRENT_DATE,
   daily_score BIGINT NOT NULL DEFAULT 0,
   wiki_views INT DEFAULT 0,
-  reddit_comments INT DEFAULT 0,
-  reddit_upvotes INT DEFAULT 0,
+  reddit_comments INT,
+  reddit_upvotes INT,
+  reddit_observed BOOLEAN NOT NULL DEFAULT TRUE,
   UNIQUE (series_id, recorded_date)
 );
 
@@ -59,7 +59,7 @@ SELECT
   COALESCE(t.reddit_upvotes, 0) AS reddit_upvotes,
   ROUND(
     (t.wiki_views * w.wiki_weight) +
-    (t.reddit_comments * w.comment_weight) +
+    (COALESCE(t.reddit_comments, 0) * w.comment_weight) +
     (COALESCE(t.reddit_upvotes, 0) * w.upvote_weight)
   )::BIGINT AS daily_score
 FROM series_daily_telemetry t
