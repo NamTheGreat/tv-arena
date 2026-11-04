@@ -14,7 +14,7 @@ pub struct BreakoutDetection {
     pub reason: String,
 }
 
-/// Detects breakout anomaly on a single signal's historical values.
+/// Detects a large, robustly unusual change on a single signal.
 ///
 /// `history`: chronological slice of previous days (up to 14 days, excluding today).
 /// `today_value`: value recorded for the current day.
@@ -26,35 +26,35 @@ pub fn detect_signal_breakout(
     signal: &str,
     floor: i64,
 ) -> Option<BreakoutDetection> {
-    // 1. Require at least 10 days of history, otherwise flag nothing
-    if history.len() < MIN_HISTORY_DAYS {
+    let valid: Vec<i64> = history
+        .iter()
+        .copied()
+        .filter(|value| *value >= 0)
+        .collect();
+    if valid.len() < MIN_HISTORY_DAYS {
         return None;
     }
 
-    // Window: up to 14 previous days
-    let window = if history.len() > WINDOW_DAYS {
-        &history[history.len() - WINDOW_DAYS..]
+    let window = if valid.len() > WINDOW_DAYS {
+        &valid[valid.len() - WINDOW_DAYS..]
     } else {
-        history
+        &valid
     };
 
     let n = window.len() as f64;
     let sum: f64 = window.iter().map(|&x| x as f64).sum();
     let mean = sum / n;
+    let median_value = median(window.iter().map(|value| *value as f64).collect());
+    let mad = median(
+        window
+            .iter()
+            .map(|value| (*value as f64 - median_value).abs())
+            .collect(),
+    );
+    // 1.4826 makes MAD comparable to standard deviation for normal data.
+    let robust_std = mad * 1.4826;
 
-    let variance: f64 = window
-        .iter()
-        .map(|&x| {
-            let diff = x as f64 - mean;
-            diff * diff
-        })
-        .sum::<f64>()
-        / n;
-
-    let std = variance.sqrt();
-
-    // 2. Minimum absolute floor
-    if today_value < floor {
+    if today_value < floor || today_value < 0 {
         return None;
     }
 
@@ -64,37 +64,40 @@ pub fn detect_signal_breakout(
         100.0
     };
 
-    // 3. Guard against sigma = 0
-    if std < 1e-6 {
-        // If no variance in history, any value strictly above baseline and above floor is a breakout
-        if today_value as f64 > mean {
-            let reason = format_reason(signal, pct_over_baseline);
-            return Some(BreakoutDetection {
-                signal: signal.to_string(),
-                value: today_value,
-                baseline_mean: round_2(mean),
-                baseline_std: 0.0,
-                pct_over_baseline: round_2(pct_over_baseline),
-                reason,
-            });
-        }
-        return None;
-    }
-
-    // 4. Flag when today's value is above mean + 2 sigma
-    let threshold = mean + 2.0 * std;
+    // Require both a high robust deviation and at least 50% growth over the
+    // mean. Flat histories have no usable MAD, so the relative/floor gate is
+    // still required; a zero baseline additionally needs 2x the signal floor.
+    let relative_threshold = if mean == 0.0 {
+        (floor.max(0) as f64) * 2.0
+    } else {
+        mean * 1.5
+    };
+    let threshold = (median_value + 3.0 * robust_std).max(relative_threshold);
     if (today_value as f64) > threshold {
         let reason = format_reason(signal, pct_over_baseline);
         Some(BreakoutDetection {
             signal: signal.to_string(),
             value: today_value,
             baseline_mean: round_2(mean),
-            baseline_std: round_2(std),
+            baseline_std: round_2(robust_std),
             pct_over_baseline: round_2(pct_over_baseline),
             reason,
         })
     } else {
         None
+    }
+}
+
+// Keep compatibility with the project's Rust 1.85 baseline, before
+// usize::is_multiple_of was stabilized.
+#[allow(clippy::manual_is_multiple_of)]
+fn median(mut values: Vec<f64>) -> f64 {
+    values.sort_by(f64::total_cmp);
+    let middle = values.len() / 2;
+    if values.len() % 2 == 0 {
+        (values[middle - 1] + values[middle]) / 2.0
+    } else {
+        values[middle]
     }
 }
 
@@ -211,5 +214,47 @@ mod tests {
             .unwrap()
             .reason
             .contains("Reddit discussion surge"));
+    }
+
+    #[test]
+    fn flat_history_requires_at_least_fifty_percent_growth() {
+        let history = vec![10_000; 14];
+        assert!(detect_signal_breakout(&history, 14_000, "wiki_views", WIKI_VIEWS_FLOOR).is_none());
+        assert!(detect_signal_breakout(&history, 16_000, "wiki_views", WIKI_VIEWS_FLOOR).is_some());
+    }
+
+    #[test]
+    fn zero_baseline_requires_twice_the_absolute_floor() {
+        let history = vec![0; 14];
+        assert!(detect_signal_breakout(&history, 7_000, "wiki_views", WIKI_VIEWS_FLOOR).is_none());
+        assert!(detect_signal_breakout(&history, 10_001, "wiki_views", WIKI_VIEWS_FLOOR).is_some());
+    }
+
+    #[test]
+    fn robust_detector_ignores_a_moderate_noisy_excursion_but_flags_a_spike() {
+        let history = vec![
+            9_000, 11_000, 9_500, 10_500, 8_900, 11_100, 9_400, 10_600, 9_100, 10_900, 9_300,
+            10_700, 9_200, 10_800,
+        ];
+        let mean = history.iter().sum::<i64>() as f64 / history.len() as f64;
+        let old_variance = history
+            .iter()
+            .map(|value| (*value as f64 - mean).powi(2))
+            .sum::<f64>()
+            / history.len() as f64;
+        assert!(14_800.0 > mean + 2.0 * old_variance.sqrt());
+        assert!(detect_signal_breakout(&history, 14_800, "wiki_views", WIKI_VIEWS_FLOOR).is_none());
+        assert!(detect_signal_breakout(&history, 30_000, "wiki_views", WIKI_VIEWS_FLOOR).is_some());
+    }
+
+    #[test]
+    fn ignores_negative_and_insufficient_observations() {
+        let history = vec![10_000; 9]
+            .into_iter()
+            .chain(std::iter::once(-1))
+            .collect::<Vec<_>>();
+        assert!(
+            detect_signal_breakout(&history, 100_000, "wiki_views", WIKI_VIEWS_FLOOR).is_none()
+        );
     }
 }

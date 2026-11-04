@@ -31,6 +31,13 @@ pub struct SeriesRow {
     pub delta_pct: f64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeckCandidate {
+    pub id: String,
+    pub current_7d_score: i64,
+    pub telemetry_days: i64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SeedSeriesPayload {
     pub tmdb_id: i32,

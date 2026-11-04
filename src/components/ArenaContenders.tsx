@@ -46,12 +46,18 @@ export function ArenaContenders({
   arenaStats,
 }: ArenaContendersProps) {
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
 
-  const handleCopyLink = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
+  const handleCopyLink = async () => {
+    setCopied(false);
+    setCopyFailed(false);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopyFailed(true);
     }
   };
   return (
@@ -250,11 +256,17 @@ export function ArenaContenders({
               onClick={handleCopyLink}
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-[#FAF6F2] border border-arena-border hover:border-stone-300 text-stone-600 hover:text-stone-900 text-[11px] font-medium transition-all shadow-xs cursor-pointer"
               title="Copy battle URL to clipboard"
+              aria-live="polite"
             >
               {copied ? (
                 <>
                   <span className="text-emerald-600">✓</span>
                   <span className="text-emerald-700 font-semibold">Copied!</span>
+                </>
+              ) : copyFailed ? (
+                <>
+                  <span aria-hidden="true">!</span>
+                  <span className="text-rose-700 font-semibold">Could not copy</span>
                 </>
               ) : (
                 <>
