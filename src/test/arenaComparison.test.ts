@@ -9,6 +9,7 @@ function series(slug: string, dates: string[], values: number[]): SeriesItem {
     slug,
     title: slug,
     network: 'Network',
+    network_group: 'Other',
     genre_group: 'Drama',
     release_years: '2020–present',
     chart_color: '#c66a3d',

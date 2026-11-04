@@ -12,6 +12,7 @@ function show(slug: string, network: string, score: number): SeriesItem {
     slug,
     title: slug,
     network,
+    network_group: 'Other',
     genre_group: 'Drama',
     release_years: '2020–present',
     chart_color: '#c66a3d',
