@@ -53,8 +53,8 @@ describe('anonymous daily score transfer', () => {
     render(
       <TriviaGame
         seriesList={[
-          { id: 'show-a', tmdb_id: 1, slug: 'show-a', title: 'Show A', network: 'A', genre_group: '', release_years: '', chart_color: '', wiki_slug: '', reddit_query: '', buzz_score: 100, delta_pct: null, updated_at: null, daily_series: [] },
-          { id: 'show-b', tmdb_id: 2, slug: 'show-b', title: 'Show B', network: 'B', genre_group: '', release_years: '', chart_color: '', wiki_slug: '', reddit_query: '', buzz_score: 200, delta_pct: null, updated_at: null, daily_series: [] },
+          { id: 'show-a', tmdb_id: 1, slug: 'show-a', title: 'Show A', network: 'A', network_group: 'Other', genre_group: '', release_years: '', chart_color: '', wiki_slug: '', reddit_query: '', buzz_score: 100, delta_pct: null, updated_at: null, daily_series: [] },
+          { id: 'show-b', tmdb_id: 2, slug: 'show-b', title: 'Show B', network: 'B', network_group: 'Other', genre_group: '', release_years: '', chart_color: '', wiki_slug: '', reddit_query: '', buzz_score: 200, delta_pct: null, updated_at: null, daily_series: [] },
         ]}
       />
     );

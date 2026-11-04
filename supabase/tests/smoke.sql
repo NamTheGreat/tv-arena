@@ -13,15 +13,16 @@ DECLARE
   v_buzz BIGINT;
   v_curr BIGINT;
   v_rank BIGINT;
+  v_network_group TEXT;
 BEGIN
   RAISE NOTICE 'Testing View Schema & Column Integrity...';
 
   -- Seed baseline series if empty to test view projections
-  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   VALUES 
-    (gen_random_uuid(), 66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', 'test', 0),
-    (gen_random_uuid(), 1399, 'game-of-thrones', 'Game of Thrones', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Game_of_Thrones', 'test', 0),
-    (gen_random_uuid(), 114472, 'severance', 'Severance', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#4A7C59', 'Severance', 'test', 0)
+    (gen_random_uuid(), 66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', 'test', 0),
+    (gen_random_uuid(), 1399, 'game-of-thrones', 'Game of Thrones', 'HBO', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Game_of_Thrones', 'test', 0),
+    (gen_random_uuid(), 114472, 'severance', 'Severance', 'Apple TV+', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#4A7C59', 'Severance', 'test', 0)
   ON CONFLICT (slug) DO NOTHING;
 
   SELECT COUNT(*) INTO v_count FROM series_leaderboard;
@@ -38,6 +39,11 @@ BEGIN
 
   IF v_buzz <> v_curr THEN
     RAISE EXCEPTION 'Expected buzz_score to alias current_7d_score';
+  END IF;
+
+  SELECT network_group INTO v_network_group FROM series_leaderboard WHERE slug = 'stranger-things';
+  IF v_network_group IS DISTINCT FROM 'Netflix' THEN
+    RAISE EXCEPTION 'Expected normalized network group Netflix, got %', v_network_group;
   END IF;
 
   -- Test series_daily_scores view

@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS series (
   slug TEXT UNIQUE NOT NULL,
   title TEXT NOT NULL,
   network TEXT NOT NULL,
+  network_group TEXT NOT NULL DEFAULT 'Other',
   genre_group TEXT NOT NULL DEFAULT 'Drama & Sci-Fi',
   release_years TEXT NOT NULL DEFAULT '2024–2025',
   chart_color TEXT DEFAULT '#C66A3D',
@@ -82,6 +83,7 @@ daily_buckets AS (
     s.slug,
     s.title,
     s.network,
+    s.network_group,
     s.genre_group,
     s.release_years,
     s.chart_color,
@@ -90,7 +92,7 @@ daily_buckets AS (
   FROM series s
   CROSS JOIN anchor a
   LEFT JOIN series_daily_scores d ON s.id = d.series_id
-  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.genre_group, s.release_years, s.chart_color, a.max_date
+  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.network_group, s.genre_group, s.release_years, s.chart_color, a.max_date
 )
 SELECT
   series_id AS id,
@@ -109,7 +111,8 @@ SELECT
       ROUND(((current_7d_score - previous_7d_score)::numeric / previous_7d_score::numeric) * 100, 2)
     ELSE NULL
   END AS delta_pct,
-  ROW_NUMBER() OVER (ORDER BY current_7d_score DESC, title ASC) as rank
+  ROW_NUMBER() OVER (ORDER BY current_7d_score DESC, title ASC) as rank,
+  network_group
 FROM daily_buckets;
 
 GRANT SELECT ON series_leaderboard TO anon, authenticated;

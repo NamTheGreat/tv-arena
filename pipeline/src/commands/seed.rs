@@ -205,7 +205,8 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
                 .and_then(|n| n.first())
                 .map(|n| n.name.as_str())
                 .unwrap_or("Streaming");
-            let network = normalize_network(raw_network);
+            let network = raw_network.to_string();
+            let network_group = normalize_network_group(raw_network);
 
             let genre_names: Vec<&str> = detail
                 .genres
@@ -260,6 +261,7 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
                 slug: slug.clone(),
                 title: item.name.clone(),
                 network: network.clone(),
+                network_group,
                 genre_group,
                 release_years,
                 chart_color: CHART_PALETTE[color_idx].to_string(),
@@ -311,7 +313,46 @@ fn should_fail_empty_seed(seeded: usize, api_errors: usize) -> bool {
 
 #[cfg(test)]
 mod seed_outcome_tests {
-    use super::should_fail_empty_seed;
+    use super::{classify_genre, normalize_network_group, should_fail_empty_seed};
+
+    #[test]
+    fn network_names_map_to_a_bounded_set_of_platform_groups() {
+        use std::collections::HashSet;
+
+        let cases = [
+            ("Netflix", "Netflix"),
+            ("HBO Max", "HBO"),
+            ("Max", "HBO"),
+            ("Apple TV+", "Apple TV+"),
+            ("Amazon Prime Video", "Prime Video"),
+            ("FX / Hulu", "FX / Hulu"),
+            ("Disney+", "Disney+"),
+            ("Showtime", "Paramount+"),
+            ("Peacock", "Peacock"),
+            ("BBC One", "Other"),
+        ];
+
+        for (raw, expected) in cases {
+            assert_eq!(normalize_network_group(raw), expected, "{raw}");
+        }
+        assert_eq!(normalize_network_group("TBS"), "Other");
+        let groups = cases
+            .iter()
+            .map(|(raw, _)| normalize_network_group(raw))
+            .collect::<HashSet<_>>();
+        assert!(groups.len() <= 9);
+    }
+
+    #[test]
+    fn genre_names_map_to_the_four_canonical_genre_groups() {
+        assert_eq!(
+            classify_genre(&["Science Fiction", "Drama"]),
+            "Drama & Sci-Fi"
+        );
+        assert_eq!(classify_genre(&["Comedy"]), "Comedy & Drama");
+        assert_eq!(classify_genre(&["Mystery", "Crime"]), "Crime & Mystery");
+        assert_eq!(classify_genre(&["Action"]), "Drama");
+    }
 
     #[test]
     fn an_empty_catalog_result_is_success_when_api_calls_succeeded() {
@@ -388,29 +429,19 @@ fn run_csv_seed(csv_path: &str, limit: usize, config: &Config) -> Result<()> {
             .unwrap_or("Streaming")
             .trim()
             .to_string();
+        let network_group = normalize_network_group(&network);
 
         let slug = slugify(&row.name);
 
-        let genre_group = if row.genres.contains("Sci-Fi") || row.genres.contains("Fantasy") {
-            "Drama & Sci-Fi".to_string()
-        } else if row.genres.contains("Comedy") {
-            "Comedy & Drama".to_string()
-        } else if row.genres.contains("Drama") {
-            "Drama".to_string()
-        } else {
-            row.genres
-                .split(',')
-                .next()
-                .unwrap_or("Drama")
-                .trim()
-                .to_string()
-        };
+        let genre_names = row.genres.split(',').map(str::trim).collect::<Vec<_>>();
+        let genre_group = classify_genre(&genre_names);
 
         let payload = SeedSeriesPayload {
             tmdb_id: row.id,
             slug,
             title: row.name.clone(),
             network: network.clone(),
+            network_group,
             genre_group,
             release_years: row.first_air_date.chars().take(4).collect(),
             chart_color: CHART_PALETTE[idx % CHART_PALETTE.len()].to_string(),
@@ -439,7 +470,7 @@ fn print_skipped_wiki(titles: &[String]) {
     }
 }
 
-fn normalize_network(raw: &str) -> String {
+fn normalize_network_group(raw: &str) -> String {
     let lower = raw.to_lowercase();
     if lower.contains("netflix") {
         "Netflix".to_string()
@@ -453,16 +484,12 @@ fn normalize_network(raw: &str) -> String {
         "FX / Hulu".to_string()
     } else if lower.contains("disney") {
         "Disney+".to_string()
-    } else if lower.contains("amc") {
-        "AMC".to_string()
     } else if lower.contains("showtime") || lower.contains("paramount") {
         "Paramount+".to_string()
-    } else if lower.contains("bbc") {
-        "BBC".to_string()
     } else if lower.contains("peacock") || lower.contains("nbc") {
         "Peacock".to_string()
     } else {
-        raw.to_string()
+        "Other".to_string()
     }
 }
 
