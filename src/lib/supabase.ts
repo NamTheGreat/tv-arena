@@ -16,6 +16,8 @@ export type SeriesDailyTelemetryRow = Tables<'series_daily_telemetry'>;
 // Thin app-level type for derived frontend fields
 export interface SeriesItem extends SeriesRow {
   rank?: number;
+  current_7d_score?: number;
+  previous_7d_score?: number;
   daily_series: number[];
   daily_dates?: string[];
   events?: SeriesEvent[];
