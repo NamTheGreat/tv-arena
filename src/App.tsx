@@ -430,6 +430,18 @@ export default function App() {
           }
         }
 
+        const { data: contributionData } = await supabase
+          .from('series_signal_contributions')
+          .select('series_id, wiki_contribution, reddit_contribution, telemetry_days, reddit_observed_days');
+        const contributionMap = new Map(
+          (contributionData || []).map((row) => [row.series_id, {
+            wiki_contribution: Number(row.wiki_contribution),
+            reddit_contribution: Number(row.reddit_contribution),
+            telemetry_days: row.telemetry_days,
+            reddit_observed_days: row.reddit_observed_days,
+          }])
+        );
+
         const mapped: SeriesItem[] = data.map((row: any) => ({
           ...row,
           buzz_score: leaderboardScore(row),
@@ -439,6 +451,7 @@ export default function App() {
           events: eventsMap.get(row.id) || [],
           is_breakout: breakoutMap.has(row.id),
           breakout_reason: breakoutMap.get(row.id),
+          signal_contributions: contributionMap.get(row.id),
         }));
 
         setSeriesList(mapped);

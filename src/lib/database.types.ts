@@ -353,6 +353,16 @@ export type Database = {
         }
         Relationships: []
       }
+      series_signal_contributions: {
+        Row: {
+          series_id: string
+          wiki_contribution: number
+          reddit_contribution: number
+          telemetry_days: number
+          reddit_observed_days: number
+        }
+        Relationships: []
+      }
       series_deck_candidates: {
         Row: {
           id: string
