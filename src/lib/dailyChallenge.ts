@@ -167,6 +167,13 @@ export function isCorrectDailyAnswer(
   return answer === 'higher' ? challengerScore > knownScore : challengerScore < knownScore;
 }
 
+export function scoreDailyAnswers(answers: ('higher' | 'lower')[], scores: number[]): number {
+  return answers.reduce(
+    (score, answer, index) => score + Number(isCorrectDailyAnswer(answer, scores[index], scores[index + 1])),
+    0
+  );
+}
+
 export function storeDailyResult(result: StoredDailyResult): void {
   try {
     localStorage.setItem(`tv_arena_daily_${result.date}`, JSON.stringify(result));
