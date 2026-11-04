@@ -65,6 +65,7 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
     );
 
     let mut seeded = 0;
+    let mut skipped_wiki = Vec::new();
     let mut page = 1;
     // ponytail: 25 pages × 20 results = 500 candidates, plenty for 200 limit
     let max_pages = 25;
@@ -194,11 +195,14 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
             let genre_group = classify_genre(&genre_names);
 
             // Verify Wikipedia slug exists for nightly telemetry scraper
-            let Some(wiki_slug) = resolve_wiki_slug(&item.name, &client) else {
+            let Some(wiki_slug) =
+                resolve_wiki_slug(&item.name, item.first_air_date.as_deref(), &client)
+            else {
                 println!(
                     "  ⏭️  Skipping '{}' (no Wikipedia article found)",
                     item.name
                 );
+                skipped_wiki.push(item.name.clone());
                 continue;
             };
 
@@ -265,6 +269,7 @@ fn run_tmdb_discover(limit: usize, config: &Config) -> Result<()> {
         page += 1;
     }
 
+    print_skipped_wiki(&skipped_wiki);
     if limit > 0 && seeded == 0 {
         anyhow::bail!(
             "TMDb seed failed: 0 series seeded. Check TMDB_API_KEY and network connectivity."
@@ -316,11 +321,14 @@ fn run_csv_seed(csv_path: &str, limit: usize, config: &Config) -> Result<()> {
     });
 
     let mut seeded = 0;
+    let mut skipped_wiki = Vec::new();
     for (idx, row) in candidates.into_iter().enumerate() {
         if seeded >= limit {
             break;
         }
-        let Some(wiki_slug) = resolve_wiki_slug(&row.name, &client) else {
+        let Some(wiki_slug) = resolve_wiki_slug(&row.name, Some(&row.first_air_date), &client)
+        else {
+            skipped_wiki.push(row.name.clone());
             continue;
         };
 
@@ -367,7 +375,19 @@ fn run_csv_seed(csv_path: &str, limit: usize, config: &Config) -> Result<()> {
         }
         thread::sleep(Duration::from_millis(150));
     }
+    print_skipped_wiki(&skipped_wiki);
     Ok(())
+}
+
+fn print_skipped_wiki(titles: &[String]) {
+    if titles.is_empty() {
+        println!("\nWikipedia resolver skipped no shows.");
+        return;
+    }
+    println!("\nWikipedia resolver skipped {} show(s):", titles.len());
+    for title in titles {
+        println!("  - {}", title);
+    }
 }
 
 fn normalize_network(raw: &str) -> String {
