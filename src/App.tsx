@@ -13,6 +13,7 @@ import { ArenaStats, computeArenaStats } from './lib/svgMath';
 import { ChartRange } from './components/TrajectoryChart';
 import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
+import { leaderboardScore } from './lib/derivedScore';
 import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
 
 const AuthModal = React.lazy(() =>
@@ -330,28 +331,21 @@ export default function App() {
       }
       setIsLoading(true);
       setDbError(null);
-      // Query authoritative SQL leaderboard view with fallback to series table
-      let { data, error } = await supabase
+      // The leaderboard view is the only source for displayed scores.
+      const { data, error } = await supabase
         .from('series_leaderboard')
         .select('*');
 
-      if (error || !data || data.length === 0) {
-        if (error) {
-          console.warn('⚠️ Warning: failed to fetch from series_leaderboard view, falling back to static series table:', error);
-          setViewWarning(`Failed to query dynamic 'series_leaderboard' view (${error.message || 'unknown'}). Displaying static series table fallback.`);
-        }
-        const fallback = await supabase
-          .from('series')
-          .select('*')
-          .order('buzz_score', { ascending: false });
-        data = fallback.data as any;
-        error = fallback.error;
-      } else {
-        setViewWarning(null);
-      }
-
       if (error) {
+        setViewWarning(`Failed to query dynamic 'series_leaderboard' view (${error.message}).`);
         setDbError(error.message);
+        setIsLoading(false);
+        return;
+      }
+      setViewWarning(null);
+
+      if (!data || data.length === 0) {
+        setSeriesList([]);
         setIsLoading(false);
         return;
       }
@@ -438,11 +432,9 @@ export default function App() {
 
         const mapped: SeriesItem[] = data.map((row: any) => ({
           ...row,
-          buzz_score: Number(
-            row.current_7d_score ?? row.buzz_score ?? 0
-          ),
+          buzz_score: leaderboardScore(row),
           delta_pct: row.delta_pct !== null && row.delta_pct !== undefined ? Number(row.delta_pct) : null,
-          daily_series: telemetryValuesMap.get(row.id) || [Number(row.current_7d_score ?? row.buzz_score ?? 0)],
+          daily_series: telemetryValuesMap.get(row.id) || [leaderboardScore(row)],
           daily_dates: telemetryDatesMap.get(row.id) || [],
           events: eventsMap.get(row.id) || [],
           is_breakout: breakoutMap.has(row.id),

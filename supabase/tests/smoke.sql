@@ -196,8 +196,16 @@ DECLARE
   v_deck UUID[];
   v_res JSONB;
   v_caught BOOLEAN;
+  v_rpc_definition TEXT;
 BEGIN
   RAISE NOTICE 'Testing submit_daily_score RPC...';
+
+  SELECT pg_get_functiondef('public.submit_daily_score(date,jsonb)'::regprocedure)
+  INTO v_rpc_definition;
+  IF position('s.buzz_score' IN v_rpc_definition) > 0
+     OR position('FROM series s' IN v_rpc_definition) > 0 THEN
+    RAISE EXCEPTION 'submit_daily_score reads a stored series score instead of the leaderboard view';
+  END IF;
 
   SELECT id INTO v_show_a FROM series ORDER BY id LIMIT 1 OFFSET 0;
   SELECT id INTO v_show_b FROM series ORDER BY id LIMIT 1 OFFSET 1;
