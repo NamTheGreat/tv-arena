@@ -3,7 +3,21 @@ use chrono::Utc;
 use serde_json::json;
 
 use crate::config::Config;
-use crate::models::{SeedSeriesPayload, SeriesRow};
+use crate::models::{DeckCandidate, SeedSeriesPayload, SeriesRow};
+
+pub fn fetch_deck_candidates(client: &ureq::Agent, config: &Config) -> Result<Vec<DeckCandidate>> {
+    let url = format!(
+        "{}/rest/v1/series_deck_candidates?select=id,current_7d_score,telemetry_days&order=current_7d_score.asc&limit=1000",
+        config.supabase_url
+    );
+    client
+        .get(&url)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .call()?
+        .into_json()
+        .context("Failed to parse daily deck candidates from Supabase")
+}
 
 pub fn fetch_series(client: &ureq::Agent, config: &Config) -> Result<Vec<SeriesRow>> {
     let list_url = format!(

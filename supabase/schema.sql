@@ -114,6 +114,31 @@ FROM daily_buckets;
 
 GRANT SELECT ON series_leaderboard TO anon, authenticated;
 
+CREATE OR REPLACE VIEW series_deck_candidates
+WITH (security_invoker = on) AS
+WITH anchor AS (
+  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  FROM series_daily_telemetry
+)
+SELECT
+  l.id,
+  l.current_7d_score,
+  COUNT(t.recorded_date) FILTER (
+    WHERE t.recorded_date > a.max_date - INTERVAL '7 days'
+      AND t.recorded_date <= a.max_date
+  )::BIGINT AS telemetry_days
+FROM series_leaderboard l
+CROSS JOIN anchor a
+LEFT JOIN series_daily_telemetry t ON t.series_id = l.id
+GROUP BY l.id, l.current_7d_score, a.max_date
+HAVING l.current_7d_score > 0
+   AND COUNT(t.recorded_date) FILTER (
+     WHERE t.recorded_date > a.max_date - INTERVAL '7 days'
+       AND t.recorded_date <= a.max_date
+   ) >= 7;
+
+GRANT SELECT ON series_deck_candidates TO anon, authenticated;
+
 -- Aggregate recent 90-day telemetry as arrays to guarantee 1 row per show (bypasses 1,000-row PostgREST limits)
 DROP VIEW IF EXISTS series_recent_telemetry CASCADE;
 
@@ -318,7 +343,6 @@ DECLARE
   v_score_a BIGINT;
   v_score_b BIGINT;
   v_guess TEXT;
-  v_is_higher BOOLEAN;
   v_deck_len INT;
 BEGIN
   v_uid := auth.uid();
@@ -352,24 +376,20 @@ BEGIN
     RAISE EXCEPTION 'Score already submitted for this daily challenge';
   END IF;
 
-  -- Score answers against dynamic series_leaderboard with fallback to stored buzz_score
+  -- Grade against the same dynamic leaderboard score used to build the deck.
   FOR i IN 0 .. (LEAST(v_deck_len - 2, 9)) LOOP
     v_show_a_id := v_deck[i + 1];
     v_show_b_id := v_deck[i + 2];
     v_guess := p_answers->>i;
 
-    SELECT COALESCE(l.current_7d_score, s.buzz_score, 0) INTO v_score_a 
-    FROM series s 
-    LEFT JOIN series_leaderboard l ON s.id = l.id 
-    WHERE s.id = v_show_a_id;
+    SELECT COALESCE(current_7d_score, 0) INTO v_score_a
+    FROM series_leaderboard WHERE id = v_show_a_id;
 
-    SELECT COALESCE(l.current_7d_score, s.buzz_score, 0) INTO v_score_b 
-    FROM series s 
-    LEFT JOIN series_leaderboard l ON s.id = l.id 
-    WHERE s.id = v_show_b_id;
+    SELECT COALESCE(current_7d_score, 0) INTO v_score_b
+    FROM series_leaderboard WHERE id = v_show_b_id;
 
-    v_is_higher := v_score_b >= v_score_a;
-    IF (v_guess = 'higher' AND v_is_higher) OR (v_guess = 'lower' AND NOT v_is_higher) THEN
+    IF (v_guess = 'higher' AND v_score_b > v_score_a)
+      OR (v_guess = 'lower' AND v_score_b < v_score_a) THEN
       v_calculated_score := v_calculated_score + 1;
     END IF;
   END LOOP;

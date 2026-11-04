@@ -86,11 +86,27 @@ BEGIN
     RAISE EXCEPTION 'Expected delta_pct to be 0.00 for flat show, got %', v_delta;
   END IF;
 
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
+  SELECT v_test_show_id, v_anchor_date - day_offset, 0, 100, 0, 0
+  FROM generate_series(1, 7) AS days(day_offset)
+  ON CONFLICT (series_id, recorded_date) DO NOTHING;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM series_deck_candidates c
+    JOIN series_leaderboard l ON l.id = c.id
+    WHERE c.id = v_test_show_id
+      AND c.telemetry_days = 7
+      AND c.current_7d_score = l.current_7d_score
+      AND c.current_7d_score > 0
+  ) THEN
+    RAISE EXCEPTION 'Expected eligible candidate to use leaderboard score with seven days of history';
+  END IF;
+
   -- A NULL Reddit observation is unavailable data, and still scores wiki only.
   INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
-  VALUES (v_test_show_id, v_anchor_date - INTERVAL '2 days', 0, 1000, NULL, NULL, FALSE);
+  VALUES (v_test_show_id, v_anchor_date - INTERVAL '9 days', 0, 1000, NULL, NULL, FALSE);
   SELECT daily_score INTO v_daily_score FROM series_daily_scores
-  WHERE series_id = v_test_show_id AND recorded_date = v_anchor_date - INTERVAL '2 days';
+  WHERE series_id = v_test_show_id AND recorded_date = v_anchor_date - INTERVAL '9 days';
   IF v_daily_score <> 10000 THEN
     RAISE EXCEPTION 'Expected NULL Reddit to retain wiki-only score 10000, got %', v_daily_score;
   END IF;
