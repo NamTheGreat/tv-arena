@@ -440,7 +440,7 @@ export function TrajectoryChart({
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="inline-block w-2 h-2 rounded-full bg-brand-terracotta ring-4 ring-brand-terracotta/20 animate-pulse" />
-              <span className="text-xs font-semibold tracking-widest uppercase text-stone-500">
+              <span className="text-xs font-semibold tracking-widest uppercase text-stone-600">
                 Workbench: Daily Active Household Viewers
               </span>
               {breakoutShow && (
@@ -454,20 +454,20 @@ export function TrajectoryChart({
                   <span>
                     Breakout: <strong>{breakoutShow.title}</strong> (+{(breakoutShow.delta_pct ?? 0).toFixed(1)}%)
                   </span>
-                  <span className="text-stone-400 font-mono">·</span>
+                  <span className="text-stone-600 font-mono">·</span>
                   <span className="text-brand-terracotta font-medium hover:underline">
                     {selectedSlugs.includes(breakoutShow.slug) ? '✓ Plotted' : '+ Pin to Plot'}
                   </span>
                 </button>
               )}
             </div>
-            <p className="text-xs text-stone-400 mt-1">
+            <p className="text-xs text-stone-600 mt-1">
               Multivariate syndicated trajectory analyzer · Comparing {selectedSlugs.length} of 8 maximum series
             </p>
           </div>
 
           <div className="flex items-center gap-2 self-start lg:self-auto">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 mr-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-600 mr-1">
               Range:
             </span>
             <div className="inline-flex items-center bg-[#F3EFE9] p-0.5 rounded-full text-[11px] font-medium border border-[#E7DFD5]">
@@ -481,7 +481,7 @@ export function TrajectoryChart({
                     className={`px-2.5 py-0.5 rounded-full whitespace-nowrap transition-colors ${
                       chartRange === r
                         ? 'bg-white text-stone-800 shadow-sm font-semibold'
-                        : 'text-stone-500 hover:text-stone-900'
+                        : 'text-stone-600 hover:text-stone-900'
                     }`}
                   >
                     {label}
@@ -495,7 +495,7 @@ export function TrajectoryChart({
         {/* Cohort Presets Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-stone-100">
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 mr-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-600 mr-1.5">
               Cohort Presets:
             </span>
             <button
@@ -569,7 +569,7 @@ export function TrajectoryChart({
                 <span>
                   {activePreset.startsWith('genre:') ? activePreset.replace('genre:', '') : 'Genre'}
                 </span>
-                <span className="text-[10px] text-stone-400">▾</span>
+                <span className="text-[10px] text-stone-600">▾</span>
               </button>
               {genreDropdownOpen && (
                 <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-2xl shadow-nav border border-[#ECE5DC] py-1.5 z-30 text-xs">
@@ -626,7 +626,7 @@ export function TrajectoryChart({
                   style={{ backgroundColor: show.assignedColor }}
                 />
                 <span className="text-stone-800">{show.title}</span>
-                <span className="text-[10px] text-stone-400 font-mono uppercase">
+                <span className="text-[10px] text-stone-600 font-mono uppercase">
                   {show.network}
                 </span>
                 {selectedSlugs.length > 1 && (
@@ -636,7 +636,7 @@ export function TrajectoryChart({
                       e.stopPropagation();
                       removeShow(show.slug);
                     }}
-                    className="text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-full w-4 h-4 inline-flex items-center justify-center transition-colors -mr-0.5"
+                    className="text-stone-600 hover:text-stone-700 hover:bg-stone-100 rounded-full w-4 h-4 inline-flex items-center justify-center transition-colors -mr-0.5"
                     title={`Remove ${show.title}`}
                     aria-label={`Remove ${show.title}`}
                   >
@@ -678,7 +678,7 @@ export function TrajectoryChart({
               <div className="absolute left-0 sm:right-0 sm:left-auto mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-nav border border-[#ECE5DC] p-3 z-40 text-xs">
                 {/* Search Bar */}
                 <div className="flex items-center gap-2 pb-2 mb-2 border-b border-stone-100">
-                  <span className="text-stone-400">🔍</span>
+                  <span className="text-stone-600">🔍</span>
                   <input
                     type="text"
                     value={pickerQuery}
@@ -691,7 +691,7 @@ export function TrajectoryChart({
                     <button
                       type="button"
                       onClick={() => setPickerQuery('')}
-                      className="w-4 h-4 rounded-full inline-flex items-center justify-center text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-colors"
+                      className="w-4 h-4 rounded-full inline-flex items-center justify-center text-stone-600 hover:text-stone-600 hover:bg-stone-100 transition-colors"
                       aria-label="Clear search"
                     >
                       <svg
@@ -727,7 +727,7 @@ export function TrajectoryChart({
                 </div>
 
                 {/* Status Bar */}
-                <div className="flex items-center justify-between text-[10px] text-stone-400 font-medium px-1 pb-1.5 border-b border-stone-100">
+                <div className="flex items-center justify-between text-[10px] text-stone-600 font-medium px-1 pb-1.5 border-b border-stone-100">
                   <span>{pickerUnplottedCount} available to add</span>
                   <span>{selectedSlugs.length}/8 active</span>
                 </div>
@@ -735,7 +735,7 @@ export function TrajectoryChart({
                 {/* Scrollable Series List */}
                 <div className="max-h-72 overflow-y-auto space-y-1 pr-0.5 mt-1">
                   {filteredPickerShows.length === 0 ? (
-                    <p className="text-center py-6 text-stone-400 text-xs">
+                    <p className="text-center py-6 text-stone-600 text-xs">
                       No matching series found.
                     </p>
                   ) : (
@@ -750,7 +750,7 @@ export function TrajectoryChart({
                         >
                           <div className="flex flex-col min-w-0 pr-2">
                             <span className="font-semibold text-stone-800 truncate">{s.title}</span>
-                            <span className="text-[10px] text-stone-400 truncate">
+                            <span className="text-[10px] text-stone-600 truncate">
                               {s.network} · {s.genre_group}
                             </span>
                           </div>
@@ -785,7 +785,7 @@ export function TrajectoryChart({
 
                 {/* Footer with Done button */}
                 <div className="pt-2 mt-2 border-t border-stone-100 flex items-center justify-between text-xs">
-                  <span className="text-[10px] text-stone-400">
+                  <span className="text-[10px] text-stone-600">
                     {selectedSlugs.length >= 8 ? 'Capacity full (replaces oldest)' : 'Select up to 8'}
                   </span>
                   <button
@@ -1008,7 +1008,7 @@ export function TrajectoryChart({
 
       {/* Cumulative Horizontal Volume Bars (1:1 with Active Plotted Shows) */}
       <div className="pt-6 border-t border-stone-200/60 space-y-4" data-purpose="volume-breakdown">
-        <div className="flex items-center justify-between text-xs text-stone-500 font-medium">
+        <div className="flex items-center justify-between text-xs text-stone-600 font-medium">
           <span>Cumulative Period Telemetry (Active Plotted Shows · {chartRange})</span>
           <span>Total Measured Viewers</span>
         </div>
@@ -1027,7 +1027,7 @@ export function TrajectoryChart({
                   isIsolated ? 'bg-stone-100/80 shadow-sm' : 'hover:bg-stone-50/60'
                 }`}
               >
-                <span className="text-xs font-mono font-semibold text-stone-400 w-5">
+                <span className="text-xs font-mono font-semibold text-stone-600 w-5">
                   #{idx + 1}
                 </span>
                 <span className="w-40 sm:w-48 text-sm font-medium text-stone-800 shrink-0 font-serif md:text-base flex items-center gap-2 truncate">
@@ -1060,12 +1060,12 @@ export function TrajectoryChart({
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600 hover:text-brand-terracotta transition-colors"
             >
               <span>{catalogDrawerOpen ? '▲ Hide Catalog Browser' : '▼ Browse All 200+ Series Trajectories'}</span>
-              <span className="text-[10px] text-stone-400 font-normal">
+              <span className="text-[10px] text-stone-600 font-normal">
                 ({seriesList.length} total series)
               </span>
             </button>
             {catalogDrawerOpen && (
-              <span className="text-[11px] text-stone-400 font-medium">
+              <span className="text-[11px] text-stone-600 font-medium">
                 Click "+ Pin" to add any show to the active SVG chart (up to 8)
               </span>
             )}
@@ -1074,7 +1074,7 @@ export function TrajectoryChart({
           {catalogDrawerOpen && (
             <div className="mt-4 p-4 bg-[#FAF6F0] rounded-2xl border border-stone-200/70 space-y-3">
               <div className="flex items-center gap-2 p-2 bg-white rounded-xl border border-stone-200 shadow-sm">
-                <span className="text-stone-400 text-sm">🔍</span>
+                <span className="text-stone-600 text-sm">🔍</span>
                 <input
                   type="text"
                   value={catalogQuery}
@@ -1086,7 +1086,7 @@ export function TrajectoryChart({
                   <button
                     type="button"
                     onClick={() => setCatalogQuery('')}
-                    className="text-xs text-stone-400 hover:text-stone-700"
+                    className="text-xs text-stone-600 hover:text-stone-700"
                   >
                     Clear
                   </button>
@@ -1102,7 +1102,7 @@ export function TrajectoryChart({
                       className="py-2 px-1 flex items-center justify-between hover:bg-white/80 rounded-lg transition-colors text-xs"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="font-mono text-stone-400 text-[11px] w-6">#{i + 1}</span>
+                        <span className="font-mono text-stone-600 text-[11px] w-6">#{i + 1}</span>
                         <div>
                           <div className="font-medium text-stone-800 flex items-center gap-1.5">
                             <span>{s.title}</span>
@@ -1112,7 +1112,7 @@ export function TrajectoryChart({
                               </span>
                             )}
                           </div>
-                          <div className="text-[10px] text-stone-400">
+                          <div className="text-[10px] text-stone-600">
                             {s.network} · {s.genre_group} · {s.release_years}
                           </div>
                         </div>
