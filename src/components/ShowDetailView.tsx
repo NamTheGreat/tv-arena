@@ -118,7 +118,7 @@ export function ShowDetailView({ seriesList }: ShowDetailViewProps) {
           <span className="text-[11px] text-stone-500">Relative Scale</span>
         </div>
         <div className="w-full h-24 sm:h-32">
-          <svg className="w-full h-full" viewBox="0 0 340 185" preserveAspectRatio="none">
+          <svg role="img" aria-label={`${show.title} engagement trajectory over seven days`} className="w-full h-full" viewBox="0 0 340 185" preserveAspectRatio="none">
             <path
               d={pathD}
               fill="none"
