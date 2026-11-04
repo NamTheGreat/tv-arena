@@ -81,7 +81,7 @@ export function TrajectoryChart({
 
       {/* Cumulative Horizontal Volume Bars (1:1 with Active Plotted Shows) */}
       <div className="pt-6 border-t border-stone-200/60 space-y-4" data-purpose="volume-breakdown">
-        <div className="flex items-center justify-between text-xs text-stone-500 font-medium">
+        <div className="flex items-center justify-between text-xs text-stone-600 font-medium">
           <span>Cumulative Period Telemetry (Active Plotted Shows · {chartRange})</span>
           <span>Total Measured Viewers</span>
         </div>
@@ -100,7 +100,7 @@ export function TrajectoryChart({
                   isIsolated ? 'bg-stone-100/80 shadow-sm' : 'hover:bg-stone-50/60'
                 }`}
               >
-                <span className="text-xs font-mono font-semibold text-stone-400 w-5">
+                <span className="text-xs font-mono font-semibold text-stone-600 w-5">
                   #{idx + 1}
                 </span>
                 <span className="w-40 sm:w-48 text-sm font-medium text-stone-800 shrink-0 font-serif md:text-base flex items-center gap-2 truncate">
@@ -133,12 +133,12 @@ export function TrajectoryChart({
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600 hover:text-brand-terracotta transition-colors"
             >
               <span>{catalogDrawerOpen ? '▲ Hide Catalog Browser' : '▼ Browse All 200+ Series Trajectories'}</span>
-              <span className="text-[10px] text-stone-400 font-normal">
+              <span className="text-[10px] text-stone-600 font-normal">
                 ({seriesList.length} total series)
               </span>
             </button>
             {catalogDrawerOpen && (
-              <span className="text-[11px] text-stone-400 font-medium">
+              <span className="text-[11px] text-stone-600 font-medium">
                 Click "+ Pin" to add any show to the active SVG chart (up to 8)
               </span>
             )}
@@ -147,7 +147,7 @@ export function TrajectoryChart({
           {catalogDrawerOpen && (
             <div className="mt-4 p-4 bg-[#FAF6F0] rounded-2xl border border-stone-200/70 space-y-3">
               <div className="flex items-center gap-2 p-2 bg-white rounded-xl border border-stone-200 shadow-sm">
-                <span className="text-stone-400 text-sm">🔍</span>
+                <span className="text-stone-600 text-sm">🔍</span>
                 <input
                   type="text"
                   value={catalogQuery}
@@ -159,7 +159,7 @@ export function TrajectoryChart({
                   <button
                     type="button"
                     onClick={() => setCatalogQuery('')}
-                    className="text-xs text-stone-400 hover:text-stone-700"
+                    className="text-xs text-stone-600 hover:text-stone-700"
                   >
                     Clear
                   </button>
@@ -175,7 +175,7 @@ export function TrajectoryChart({
                       className="py-2 px-1 flex items-center justify-between hover:bg-white/80 rounded-lg transition-colors text-xs"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="font-mono text-stone-400 text-[11px] w-6">#{i + 1}</span>
+                        <span className="font-mono text-stone-600 text-[11px] w-6">#{i + 1}</span>
                         <div>
                           <div className="font-medium text-stone-800 flex items-center gap-1.5">
                             <span>{s.title}</span>
@@ -185,7 +185,7 @@ export function TrajectoryChart({
                               </span>
                             )}
                           </div>
-                          <div className="text-[10px] text-stone-400">
+                          <div className="text-[10px] text-stone-600">
                             {s.network} · {s.genre_group} · {s.release_years}
                           </div>
                         </div>
