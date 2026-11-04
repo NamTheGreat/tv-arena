@@ -20,6 +20,7 @@ import {
 } from '../lib/dailyChallenge';
 import { GameOverModal } from './GameOverModal';
 import { DailyResultCard } from './DailyResultCard';
+import { drawNextEndlessIndex, getEndlessDeck, shuffledIndexes } from '../lib/endlessGame';
 
 type GameMode = 'endless' | 'daily';
 type DeckFilter = 'all' | 'streaming' | 'classics' | 'scifi';
@@ -274,7 +275,7 @@ export function TriviaGame({
   // Filtered deck for endless mode
   const endlessDeck = useMemo(() => {
     if (seriesList.length === 0) return [];
-    return seriesList.filter((s) => {
+    const filtered = seriesList.filter((s) => {
       if (deckFilter === 'streaming') {
         return ['Netflix', 'Apple TV+', 'HBO', 'FX / Hulu', 'Prime Video', 'Disney+'].some((n) =>
           s.network.includes(n)
@@ -298,6 +299,7 @@ export function TriviaGame({
       }
       return true;
     });
+    return getEndlessDeck(filtered);
   }, [seriesList, deckFilter]);
 
   // Daily deck resolved from daily_challenges table
@@ -316,6 +318,7 @@ export function TriviaGame({
   const [dailyScore, setDailyScore] = useState(0);
   const [knownIdx, setKnownIdx] = useState(0);
   const [challengerIdx, setChallengerIdx] = useState(1);
+  const [endlessBag, setEndlessBag] = useState<number[]>([]);
   const [streak, setStreak] = useState(0);
   const [recordedFinalStreak, setRecordedFinalStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(() => {
@@ -340,13 +343,15 @@ export function TriviaGame({
         setVerifiedScore(null);
         setIsGameOverModalOpen(false);
       } else {
-        setKnownIdx(0);
-        setChallengerIdx(1 % activeDeck.length);
+        const bag = shuffledIndexes(activeDeck.length);
+        setKnownIdx(bag[0]);
+        setChallengerIdx(bag[1]);
+        setEndlessBag(bag.slice(2));
       }
       setRevealed(false);
       setLastGuessCorrect(null);
     }
-  }, [deckFilter, gameMode, activeDeck.length, todayStr]);
+  }, [deckFilter, gameMode, activeDeck, todayStr]);
 
   // Current shows
   const knownShow = activeDeck[knownIdx % Math.max(1, activeDeck.length)] || null;
@@ -479,14 +484,11 @@ export function TriviaGame({
       setKnownIdx(nextRound);
       setChallengerIdx(nextRound + 1);
     } else {
-      // Endless mode: challenger becomes new known
-      const nextKnown = challengerIdx;
-      let nextChallenger = Math.floor(Math.random() * activeDeck.length);
-      if (nextChallenger === nextKnown) {
-        nextChallenger = (nextKnown + 1) % activeDeck.length;
-      }
-      setKnownIdx(nextKnown);
-      setChallengerIdx(nextChallenger);
+      const next = drawNextEndlessIndex(endlessBag, activeDeck.length, challengerIdx);
+      if (next.index < 0) return;
+      setKnownIdx(challengerIdx);
+      setChallengerIdx(next.index);
+      setEndlessBag(next.bag);
     }
 
     setRevealed(false);
@@ -824,7 +826,7 @@ export function TriviaGame({
         </div>
       ) : activeDeck.length < 2 ? (
         <div className="text-center py-12 text-sm text-arena-muted">
-          Not enough shows in this deck category. Select a different theme filter above.
+          Not enough eligible shows in this deck category. Try a different filter or come back after more data is available.
         </div>
       ) : (
         /* GAMEPLAY SECTION */
