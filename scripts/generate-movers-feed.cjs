@@ -72,7 +72,13 @@ async function fetchRows(baseUrl, key, table, query) {
   const response = await fetch(`${baseUrl.replace(/\/$/, '')}/rest/v1/${table}?${query}`, {
     headers: { apikey: key, Authorization: `Bearer ${key}` },
   });
-  if (!response.ok) throw new Error(`Supabase ${table} query failed (${response.status})`);
+  if (!response.ok) {
+    if (response.status === 404 && table === 'series_weekly_movers') {
+      console.warn('Weekly movers view is not deployed; generating a feed without mover entries.');
+      return [];
+    }
+    throw new Error(`Supabase ${table} query failed (${response.status})`);
+  }
   return response.json();
 }
 
@@ -108,4 +114,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildMoversFeed, escapeXml };
+module.exports = { buildMoversFeed, escapeXml, fetchRows };
