@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { buildMoversFeed, escapeXml } = require('./generate-movers-feed.cjs');
+const { buildMoversFeed, escapeXml, fetchRows } = require('./generate-movers-feed.cjs');
 
 const now = new Date('2026-11-04T12:00:00Z');
 const feed = buildMoversFeed({
@@ -28,4 +28,14 @@ assert.doesNotMatch(feed, /New Show/);
 assert.doesNotMatch(feed, /Old Week/);
 assert.match(feed, /https:\/\/example\.test\/movers\.xml/);
 assert.equal(escapeXml(`&<>"'`), '&amp;&lt;&gt;&quot;&apos;');
-console.log('Movers RSS generation tests passed.');
+
+(async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({ ok: false, status: 404 });
+  assert.deepEqual(await fetchRows('https://example.test', 'key', 'series_weekly_movers', 'select=*'), []);
+  global.fetch = originalFetch;
+  console.log('Movers RSS generation tests passed.');
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
