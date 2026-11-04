@@ -18,7 +18,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, params, env }) =>
         <span style="font-size:22px; font-weight:700; color:#65584f;">DAILY RUN #${result.dailyNumber}</span>
       </div>
       <div style="display:flex; flex-direction:column; align-items:center; gap:28px;">
-        <div style="font-size:94px; font-weight:800; color:#231e1a;">${result.score}<span style="font-size:44px; color:#65584f;"> / 10</span></div>
+        <div style="display:flex; align-items:baseline; font-size:94px; font-weight:800; color:#231e1a;">${result.score}<span style="font-size:44px; color:#65584f;"> / 10</span></div>
         <div style="display:flex; gap:12px;">${cells}</div>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; border-top:2px solid #e5d9cf; padding-top:18px; font-size:18px; color:#65584f;">
