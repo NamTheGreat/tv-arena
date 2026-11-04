@@ -16,6 +16,7 @@ export const shows = Array.from({ length: 11 }, (_, index) => ({
   previous_7d_score: 0,
   delta_pct: 0,
   rank: index + 1,
+    daily_dates: Array.from({ length: 7 }, (_, day) => `2026-11-${String(day + 1).padStart(2, '0')}`),
 }));
 
 export async function mockSupabase(page: Page, dailyDeckLength = shows.length) {
@@ -26,7 +27,7 @@ export async function mockSupabase(page: Page, dailyDeckLength = shows.length) {
 
     if (path.endsWith('/series_leaderboard')) body = shows;
     else if (path.endsWith('/series_recent_telemetry')) {
-      body = shows.map((show) => ({ series_id: show.id, daily_series: [show.buzz_score], daily_dates: [] }));
+      body = shows.map((show) => ({ series_id: show.id, daily_series: [show.buzz_score], daily_dates: show.daily_dates }));
     } else if (path.endsWith('/daily_challenges')) {
       body = [{ series_ids: shows.slice(0, dailyDeckLength).map((show) => show.id) }];
     }
