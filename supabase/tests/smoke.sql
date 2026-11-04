@@ -196,14 +196,31 @@ BEGIN
 END $$;
 
 -- 5. RPC submit_daily_score Logic & Edge Cases
+CREATE TEMP TABLE daily_grading_contract_fixture (
+  position INT PRIMARY KEY,
+  wiki_views INT NOT NULL,
+  reddit_comments INT NOT NULL,
+  reddit_upvotes INT NOT NULL,
+  answer TEXT,
+  series_id UUID NOT NULL DEFAULT gen_random_uuid()
+);
+\copy daily_grading_contract_fixture (position, wiki_views, reddit_comments, reddit_upvotes, answer) FROM 'supabase/tests/fixtures/daily-grading.csv' WITH (FORMAT csv, HEADER)
+
+INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+SELECT series_id, 980000 + position, 'daily-contract-' || position, 'Daily Contract ' || position,
+       'Contract', 'Drama', '2026', '#111111', 'Daily_Contract_' || position, 'contract', 0
+FROM daily_grading_contract_fixture;
+
+INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
+SELECT series_id, (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE, 0, wiki_views, reddit_comments, reddit_upvotes
+FROM daily_grading_contract_fixture;
+
 DO $$
 DECLARE
   v_user_id UUID := '11111111-1111-1111-1111-111111111111'::UUID;
   v_today DATE := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE;
-  v_show_a UUID;
-  v_show_b UUID;
-  v_show_c UUID;
   v_deck UUID[];
+  v_answers JSONB;
   v_res JSONB;
   v_caught BOOLEAN;
   v_rpc_definition TEXT;
@@ -217,10 +234,10 @@ BEGIN
     RAISE EXCEPTION 'submit_daily_score reads a stored series score instead of the leaderboard view';
   END IF;
 
-  SELECT id INTO v_show_a FROM series ORDER BY id LIMIT 1 OFFSET 0;
-  SELECT id INTO v_show_b FROM series ORDER BY id LIMIT 1 OFFSET 1;
-  SELECT id INTO v_show_c FROM series ORDER BY id LIMIT 1 OFFSET 2;
-  v_deck := ARRAY[v_show_a, v_show_b, v_show_c];
+  SELECT array_agg(series_id ORDER BY position) INTO v_deck
+  FROM daily_grading_contract_fixture;
+  SELECT to_jsonb(array_agg(answer ORDER BY position) FILTER (WHERE position > 1))
+  INTO v_answers FROM daily_grading_contract_fixture;
 
   -- Seed challenge deck for today
   INSERT INTO daily_challenges (date, series_ids)
@@ -254,15 +271,18 @@ BEGIN
   END IF;
 
   -- 5c. Valid submission must succeed
-  v_res := submit_daily_score(v_today, '["higher", "lower"]'::jsonb);
+  v_res := submit_daily_score(v_today, v_answers);
   IF (v_res->>'success')::BOOLEAN <> TRUE THEN
     RAISE EXCEPTION 'submit_daily_score did not return success: true';
+  END IF;
+  IF (v_res->>'score')::INT <> 2 THEN
+    RAISE EXCEPTION 'submit_daily_score disagrees with the strict-comparison contract fixture: %', v_res->>'score';
   END IF;
 
   -- 5d. Duplicate submission for same date must fail
   v_caught := FALSE;
   BEGIN
-    PERFORM submit_daily_score(v_today, '["higher", "lower"]'::jsonb);
+    PERFORM submit_daily_score(v_today, v_answers);
   EXCEPTION WHEN OTHERS THEN
     v_caught := TRUE;
   END;
