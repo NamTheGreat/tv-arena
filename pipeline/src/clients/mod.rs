@@ -1,3 +1,4 @@
+pub mod digest;
 pub mod http;
 pub mod reddit;
 pub mod supabase;

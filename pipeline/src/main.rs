@@ -25,6 +25,8 @@ enum Commands {
     Sync,
     /// Weekly: Fetch premiere/finale episode dates from TMDb and upsert series events
     Events,
+    /// Format daily movers and breakout digest; posts only when DIGEST_WEBHOOK_URL is set
+    Digest,
     /// Pick 11 shows for daily challenge deck and insert into Supabase
     DailyDeck {
         #[arg(short, long)]
@@ -48,6 +50,7 @@ fn main() -> Result<()> {
         Commands::Seed { csv, limit } => commands::seed::run_seed(csv.as_deref(), limit, &config)?,
         Commands::Sync => commands::sync::run_sync(&config)?,
         Commands::Events => commands::events::run_events(&config)?,
+        Commands::Digest => commands::digest::run_digest(&config)?,
         Commands::DailyDeck { date } => commands::daily_deck::run_daily_deck(&config, date)?,
         Commands::Backfill { days, slug } => {
             commands::backfill::run_backfill(&config, days, slug.as_deref())?

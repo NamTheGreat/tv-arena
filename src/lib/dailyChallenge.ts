@@ -113,6 +113,39 @@ export async function fetchMyDailyScore(
   }
 }
 
+export interface DailyScoreShare {
+  token: string;
+  date: string;
+  score: number;
+  correctness: boolean[];
+}
+
+export async function createDailyScoreShare(dateStr: string): Promise<DailyScoreShare | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.rpc('create_daily_score_share', { p_date: dateStr });
+    if (error || !data || typeof data !== 'object' || Array.isArray(data)) return null;
+    const row = data as Record<string, unknown>;
+    const { token, date, score, correctness } = row;
+    if (
+      typeof token !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(token) ||
+      date !== dateStr ||
+      !Number.isInteger(score) || Number(score) < 0 || Number(score) > 10 ||
+      !Array.isArray(correctness) || correctness.length !== 10 ||
+      !correctness.every((item) => typeof item === 'boolean') ||
+      correctness.filter(Boolean).length !== score
+    ) return null;
+    return { token, date: date as string, score: score as number, correctness: correctness as boolean[] };
+  } catch {
+    return null;
+  }
+}
+
+export function correctnessGrid(correctness: boolean[]): string | null {
+  if (correctness.length !== 10 || !correctness.every((item) => typeof item === 'boolean')) return null;
+  return correctness.map((correct) => correct ? '1' : '0').join('');
+}
+
 export interface StoredDailyResult {
   date: string;
   score: number;
@@ -165,6 +198,13 @@ export function isCorrectDailyAnswer(
   challengerScore: number
 ): boolean {
   return answer === 'higher' ? challengerScore > knownScore : challengerScore < knownScore;
+}
+
+export function scoreDailyAnswers(answers: ('higher' | 'lower')[], scores: number[]): number {
+  return answers.reduce(
+    (score, answer, index) => score + Number(isCorrectDailyAnswer(answer, scores[index], scores[index + 1])),
+    0
+  );
 }
 
 export function storeDailyResult(result: StoredDailyResult): void {

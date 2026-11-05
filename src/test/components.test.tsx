@@ -17,6 +17,7 @@ const mockShows: SeriesItem[] = [
     slug: 'severance',
     title: 'Severance',
     network: 'Apple TV+',
+    network_group: 'Apple TV+',
     genre_group: 'Drama & Sci-Fi',
     release_years: '2024–2025',
     chart_color: '#C66A3D',
@@ -33,6 +34,7 @@ const mockShows: SeriesItem[] = [
     slug: 'the-bear',
     title: 'The Bear',
     network: 'FX / Hulu',
+    network_group: 'FX / Hulu',
     genre_group: 'Comedy & Drama',
     release_years: '2024–2025',
     chart_color: '#5C828C',
@@ -86,6 +88,37 @@ describe('Core components headless tests', () => {
       }
     });
 
+    it('supports arrow and enter selection in the contender combobox', () => {
+      const onSelectLeftShow = vi.fn();
+      const stats = computeArenaStats(mockShows[0], mockShows[1]);
+      render(
+        <ArenaContenders
+          seriesList={mockShows}
+          leftShow={mockShows[0]}
+          rightShow={mockShows[1]}
+          leftSearch=""
+          rightSearch=""
+          leftDropdownOpen={true}
+          rightDropdownOpen={false}
+          setLeftSearch={vi.fn()}
+          setRightSearch={vi.fn()}
+          setLeftDropdownOpen={vi.fn()}
+          setRightDropdownOpen={vi.fn()}
+          onSelectLeftShow={onSelectLeftShow}
+          onSelectRightShow={vi.fn()}
+          onSwapShows={vi.fn()}
+          arenaStats={stats}
+        />
+      );
+
+      const combobox = screen.getByRole('combobox', { name: 'Search left contender' });
+      fireEvent.focus(combobox);
+      fireEvent.keyDown(combobox, { key: 'ArrowDown' });
+      expect(combobox).toHaveAttribute('aria-activedescendant', 'left-show-option-the-bear');
+      fireEvent.keyDown(combobox, { key: 'Enter' });
+      expect(onSelectLeftShow).toHaveBeenCalledWith(mockShows[1]);
+    });
+
     it('renders both contenders and shows the leading show', () => {
       const stats = computeArenaStats(mockShows[0], mockShows[1]);
       const setLeftSearch = vi.fn();
@@ -114,24 +147,89 @@ describe('Core components headless tests', () => {
       // Check titles rendered
       expect(screen.getByText('Severance')).toBeInTheDocument();
       expect(screen.getByText('The Bear')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /watchlist/i })).not.toBeInTheDocument();
       expect(screen.getByText('Apple TV+')).toBeInTheDocument();
       expect(screen.getByText('FX / Hulu')).toBeInTheDocument();
 
       // Check winner declared in footer
       expect(screen.getByText(/Severance leads/i)).toBeInTheDocument();
       expect(screen.getByText(/\+50\.0%/i)).toBeInTheDocument();
+      expect(screen.getByText('No shared daily history is available for these shows yet.')).toBeInTheDocument();
 
       // Check search input triggers callback
       const inputs = screen.getAllByPlaceholderText('Type a series...');
       fireEvent.change(inputs[0], { target: { value: 'Stranger' } });
       expect(setLeftSearch).toHaveBeenCalledWith('Stranger');
     });
+
+    it('overlays matching daily history and reports each show’s lead days', () => {
+      const leftShow = { ...mockShows[0], daily_dates: ['2026-01-01', '2026-01-02'], daily_series: [10, 5] };
+      const rightShow = { ...mockShows[1], daily_dates: ['2026-01-01', '2026-01-02'], daily_series: [5, 7] };
+      const stats = computeArenaStats(leftShow, rightShow);
+
+      render(
+        <ArenaContenders
+          seriesList={[leftShow, rightShow]}
+          leftShow={leftShow}
+          rightShow={rightShow}
+          leftSearch=""
+          rightSearch=""
+          leftDropdownOpen={false}
+          rightDropdownOpen={false}
+          setLeftSearch={vi.fn()}
+          setRightSearch={vi.fn()}
+          setLeftDropdownOpen={vi.fn()}
+          setRightDropdownOpen={vi.fn()}
+          onSelectLeftShow={vi.fn()}
+          onSelectRightShow={vi.fn()}
+          onSwapShows={vi.fn()}
+          arenaStats={stats}
+        />
+      );
+
+      expect(screen.getByText('Severance led on 1 of 30 days')).toBeInTheDocument();
+      expect(screen.getByText('The Bear led on 1 of 30 days')).toBeInTheDocument();
+      expect(screen.getByText(/2 days had recorded values for both shows/)).toBeInTheDocument();
+    });
   });
 
   describe('LeaderboardTable', () => {
+    it('toggles a saved show without activating the row battle link', () => {
+      const onSelectBattle = vi.fn();
+      const onToggleWatchlist = vi.fn();
+
+      render(
+        <LeaderboardTable
+          rankedShows={mockShows}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={vi.fn()}
+          onSortChange={vi.fn()}
+          onShowMore={vi.fn()}
+          platformFilter="ALL"
+          genreFilter="ALL"
+          availablePlatforms={['ALL']}
+          availableGenres={['ALL']}
+          maxLeaderboardViewers={1_200_000}
+          setPlatformFilter={vi.fn()}
+          setGenreFilter={vi.fn()}
+          onSelectBattle={onSelectBattle}
+          watchlistIds={[]}
+          onToggleWatchlist={onToggleWatchlist}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add Severance to watchlist' }));
+      expect(onToggleWatchlist).toHaveBeenCalledWith('id-1');
+      expect(onSelectBattle).not.toHaveBeenCalled();
+    });
+
     it('renders the leaderboard view score without a stored series score field', () => {
       const databaseViewRow = { current_7d_score: 1_200_000 };
       const viewOnlyShow = { ...mockShows[0], buzz_score: leaderboardScore(databaseViewRow) };
+      const staleStoredScoreRow = { current_7d_score: 1_200_000, buzz_score: 0 };
+      expect(leaderboardScore(staleStoredScoreRow)).toBe(1_200_000);
 
       render(
         <LeaderboardTable
@@ -321,6 +419,66 @@ describe('Core components headless tests', () => {
 
       expect(screen.getByText('Severance')).toBeInTheDocument();
       expect(screen.getByText('+14.2%')).toBeInTheDocument();
+    });
+
+    it('shows honest empty states for a show without telemetry history', () => {
+      const showWithoutHistory = {
+        ...mockShows[0],
+        daily_series: [],
+        daily_dates: [],
+        signal_contributions: { wiki_contribution: 0, reddit_contribution: 0, telemetry_days: 0, reddit_observed_days: 0 },
+      };
+      render(
+        <MemoryRouter initialEntries={['/show/severance']}>
+          <Routes>
+            <Route path="/show/:slug" element={<ShowDetailView seriesList={[showWithoutHistory]} />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('No telemetry history is available for this period.')).toBeInTheDocument();
+      expect(screen.getByText('No viewing history is available yet.')).toBeInTheDocument();
+    });
+
+    it('distinguishes unavailable contribution data from an empty history', () => {
+      render(
+        <MemoryRouter initialEntries={['/show/severance']}>
+          <Routes>
+            <Route path="/show/:slug" element={<ShowDetailView seriesList={[mockShows[0]]} />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('Signal contribution data is temporarily unavailable.')).toBeInTheDocument();
+    });
+
+    it('renders weighted signal contributions, recent events, and breakout details', () => {
+      const dates = Array.from({ length: 90 }, (_, index) => {
+        const date = new Date(Date.UTC(2026, 0, 1 + index));
+        return date.toISOString().slice(0, 10);
+      });
+      const showWithDetails = {
+        ...mockShows[0],
+        daily_series: Array.from({ length: 90 }, (_, index) => index + 1),
+        daily_dates: dates,
+        events: [{ series_id: mockShows[0].id, event_date: dates[50], kind: 'premiere' as const, label: 'Season premiere' }],
+        is_breakout: true,
+        breakout_reason: 'Growth exceeded the expected range.',
+        signal_contributions: { wiki_contribution: 1200, reddit_contribution: 350, telemetry_days: 7, reddit_observed_days: 5 },
+      };
+
+      render(
+        <MemoryRouter initialEntries={['/show/severance']}>
+          <Routes>
+            <Route path="/show/:slug" element={<ShowDetailView seriesList={[showWithDetails, mockShows[1]]} />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText('1,200')).toBeInTheDocument();
+      expect(screen.getByText('350')).toBeInTheDocument();
+      expect(screen.getByText(/Season premiere/)).toBeInTheDocument();
+      expect(screen.getByText(/Breakout detected: Growth exceeded the expected range/)).toBeInTheDocument();
     });
   });
 });
