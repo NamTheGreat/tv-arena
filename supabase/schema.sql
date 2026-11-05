@@ -698,6 +698,18 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Show must have at least seven days of telemetry before prediction week';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM series_daily_telemetry t
+    JOIN series_daily_scores d ON d.telemetry_id = t.id
+    WHERE t.series_id = p_series_id
+      AND t.recorded_date >= p_week_start - 7
+      AND t.recorded_date < p_week_start
+    GROUP BY t.series_id
+    HAVING SUM(d.daily_score) > 0
+  ) THEN
+    RAISE EXCEPTION 'Show must have a positive prior-week score to be eligible for mover ranking';
+  END IF;
 
   INSERT INTO mover_predictions (week_start, user_id, series_id)
   VALUES (p_week_start, v_user_id, p_series_id)

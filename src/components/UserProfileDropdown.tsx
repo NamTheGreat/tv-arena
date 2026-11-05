@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { summarizeMoverPredictions } from '../lib/moverPredictionStats';
 
 export interface UserProfileDropdownProps {
   user: any;
@@ -26,27 +27,37 @@ export function UserProfileDropdown({
   const [usernameDraft, setUsernameDraft] = useState('');
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [predictionStats, setPredictionStats] = useState<ReturnType<typeof summarizeMoverPredictions> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Load user profile username from database
   useEffect(() => {
+    setPredictionStats(null);
     if (!user?.id || !supabase) {
       setUsername('');
+      setPredictionStats(null);
       return;
     }
     let active = true;
     async function loadProfile() {
       try {
         if (!supabase) return;
-        const { data } = await supabase
+        const [{ data }, { data: predictions }] = await Promise.all([
+          supabase
           .from('profiles')
           .select('username')
           .eq('id', user.id)
-          .maybeSingle();
+          .maybeSingle(),
+          supabase
+            .from('mover_predictions')
+            .select('points')
+            .not('graded_at', 'is', null),
+        ]);
 
         if (active && data?.username) {
           setUsername(data.username);
         }
+        if (active && predictions) setPredictionStats(summarizeMoverPredictions(predictions));
       } catch {
         // Fall back gracefully to email prefix
       }
@@ -239,6 +250,11 @@ export function UserProfileDropdown({
                   <p className="text-xs text-arena-muted font-sans truncate">
                     {user ? user.email : 'viewer@tvarena.internal'}
                   </p>
+                  {user && predictionStats && predictionStats.graded > 0 && (
+                    <p className="mt-1 text-[10px] text-arena-muted" aria-label="Weekly mover prediction accuracy">
+                      Weekly movers: top 3 {predictionStats.topThree}/{predictionStats.graded} · {predictionStats.points} points
+                    </p>
+                  )}
                 </>
               )}
             </div>

@@ -322,6 +322,7 @@ DECLARE
   v_user_id UUID := '11111111-1111-1111-1111-111111111111'::UUID;
   v_next_week DATE := date_trunc('week', (now() AT TIME ZONE 'UTC'))::DATE + 7;
   v_prediction_show UUID := gen_random_uuid();
+  v_zero_prior_show UUID := gen_random_uuid();
   v_week DATE := DATE '1900-01-01'; -- Monday; isolates ranking from other fixture data.
   v_grade_series UUID[] := ARRAY[gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid()];
   v_grade_users UUID[] := ARRAY[
@@ -369,6 +370,24 @@ BEGIN
     RAISE EXCEPTION 'Prediction RPC did not store the authenticated user''s eligible pick';
   END IF;
   RESET ROLE;
+
+  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES (v_zero_prior_show, 999961, 'mover-prediction-zero-prior-test', 'Mover Prediction Zero Prior Test', 'TestNet', 'Drama', '2026', '#111', 'Mover_Zero_Prior_Test', 'test', 0);
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
+  SELECT v_zero_prior_show, v_next_week - 7 - day_offset, 0, 100, 0, 0
+  FROM generate_series(1, 7) AS days(day_offset);
+
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
+  BEGIN
+    PERFORM submit_mover_prediction(v_next_week, v_zero_prior_show);
+  EXCEPTION WHEN raise_exception THEN
+    v_caught := TRUE;
+  END;
+  RESET ROLE;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'Prediction RPC accepted a show with no positive prior-week score';
+  END IF;
 
   INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   SELECT s_id, 999970 + n, 'mover-grade-test-' || n, 'Mover Grade Test ' || n, 'TestNet', 'Drama', '1900', '#111', 'Mover_Grade_Test', 'test', 0

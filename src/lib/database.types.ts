@@ -366,6 +366,36 @@ export type Database = {
         }
         Relationships: []
       }
+      mover_predictions: {
+        Row: {
+          week_start: string
+          user_id: string
+          series_id: string
+          points: number | null
+          actual_rank: number | null
+          created_at: string
+          graded_at: string | null
+        }
+        Insert: {
+          week_start: string
+          user_id: string
+          series_id: string
+          points?: number | null
+          actual_rank?: number | null
+          created_at?: string
+          graded_at?: string | null
+        }
+        Update: {
+          week_start?: string
+          user_id?: string
+          series_id?: string
+          points?: number | null
+          actual_rank?: number | null
+          created_at?: string
+          graded_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       series_leaderboard: {
