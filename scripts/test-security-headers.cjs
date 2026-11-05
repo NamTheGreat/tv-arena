@@ -12,8 +12,11 @@ for (const origin of [
   'https://fonts.gstatic.com',
   'https://*.supabase.co',
   'wss://*.supabase.co',
+  'https://challenges.cloudflare.com',
 ]) {
   assert.ok(headers.includes(origin), `expected CSP to allow ${origin}`);
 }
+assert.match(headers, /script-src 'self' https:\/\/challenges\.cloudflare\.com/);
+assert.match(headers, /frame-src https:\/\/challenges\.cloudflare\.com/);
 assert.ok(headers.includes('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()'));
 console.log('Report-Only CSP and Permissions-Policy verified.');

@@ -10,6 +10,6 @@ ALTER TABLE public.profiles
     'root', 'security', 'staff', 'support', 'system', 'tv_arena', 'tvarena',
     'verified', 'nigger', 'nigga', 'faggot', 'tranny', 'retard', 'kike',
     'spic', 'chink', 'coon', 'wetback'
-  )) NOT VALID;
+  ));
 
 COMMIT;
