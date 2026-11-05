@@ -13,6 +13,7 @@ function series(slug: string, change: number | null, breakout = false): SeriesIt
     slug,
     title: slug,
     network: 'Network',
+    network_group: 'Network',
     genre_group: 'Drama',
     release_years: '2020–present',
     chart_color: '#c66a3d',

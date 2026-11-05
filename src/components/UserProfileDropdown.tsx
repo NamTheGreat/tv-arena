@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 export interface UserProfileDropdownProps {
   user: any;
   bestStreak: number;
-  onSelectTab: (tab: 'leaderboard' | 'arena' | 'charts' | 'guess') => void;
+  onSelectTab: (tab: 'leaderboard' | 'arena' | 'charts' | 'guess' | 'watchlist') => void;
   onOpenAuth: () => void;
   onSignOut: () => void;
   onOpenMethodology: () => void;
@@ -374,6 +374,26 @@ export function UserProfileDropdown({
                 <span className="text-sm font-medium">Trajectory Charts</span>
               </div>
             </button>
+
+            {user && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSelectTab('watchlist');
+                  setIsOpen(false);
+                }}
+                className="w-full group flex items-center justify-between px-3.5 py-2.5 rounded-xl hover:bg-arena-surface transition-colors duration-150 text-stone-700 hover:text-stone-900 text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-arena-muted group-hover:text-arena-terracotta transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m12 3 2.7 5.47 6.03.88-4.36 4.25 1.03 6.01L12 16.77l-5.4 2.84 1.03-6.01L3.27 9.35l6.03-.88L12 3Z" />
+                    </svg>
+                  </span>
+                  <span className="text-sm font-medium">My Watchlist</span>
+                </div>
+              </button>
+            )}
 
             {/* Intelligence Methodology */}
             <button

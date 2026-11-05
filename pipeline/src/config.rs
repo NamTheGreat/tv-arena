@@ -10,6 +10,7 @@ pub struct Config {
     pub supabase_url: String,
     pub supabase_key: String,
     pub tmdb_api_key: Option<String>,
+    pub digest_webhook_url: Option<String>,
 }
 
 pub fn load_config() -> Result<Config> {
@@ -56,9 +57,15 @@ pub fn load_config() -> Result<Config> {
         .map(|k| k.trim().to_string())
         .filter(|k| !k.is_empty());
 
+    let digest_webhook_url = env::var("DIGEST_WEBHOOK_URL")
+        .ok()
+        .map(|url| url.trim().to_string())
+        .filter(|url| !url.is_empty());
+
     Ok(Config {
         supabase_url,
         supabase_key,
         tmdb_api_key,
+        digest_webhook_url,
     })
 }

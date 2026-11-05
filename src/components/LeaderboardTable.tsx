@@ -17,6 +17,12 @@ interface LeaderboardTableProps {
   setPlatformFilter: (platform: string) => void;
   setGenreFilter: (genre: string) => void;
   onSelectBattle: (slugA: string, slugB: string) => void;
+  watchlistIds?: string[];
+  pendingWatchlistIds?: string[];
+  onToggleWatchlist?: (seriesId: string) => void;
+  watchlistOnly?: boolean;
+  watchlistLoading?: boolean;
+  watchlistError?: string | null;
 }
 
 export function LeaderboardTable({
@@ -35,6 +41,12 @@ export function LeaderboardTable({
   setPlatformFilter,
   setGenreFilter,
   onSelectBattle,
+  watchlistIds = [],
+  pendingWatchlistIds = [],
+  onToggleWatchlist,
+  watchlistOnly = false,
+  watchlistLoading = false,
+  watchlistError = null,
 }: LeaderboardTableProps) {
   const visibleShows = rankedShows.slice(0, displayCount);
   return (
@@ -43,7 +55,7 @@ export function LeaderboardTable({
         <div className="flex items-center space-x-2 sm:space-x-2.5">
           <span className="inline-block w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full bg-brand-terracotta" />
           <span className="text-[10px] sm:text-xs uppercase tracking-wider font-semibold text-[#665D53]">
-            Metric: 7-Day Engagement Index
+            {watchlistOnly ? 'Your Watchlist' : 'Metric: 7-Day Engagement Index'}
           </span>
         </div>
         <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
@@ -108,6 +120,15 @@ export function LeaderboardTable({
       </div>
 
       <div className="mt-3 sm:mt-4 divide-y divide-[#F7F3ED]/75">
+        {watchlistError && <p role="alert" className="py-3 text-sm text-rose-700">{watchlistError}</p>}
+        {watchlistOnly && watchlistLoading && (
+          <p role="status" className="py-10 text-center text-sm text-[#665D53]">Loading your watchlist…</p>
+        )}
+        {watchlistOnly && rankedShows.length === 0 && !watchlistLoading && !watchlistError && (
+          <p className="py-10 text-center text-sm text-[#665D53]">
+            Your watchlist is empty. Star a show on the leaderboard to save it here.
+          </p>
+        )}
         {visibleShows.map((show, idx) => {
           const rank = sortBy === 'score' ? show.rank ?? idx + 1 : idx + 1;
           const widthPct = Math.round((show.buzz_score / maxLeaderboardViewers) * 100);
@@ -118,7 +139,11 @@ export function LeaderboardTable({
           return (
             <article
               key={show.slug}
-              onClick={() => onSelectBattle(show.slug, rankedShows[(idx + 1) % rankedShows.length].slug)}
+              onClick={() => {
+                if (rankedShows.length > 1) {
+                  onSelectBattle(show.slug, rankedShows[(idx + 1) % rankedShows.length].slug);
+                }
+              }}
               className={`ranking-row cursor-pointer relative overflow-hidden rounded-2xl py-2.5 sm:py-3.5 px-3 sm:px-4 my-1 sm:my-1.5 ${
                 rank === 1
                   ? 'bg-[#FBF7F0]/40 border border-[#F3ECE0]/80'
@@ -160,28 +185,47 @@ export function LeaderboardTable({
                   </div>
                 </div>
 
-                <div className="text-right shrink-0 font-tabular">
-                  <div className="font-serif text-base sm:text-xl font-medium text-[#1E1A17]">
-                    {show.buzz_score.toLocaleString()}
-                  </div>
-                  {isNew ? (
-                    <div className="text-[10px] sm:text-xs font-semibold text-brand-terracotta mt-0.5">
-                      NEW
-                    </div>
-                  ) : isSteady ? (
-                    <div className="text-[10px] sm:text-xs font-medium text-[#A3998D] mt-0.5">
-                      Steady
-                    </div>
-                  ) : (
-                    <div
-                      className={`text-[10px] sm:text-xs font-semibold flex items-center justify-end space-x-1 mt-0.5 ${
-                        isUp ? 'text-brand-success' : 'text-brand-danger'
-                      }`}
+                <div className="flex items-center gap-2 shrink-0">
+                  {onToggleWatchlist && (
+                    <button
+                      type="button"
+                      aria-label={`${watchlistIds.includes(show.id) ? 'Remove' : 'Add'} ${show.title} ${watchlistIds.includes(show.id) ? 'from' : 'to'} watchlist`}
+                      aria-pressed={watchlistIds.includes(show.id)}
+                      disabled={pendingWatchlistIds.includes(show.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onToggleWatchlist(show.id);
+                      }}
+                      className="rounded-full p-2 text-[#665D53] hover:text-brand-terracotta hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-terracotta disabled:opacity-50"
                     >
-                      <span>{isUp ? '▲' : '▼'}</span>
-                      <span>{Math.abs(show.delta_pct || 0).toFixed(1)}%</span>
-                    </div>
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill={watchlistIds.includes(show.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m12 3 2.7 5.47 6.03.88-4.36 4.25 1.03 6.01L12 16.77l-5.4 2.84 1.03-6.01L3.27 9.35l6.03-.88L12 3Z" />
+                      </svg>
+                    </button>
                   )}
+                  <div className="text-right font-tabular">
+                    <div className="font-serif text-base sm:text-xl font-medium text-[#1E1A17]">
+                      {show.buzz_score.toLocaleString()}
+                    </div>
+                    {isNew ? (
+                      <div className="text-[10px] sm:text-xs font-semibold text-brand-terracotta mt-0.5">
+                        NEW
+                      </div>
+                    ) : isSteady ? (
+                      <div className="text-[10px] sm:text-xs font-medium text-[#A3998D] mt-0.5">
+                        Steady
+                      </div>
+                    ) : (
+                      <div
+                        className={`text-[10px] sm:text-xs font-semibold flex items-center justify-end space-x-1 mt-0.5 ${
+                          isUp ? 'text-brand-success' : 'text-brand-danger'
+                        }`}
+                      >
+                        <span>{isUp ? '▲' : '▼'}</span>
+                        <span>{Math.abs(show.delta_pct || 0).toFixed(1)}%</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </article>

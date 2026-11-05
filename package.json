@@ -8,6 +8,7 @@
     "prebuild": "node scripts/generate-movers-feed.cjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "test:e2e": "playwright test",
     "test": "vitest run && node scripts/test-security-headers.cjs && node scripts/test-movers-feed.cjs",
     "types:gen": "supabase gen types typescript --local > src/lib/database.types.ts"
   },
@@ -19,7 +20,9 @@
     "workers-og": "^0.0.27"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@cloudflare/workers-types": "^5.20261028.1",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/forms": "^0.5.9",
     "@testing-library/jest-dom": "^7.0.1",
