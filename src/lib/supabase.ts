@@ -10,6 +10,13 @@ export interface SeriesEvent {
   source?: string;
 }
 
+export interface SignalContributions {
+  wiki_contribution: number;
+  reddit_contribution: number;
+  telemetry_days: number;
+  reddit_observed_days: number;
+}
+
 export type SeriesRow = Tables<'series'>;
 export type SeriesDailyTelemetryRow = Tables<'series_daily_telemetry'>;
 
@@ -23,6 +30,7 @@ export interface SeriesItem extends SeriesRow {
   events?: SeriesEvent[];
   is_breakout?: boolean;
   breakout_reason?: string;
+  signal_contributions?: SignalContributions;
 }
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';

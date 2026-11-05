@@ -54,3 +54,7 @@ Thumbs.db
 *.tgz
 tmp/
 temp/
+
+# Playwright artifacts
+playwright-report/
+test-results/

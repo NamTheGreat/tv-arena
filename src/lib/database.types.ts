@@ -16,6 +16,7 @@ export type Database = {
           slug: string
           title: string
           network: string
+          network_group: string
           genre_group: string
           release_years: string
           chart_color: string | null
@@ -31,6 +32,7 @@ export type Database = {
           slug: string
           title: string
           network: string
+          network_group?: string
           genre_group?: string
           release_years?: string
           chart_color?: string | null
@@ -46,6 +48,7 @@ export type Database = {
           slug?: string
           title?: string
           network?: string
+          network_group?: string
           genre_group?: string
           release_years?: string
           chart_color?: string | null
@@ -297,12 +300,31 @@ export type Database = {
         }
         Relationships: []
       }
+      user_watchlist: {
+        Row: {
+          user_id: string
+          series_id: string
+          created_at: string
+        }
+        Insert: {
+          user_id: string
+          series_id: string
+          created_at?: string
+        }
+        Update: {
+          user_id?: string
+          series_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       user_scores: {
         Row: {
           user_id: string
           date: string
           score: number
           answers: Json
+          correctness: boolean[] | null
           completed_at: string | null
         }
         Insert: {
@@ -310,6 +332,7 @@ export type Database = {
           date: string
           score: number
           answers?: Json
+          correctness?: boolean[] | null
           completed_at?: string | null
         }
         Update: {
@@ -317,7 +340,29 @@ export type Database = {
           date?: string
           score?: number
           answers?: Json
+          correctness?: boolean[] | null
           completed_at?: string | null
+        }
+        Relationships: []
+      }
+      daily_score_shares: {
+        Row: {
+          share_token: string
+          user_id: string
+          date: string
+          created_at: string
+        }
+        Insert: {
+          share_token?: string
+          user_id: string
+          date: string
+          created_at?: string
+        }
+        Update: {
+          share_token?: string
+          user_id?: string
+          date?: string
+          created_at?: string
         }
         Relationships: []
       }
@@ -330,6 +375,7 @@ export type Database = {
           slug: string
           title: string
           network: string
+          network_group: string
           genre_group: string
           release_years: string
           chart_color: string | null
@@ -350,6 +396,16 @@ export type Database = {
           reddit_comments: number
           reddit_upvotes: number
           daily_score: number
+        }
+        Relationships: []
+      }
+      series_signal_contributions: {
+        Row: {
+          series_id: string
+          wiki_contribution: number
+          reddit_contribution: number
+          telemetry_days: number
+          reddit_observed_days: number
         }
         Relationships: []
       }
@@ -391,6 +447,14 @@ export type Database = {
           p_date: string
           p_answers: Json
         }
+        Returns: Json
+      }
+      create_daily_score_share: {
+        Args: { p_date: string }
+        Returns: Json
+      }
+      get_daily_score_share: {
+        Args: { p_share_token: string }
         Returns: Json
       }
       daily_leaderboard: {
