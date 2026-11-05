@@ -21,6 +21,7 @@ fn backfill_insert_ignores_existing_series_dates() {
         supabase_url: server.base_url(),
         supabase_key: "test-key".to_string(),
         tmdb_api_key: None,
+        digest_webhook_url: None,
     };
     let client = create_http_client();
     let row = json!({
