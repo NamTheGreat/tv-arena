@@ -1,7 +1,3 @@
-pub fn compute_buzz_score(wiki_views: i64, reddit_comments: i64, reddit_upvotes: i64) -> i64 {
-    (wiki_views * 10) + (reddit_comments * 150) + (reddit_upvotes * 25)
-}
-
 pub fn calculate_delta(current: i64, previous: i64) -> f64 {
     if previous > 0 {
         let raw = (((current - previous) as f64 / previous as f64) * 1000.0).round() / 10.0;
@@ -45,33 +41,6 @@ pub fn is_tv_description(desc: &str, extract: &str, slug: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_compute_buzz_score() {
-        assert_eq!(compute_buzz_score(100, 10, 20), 1000 + 1500 + 500);
-        assert_eq!(compute_buzz_score(0, 0, 0), 0);
-    }
-
-    #[test]
-    fn test_compute_buzz_score_matches_sql_weights() {
-        // SQL formula from score_weights (id=1):
-        // (wiki_views * 10) + (reddit_comments * 150) + (reddit_upvotes * 25)
-        let wiki_weight = 10;
-        let comment_weight = 150;
-        let upvote_weight = 25;
-
-        let wiki_views = 25_000;
-        let reddit_comments = 180;
-        let reddit_upvotes = 420;
-
-        let sql_result = (wiki_views * wiki_weight)
-            + (reddit_comments * comment_weight)
-            + (reddit_upvotes * upvote_weight);
-
-        let rust_result = compute_buzz_score(wiki_views, reddit_comments, reddit_upvotes);
-        assert_eq!(rust_result, sql_result);
-        assert_eq!(rust_result, 287_500);
-    }
 
     #[test]
     fn test_calculate_delta() {

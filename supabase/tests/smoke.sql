@@ -13,16 +13,25 @@ DECLARE
   v_buzz BIGINT;
   v_curr BIGINT;
   v_rank BIGINT;
+  v_wiki_contribution NUMERIC;
+  v_reddit_contribution NUMERIC;
+  v_reddit_days BIGINT;
+  v_network_group TEXT;
 BEGIN
   RAISE NOTICE 'Testing View Schema & Column Integrity...';
 
   -- Seed baseline series if empty to test view projections
-  INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   VALUES 
-    (gen_random_uuid(), 66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', 'test', 0),
-    (gen_random_uuid(), 1399, 'game-of-thrones', 'Game of Thrones', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Game_of_Thrones', 'test', 0),
-    (gen_random_uuid(), 114472, 'severance', 'Severance', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#4A7C59', 'Severance', 'test', 0)
+    (gen_random_uuid(), 66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', 'test', 0),
+    (gen_random_uuid(), 1399, 'game-of-thrones', 'Game of Thrones', 'HBO', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Game_of_Thrones', 'test', 0),
+    (gen_random_uuid(), 114472, 'severance', 'Severance', 'Apple TV+', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#4A7C59', 'Severance', 'test', 0)
   ON CONFLICT (slug) DO NOTHING;
+
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT id, CURRENT_DATE, 0, 1, 2, 3, TRUE
+  FROM series WHERE slug = 'stranger-things'
+  ON CONFLICT (series_id, recorded_date) DO NOTHING;
 
   SELECT COUNT(*) INTO v_count FROM series_leaderboard;
   IF v_count < 1 THEN
@@ -40,8 +49,28 @@ BEGIN
     RAISE EXCEPTION 'Expected buzz_score to alias current_7d_score';
   END IF;
 
+  SELECT network_group INTO v_network_group FROM series_leaderboard WHERE slug = 'stranger-things';
+  IF v_network_group IS DISTINCT FROM 'Netflix' THEN
+    RAISE EXCEPTION 'Expected normalized network group Netflix, got %', v_network_group;
+  END IF;
+
   -- Test series_daily_scores view
   SELECT COUNT(*) INTO v_count FROM series_daily_scores;
+
+  SELECT COUNT(*) INTO v_count
+  FROM series_signal_contributions
+  WHERE series_id = (SELECT id FROM series WHERE slug = 'stranger-things');
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'Expected signal contribution row for Stranger Things';
+  END IF;
+  SELECT wiki_contribution, reddit_contribution, reddit_observed_days
+  INTO v_wiki_contribution, v_reddit_contribution, v_reddit_days
+  FROM series_signal_contributions
+  WHERE series_id = (SELECT id FROM series WHERE slug = 'stranger-things');
+  IF v_wiki_contribution <> 10 OR v_reddit_contribution <> 375 OR v_reddit_days <> 1 THEN
+    RAISE EXCEPTION 'Unexpected signal contributions: wiki %, reddit %, observed days %',
+      v_wiki_contribution, v_reddit_contribution, v_reddit_days;
+  END IF;
 
   -- Test series_recent_telemetry array aggregation view
   SELECT COUNT(*) INTO v_count FROM series_recent_telemetry;
@@ -158,7 +187,80 @@ BEGIN
   RAISE NOTICE '✓ Profiles security verified (best_streak protected, username editable).';
 END $$;
 
--- 4. Direct user_scores Table Protection
+-- 4. Watchlist ownership and write protection
+DO $$
+DECLARE
+  v_user_id UUID := '11111111-1111-1111-1111-111111111111'::UUID;
+  v_other_user_id UUID := '22222222-2222-2222-2222-222222222222'::UUID;
+  v_series_id UUID;
+  v_count BIGINT;
+  v_rows BIGINT;
+  v_caught BOOLEAN := FALSE;
+BEGIN
+  RAISE NOTICE 'Testing user_watchlist ownership...';
+
+  INSERT INTO auth.users (id, email)
+  VALUES (v_user_id, 'watchlist_owner@example.com'),
+         (v_other_user_id, 'watchlist_other@example.com')
+  ON CONFLICT (id) DO NOTHING;
+
+  SELECT id INTO v_series_id FROM series WHERE slug = 'stranger-things';
+  IF v_series_id IS NULL THEN
+    RAISE EXCEPTION 'Watchlist smoke test could not find the seeded series';
+  END IF;
+
+  IF NOT has_table_privilege('authenticated', 'user_watchlist', 'SELECT')
+     OR NOT has_table_privilege('authenticated', 'user_watchlist', 'INSERT')
+     OR NOT has_table_privilege('authenticated', 'user_watchlist', 'DELETE')
+     OR has_table_privilege('authenticated', 'user_watchlist', 'UPDATE') THEN
+    RAISE EXCEPTION 'Watchlist grants do not match the intended select/insert/delete contract';
+  END IF;
+
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
+  INSERT INTO user_watchlist (user_id, series_id) VALUES (v_user_id, v_series_id);
+
+  SELECT COUNT(*) INTO v_count FROM user_watchlist WHERE series_id = v_series_id;
+  IF v_count <> 1 THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'Watchlist owner could not read their own saved show';
+  END IF;
+
+  PERFORM set_config('request.jwt.claim.sub', v_other_user_id::text, true);
+  SELECT COUNT(*) INTO v_count FROM user_watchlist WHERE series_id = v_series_id;
+  IF v_count <> 0 THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'A different user could read another user''s saved show';
+  END IF;
+
+  DELETE FROM user_watchlist WHERE user_id = v_user_id AND series_id = v_series_id;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows <> 0 THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'A different user could delete another user''s saved show';
+  END IF;
+
+  BEGIN
+    INSERT INTO user_watchlist (user_id, series_id) VALUES (v_user_id, v_series_id);
+  EXCEPTION WHEN insufficient_privilege THEN
+    v_caught := TRUE;
+  END;
+  RESET ROLE;
+
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'A user was able to insert a watchlist row for another user';
+  END IF;
+
+  SELECT COUNT(*) INTO v_count FROM user_watchlist
+  WHERE user_id = v_user_id AND series_id = v_series_id;
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'Unauthorized delete changed the owner''s watchlist';
+  END IF;
+
+  RAISE NOTICE '✓ Watchlist ownership and write protection verified.';
+END $$;
+
+-- 5. Direct user_scores Table Protection
 DO $$
 DECLARE
   v_user_id UUID := '11111111-1111-1111-1111-111111111111'::UUID;
@@ -190,15 +292,35 @@ BEGIN
 END $$;
 
 -- 5. RPC submit_daily_score Logic & Edge Cases
+CREATE TEMP TABLE daily_grading_contract_fixture (
+  position INT PRIMARY KEY,
+  wiki_views INT NOT NULL,
+  reddit_comments INT NOT NULL,
+  reddit_upvotes INT NOT NULL,
+  answer TEXT,
+  series_id UUID NOT NULL DEFAULT gen_random_uuid()
+);
+\copy daily_grading_contract_fixture (position, wiki_views, reddit_comments, reddit_upvotes, answer) FROM 'supabase/tests/fixtures/daily-grading.csv' WITH (FORMAT csv, HEADER)
+
+INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+SELECT series_id, 980000 + position, 'daily-contract-' || position, 'Daily Contract ' || position,
+       'Contract', 'Drama', '2026', '#111111', 'Daily_Contract_' || position, 'contract', 0
+FROM daily_grading_contract_fixture;
+
+INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
+SELECT series_id, (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE, 0, wiki_views, reddit_comments, reddit_upvotes
+FROM daily_grading_contract_fixture;
+
 DO $$
 DECLARE
   v_user_id UUID := '11111111-1111-1111-1111-111111111111'::UUID;
   v_today DATE := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE;
-  v_show_a UUID;
-  v_show_b UUID;
-  v_show_c UUID;
   v_deck UUID[];
+  v_answers JSONB;
   v_res JSONB;
+  v_share JSONB;
+  v_public_share JSONB;
+  v_correctness BOOLEAN[];
   v_caught BOOLEAN;
   v_rpc_definition TEXT;
 BEGIN
@@ -211,10 +333,10 @@ BEGIN
     RAISE EXCEPTION 'submit_daily_score reads a stored series score instead of the leaderboard view';
   END IF;
 
-  SELECT id INTO v_show_a FROM series ORDER BY id LIMIT 1 OFFSET 0;
-  SELECT id INTO v_show_b FROM series ORDER BY id LIMIT 1 OFFSET 1;
-  SELECT id INTO v_show_c FROM series ORDER BY id LIMIT 1 OFFSET 2;
-  v_deck := ARRAY[v_show_a, v_show_b, v_show_c];
+  SELECT array_agg(series_id ORDER BY position) INTO v_deck
+  FROM daily_grading_contract_fixture;
+  SELECT to_jsonb(array_agg(answer ORDER BY position) FILTER (WHERE position > 1))
+  INTO v_answers FROM daily_grading_contract_fixture;
 
   -- Seed challenge deck for today
   INSERT INTO daily_challenges (date, series_ids)
@@ -247,16 +369,51 @@ BEGIN
     RAISE EXCEPTION 'submit_daily_score allowed malformed payload with wrong length';
   END IF;
 
+  v_caught := FALSE;
+  BEGIN
+    PERFORM submit_daily_score(v_today, '["higher", "unknown"]'::jsonb);
+  EXCEPTION WHEN OTHERS THEN
+    v_caught := TRUE;
+  END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'submit_daily_score allowed an unknown answer value';
+  END IF;
+
   -- 5c. Valid submission must succeed
-  v_res := submit_daily_score(v_today, '["higher", "lower"]'::jsonb);
+  v_res := submit_daily_score(v_today, v_answers);
   IF (v_res->>'success')::BOOLEAN <> TRUE THEN
     RAISE EXCEPTION 'submit_daily_score did not return success: true';
+  END IF;
+  IF (v_res->>'score')::INT <> 2 THEN
+    RAISE EXCEPTION 'submit_daily_score disagrees with the strict-comparison contract fixture: %', v_res->>'score';
+  END IF;
+
+  SELECT correctness INTO v_correctness FROM user_scores WHERE user_id = v_user_id AND date = v_today;
+  IF v_correctness IS NULL
+     OR array_length(v_correctness, 1) <> jsonb_array_length(v_answers)
+     OR (SELECT count(*) FROM unnest(v_correctness) AS item(correct) WHERE correct) <> (v_res->>'score')::INT THEN
+    RAISE EXCEPTION 'submit_daily_score did not persist its server-calculated correctness grid';
+  END IF;
+  INSERT INTO user_scores (user_id, date, score, answers, correctness, completed_at)
+  VALUES (
+    v_user_id, v_today - 1, 7,
+    '["higher","higher","lower","higher","higher","higher","lower","higher","lower","higher"]'::jsonb,
+    ARRAY[TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE], now()
+  );
+  v_share := create_daily_score_share(v_today - 1);
+  v_public_share := get_daily_score_share((v_share->>'token')::UUID);
+  IF v_share->>'token' IS NULL
+     OR v_public_share IS NULL
+     OR v_share->>'score' <> '7'
+     OR v_public_share->>'score' <> '7'
+     OR v_public_share->'correctness' <> to_jsonb(ARRAY[TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE]) THEN
+    RAISE EXCEPTION 'Daily share resolver did not return the server-verified score row';
   END IF;
 
   -- 5d. Duplicate submission for same date must fail
   v_caught := FALSE;
   BEGIN
-    PERFORM submit_daily_score(v_today, '["higher", "lower"]'::jsonb);
+    PERFORM submit_daily_score(v_today, v_answers);
   EXCEPTION WHEN OTHERS THEN
     v_caught := TRUE;
   END;

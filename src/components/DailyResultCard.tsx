@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getDailyChallengeNumber, StoredDailyResult } from '../lib/dailyChallenge';
+import { correctnessGrid, createDailyScoreShare, getDailyChallengeNumber, StoredDailyResult } from '../lib/dailyChallenge';
 
 interface DailyResultCardProps {
   result: StoredDailyResult;
@@ -26,15 +26,33 @@ export function DailyResultCard({
         ? 'Your score has not been verified yet.'
         : 'This saved result has no answers to submit to the leaderboard.'
       : 'Saved on this device only.';
-  const shareText = `TV Arena Daily Run #${getDailyChallengeNumber(result.date)}\nScore: ${result.score}/10\n${result.correctness.map((correct) => correct ? '🟩' : '🟥').join('')}\nhttps://tv-arena.pages.dev`;
-
   const shareResult = async () => {
     try {
+      let score: number;
+      let correctness: boolean[];
+      let shareUrl: string;
+      const dailyNumber = getDailyChallengeNumber(result.date);
+
+      if (isAuthenticated) {
+        const serverResult = await createDailyScoreShare(result.date);
+        if (!serverResult) throw new Error('This result has not been verified by the server yet.');
+        score = serverResult.score;
+        correctness = serverResult.correctness;
+        shareUrl = `${window.location.origin}/daily/${getDailyChallengeNumber(serverResult.date)}?s=${encodeURIComponent(serverResult.token)}`;
+      } else {
+        const grid = correctnessGrid(result.correctness);
+        if (!grid) throw new Error('A complete 10-round result is required to share.');
+        correctness = [...grid].map((bit) => bit === '1');
+        score = [...grid].filter((bit) => bit === '1').length;
+        shareUrl = `${window.location.origin}/daily/${dailyNumber}?g=${grid}`;
+      }
+
       if (!navigator.clipboard) throw new Error('Clipboard access is unavailable.');
-      await navigator.clipboard.writeText(shareText);
+      const gridText = correctness.map((correct) => correct ? '🟩' : '🟥').join('');
+      await navigator.clipboard.writeText(`TV Arena Daily Run #${dailyNumber}\nScore: ${score}/10\n${gridText}\n${shareUrl}`);
       setShareStatus('Copied result to clipboard.');
-    } catch {
-      setShareStatus('Could not copy the result. Check clipboard permissions and try again.');
+    } catch (error) {
+      setShareStatus(error instanceof Error ? error.message : 'Could not copy the result. Check clipboard permissions and try again.');
     }
   };
 
