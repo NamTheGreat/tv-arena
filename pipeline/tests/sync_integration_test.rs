@@ -44,8 +44,8 @@ fn test_sync_full_run_against_mock_server() {
     let series_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/rest/v1/series")
-            .query_param("select", "*")
-            .query_param("order", "buzz_score.desc");
+            .query_param("select", "id,tmdb_id,slug,title,network,genre_group,release_years,chart_color,wiki_slug,reddit_query")
+            .query_param("order", "slug.asc");
         then.status(200).json_body(json!([
             {
                 "id": "11111111-1111-1111-1111-111111111111",
@@ -57,9 +57,7 @@ fn test_sync_full_run_against_mock_server() {
                 "release_years": "2024–2025",
                 "chart_color": "#C66A3D",
                 "wiki_slug": "Severance_(TV_series)",
-                "reddit_query": "Severance",
-                "buzz_score": 100000,
-                "delta_pct": 0.0
+                "reddit_query": "Severance"
             }
         ]));
     });
@@ -93,6 +91,7 @@ fn test_sync_full_run_against_mock_server() {
         supabase_url: server.base_url(),
         supabase_key: "test-anon-key".to_string(),
         tmdb_api_key: Some("test-tmdb-key".to_string()),
+        digest_webhook_url: None,
     };
 
     let client = create_http_client();

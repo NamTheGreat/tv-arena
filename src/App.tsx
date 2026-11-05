@@ -15,6 +15,7 @@ import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
 import { leaderboardScore } from './lib/derivedScore';
 import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
+import { useWatchlist } from './lib/useWatchlist';
 
 const AuthModal = React.lazy(() =>
   import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
@@ -49,7 +50,7 @@ const MoversView = React.lazy(() =>
   import('./components/MoversView').then((m) => ({ default: m.MoversView }))
 );
 
-type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers';
+type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist';
 
 function RouteLoadingFallback() {
   return (
@@ -71,6 +72,12 @@ function LeaderboardRouteWrapper({
   availableGenres,
   setPlatformFilter,
   setGenreFilter,
+  watchlistIds,
+  pendingWatchlistIds,
+  onToggleWatchlist,
+  watchlistOnly = false,
+  watchlistLoading,
+  watchlistError,
 }: {
   seriesList: SeriesItem[];
   platformFilter: string;
@@ -79,6 +86,12 @@ function LeaderboardRouteWrapper({
   availableGenres: string[];
   setPlatformFilter: (p: string) => void;
   setGenreFilter: (g: string) => void;
+  watchlistIds: string[];
+  pendingWatchlistIds: string[];
+  onToggleWatchlist?: (seriesId: string) => void;
+  watchlistOnly?: boolean;
+  watchlistLoading: boolean;
+  watchlistError: string | null;
 }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -94,13 +107,14 @@ function LeaderboardRouteWrapper({
   };
 
   useEffect(() => {
-    document.title = 'TV Arena — Viewership Leaderboard';
-  }, []);
+    document.title = watchlistOnly ? 'TV Arena — Your Watchlist' : 'TV Arena — Viewership Leaderboard';
+  }, [watchlistOnly]);
 
   const rankedShows = useMemo(() => {
     return [...seriesList]
-      .filter((s) => (platformFilter === 'ALL' ? true : s.network === platformFilter))
+      .filter((s) => (platformFilter === 'ALL' ? true : s.network_group === platformFilter))
       .filter((s) => (genreFilter === 'ALL' ? true : s.genre_group === genreFilter))
+      .filter((s) => (!watchlistOnly || watchlistIds.includes(s.id)))
       .filter((s) => s.title.toLowerCase().includes(searchTerm.trim().toLowerCase()))
       .sort((a, b) => {
         if (sortBy === 'growth') {
@@ -116,7 +130,7 @@ function LeaderboardRouteWrapper({
           || (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER)
           || a.title.localeCompare(b.title);
       });
-  }, [seriesList, platformFilter, genreFilter, searchTerm, sortBy]);
+  }, [seriesList, platformFilter, genreFilter, searchTerm, sortBy, watchlistOnly, watchlistIds]);
 
   const maxScore = useMemo(() => {
     const top = rankedShows[0];
@@ -141,7 +155,29 @@ function LeaderboardRouteWrapper({
       setPlatformFilter={setPlatformFilter}
       setGenreFilter={setGenreFilter}
       onSelectBattle={(a, b) => navigate(`/arena/${a}/${b}`)}
+      watchlistIds={watchlistIds}
+      pendingWatchlistIds={pendingWatchlistIds}
+      onToggleWatchlist={onToggleWatchlist}
+      watchlistOnly={watchlistOnly}
+      watchlistLoading={watchlistLoading}
+      watchlistError={watchlistError}
     />
+  );
+}
+
+function WatchlistSignInPrompt({ onOpenAuth }: { onOpenAuth: () => void }) {
+  return (
+    <main className="w-full max-w-4xl rounded-[28px] bg-white/90 p-8 text-center shadow-card">
+      <h2 className="font-serif text-2xl text-arena-charcoal">Sign in to use your watchlist</h2>
+      <p className="mt-2 text-sm text-arena-muted">Your saved shows are private to your account.</p>
+      <button
+        type="button"
+        onClick={onOpenAuth}
+        className="mt-5 rounded-full bg-arena-terracotta px-5 py-2 text-sm font-semibold text-white"
+      >
+        Sign in
+      </button>
+    </main>
   );
 }
 
@@ -298,6 +334,7 @@ function GuessRouteWrapper({
 
 export default function App() {
   const { user, signOut } = useAuth();
+  const watchlist = useWatchlist(user?.id);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -323,6 +360,7 @@ export default function App() {
     if (location.pathname.startsWith('/charts')) return 'charts';
     if (location.pathname.startsWith('/guess')) return 'guess';
     if (location.pathname.startsWith('/movers')) return 'movers';
+    if (location.pathname.startsWith('/watchlist')) return 'watchlist';
     return 'leaderboard';
   }, [location.pathname]);
 
@@ -434,6 +472,18 @@ export default function App() {
           }
         }
 
+        const { data: contributionData } = await supabase
+          .from('series_signal_contributions')
+          .select('series_id, wiki_contribution, reddit_contribution, telemetry_days, reddit_observed_days');
+        const contributionMap = new Map(
+          (contributionData || []).map((row) => [row.series_id, {
+            wiki_contribution: Number(row.wiki_contribution),
+            reddit_contribution: Number(row.reddit_contribution),
+            telemetry_days: row.telemetry_days,
+            reddit_observed_days: row.reddit_observed_days,
+          }])
+        );
+
         const mapped: SeriesItem[] = data.map((row: any) => ({
           ...row,
           buzz_score: leaderboardScore(row),
@@ -443,6 +493,7 @@ export default function App() {
           events: eventsMap.get(row.id) || [],
           is_breakout: breakoutMap.has(row.id),
           breakout_reason: breakoutMap.get(row.id),
+          signal_contributions: contributionMap.get(row.id),
         }));
 
         setSeriesList(mapped);
@@ -457,7 +508,7 @@ export default function App() {
   const availablePlatforms = useMemo(() => {
     const set = new Set<string>();
     for (const s of seriesList) {
-      if (s.network) set.add(s.network);
+      if (s.network_group) set.add(s.network_group);
     }
     return ['ALL', ...Array.from(set).sort()];
   }, [seriesList]);
@@ -507,7 +558,23 @@ export default function App() {
     { label: 'Charts', tabKey: 'charts' as TabKey, path: '/charts' },
     { label: 'Guess', tabKey: 'guess' as TabKey, path: '/guess' },
     { label: 'Movers', tabKey: 'movers' as TabKey, path: '/movers' },
+    ...(user ? [{ label: 'Watchlist', tabKey: 'watchlist' as TabKey, path: '/watchlist' }] : []),
   ];
+
+  const leaderboardProps = {
+    seriesList,
+    platformFilter,
+    genreFilter,
+    availablePlatforms,
+    availableGenres,
+    setPlatformFilter,
+    setGenreFilter,
+    watchlistIds: watchlist.seriesIds,
+    pendingWatchlistIds: watchlist.pendingSeriesIds,
+    onToggleWatchlist: user ? watchlist.toggle : undefined,
+    watchlistLoading: watchlist.isLoading,
+    watchlistError: watchlist.error,
+  };
 
   return (
     <div className="min-h-screen bg-arena-sand flex flex-col items-center justify-start py-4 sm:py-10 px-3 sm:px-6 text-arena-charcoal">
@@ -562,19 +629,12 @@ export default function App() {
       {/* Code-Split Route Views */}
       <Suspense fallback={<RouteLoadingFallback />}>
         <Routes>
+          <Route path="/" element={<LeaderboardRouteWrapper {...leaderboardProps} />} />
           <Route
-            path="/"
-            element={
-              <LeaderboardRouteWrapper
-                seriesList={seriesList}
-                platformFilter={platformFilter}
-                genreFilter={genreFilter}
-                availablePlatforms={availablePlatforms}
-                availableGenres={availableGenres}
-                setPlatformFilter={setPlatformFilter}
-                setGenreFilter={setGenreFilter}
-              />
-            }
+            path="/watchlist"
+            element={user
+              ? <LeaderboardRouteWrapper {...leaderboardProps} watchlistOnly />
+              : <WatchlistSignInPrompt onOpenAuth={() => setIsAuthModalOpen(true)} />}
           />
           <Route
             path="/arena"

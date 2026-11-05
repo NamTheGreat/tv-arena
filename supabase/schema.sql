@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS series (
   slug TEXT UNIQUE NOT NULL,
   title TEXT NOT NULL,
   network TEXT NOT NULL,
+  network_group TEXT NOT NULL DEFAULT 'Other',
   genre_group TEXT NOT NULL DEFAULT 'Drama & Sci-Fi',
   release_years TEXT NOT NULL DEFAULT '2024–2025',
   chart_color TEXT DEFAULT '#C66A3D',
@@ -67,6 +68,37 @@ CROSS JOIN (SELECT wiki_weight, comment_weight, upvote_weight FROM score_weights
 
 GRANT SELECT ON series_daily_scores TO anon, authenticated;
 
+CREATE OR REPLACE VIEW series_signal_contributions
+WITH (security_invoker = on) AS
+WITH anchor AS (
+  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  FROM series_daily_telemetry
+)
+SELECT
+  s.id AS series_id,
+  COALESCE(SUM(COALESCE(t.wiki_views, 0) * w.wiki_weight), 0)::NUMERIC AS wiki_contribution,
+  COALESCE(SUM(
+    CASE WHEN t.reddit_observed AND (t.reddit_comments IS NOT NULL OR t.reddit_upvotes IS NOT NULL)
+      THEN COALESCE(t.reddit_comments, 0) * w.comment_weight + COALESCE(t.reddit_upvotes, 0) * w.upvote_weight
+      ELSE 0
+    END
+  ), 0)::NUMERIC AS reddit_contribution,
+  COUNT(t.recorded_date)::BIGINT AS telemetry_days,
+  COUNT(t.recorded_date) FILTER (
+    WHERE t.reddit_observed AND (t.reddit_comments IS NOT NULL OR t.reddit_upvotes IS NOT NULL)
+  )::BIGINT AS reddit_observed_days
+FROM series s
+CROSS JOIN anchor a
+CROSS JOIN score_weights w
+LEFT JOIN series_daily_telemetry t
+  ON t.series_id = s.id
+  AND t.recorded_date > a.max_date - INTERVAL '7 days'
+  AND t.recorded_date <= a.max_date
+WHERE w.id = 1
+GROUP BY s.id, w.wiki_weight, w.comment_weight, w.upvote_weight;
+
+GRANT SELECT ON series_signal_contributions TO anon, authenticated;
+
 DROP VIEW IF EXISTS series_leaderboard CASCADE;
 
 CREATE VIEW series_leaderboard 
@@ -82,6 +114,7 @@ daily_buckets AS (
     s.slug,
     s.title,
     s.network,
+    s.network_group,
     s.genre_group,
     s.release_years,
     s.chart_color,
@@ -90,7 +123,7 @@ daily_buckets AS (
   FROM series s
   CROSS JOIN anchor a
   LEFT JOIN series_daily_scores d ON s.id = d.series_id
-  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.genre_group, s.release_years, s.chart_color, a.max_date
+  GROUP BY s.id, s.tmdb_id, s.slug, s.title, s.network, s.network_group, s.genre_group, s.release_years, s.chart_color, a.max_date
 )
 SELECT
   series_id AS id,
@@ -109,7 +142,8 @@ SELECT
       ROUND(((current_7d_score - previous_7d_score)::numeric / previous_7d_score::numeric) * 100, 2)
     ELSE NULL
   END AS delta_pct,
-  ROW_NUMBER() OVER (ORDER BY current_7d_score DESC, title ASC) as rank
+  ROW_NUMBER() OVER (ORDER BY current_7d_score DESC, title ASC) as rank,
+  network_group
 FROM daily_buckets;
 
 GRANT SELECT ON series_leaderboard TO anon, authenticated;
@@ -185,20 +219,20 @@ DROP POLICY IF EXISTS "Allow public read on telemetry" ON series_daily_telemetry
 CREATE POLICY "Allow public read on telemetry" ON series_daily_telemetry FOR SELECT USING (true);
 
 -- Seed initial flagship shows with zeroed metrics ready for telemetry sync
-INSERT INTO series (tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+INSERT INTO series (tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
 VALUES
-  (66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', '"Stranger Things" (Netflix OR episode OR season)', 0),
-  (119051, 'wednesday', 'Wednesday', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Wednesday_(TV_series)', '"Wednesday" (Netflix OR Jenna Ortega OR season)', 0),
-  (94997, 'house-of-the-dragon', 'House of the Dragon', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'House_of_the_Dragon', '"House of the Dragon" (HBO OR episode OR season)', 0),
-  (95396, 'severance', 'Severance', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Severance_(TV_series)', '"Severance" (Apple OR Lumon OR episode)', 0),
-  (100088, 'the-last-of-us', 'The Last of Us', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#886F99', 'The_Last_of_Us_(TV_series)', '"The Last of Us" (HBO OR Joel OR Ellie)', 0),
-  (136315, 'the-bear', 'The Bear', 'FX / Hulu', 'Comedy & Drama', '2024–2025', '#5C828C', 'The_Bear_(TV_series)', '"The Bear" (Hulu OR FX OR Carmy)', 0),
-  (91239, 'bridgerton', 'Bridgerton', 'Netflix', 'Drama', '2024–2025', '#6E8761', 'Bridgerton', '"Bridgerton" (Netflix OR season OR episode)', 0),
-  (111803, 'the-white-lotus', 'The White Lotus', 'HBO', 'Drama', '2024–2025', '#A65D67', 'The_White_Lotus', '"The White Lotus" (HBO OR episode OR finale)', 0),
-  (76479, 'the-boys', 'The Boys', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'The_Boys_(TV_series)', '"The Boys" (Prime OR Homelander OR episode)', 0),
-  (106379, 'fallout', 'Fallout', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#6E8761', 'Fallout_(American_TV_series)', '"Fallout" (Prime OR Vault OR episode)', 0),
-  (76331, 'succession', 'Succession', 'HBO', 'Drama', '2023–2024', '#886F99', 'Succession_(TV_series)', '"Succession" (HBO OR Kendall OR Roy)', 0),
-  (125988, 'silo', 'Silo', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Silo_(TV_series)', '"Silo" (Apple OR Juliette OR episode)', 0)
+  (66732, 'stranger-things', 'Stranger Things', 'Netflix', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Stranger_Things', '"Stranger Things" (Netflix OR episode OR season)', 0),
+  (119051, 'wednesday', 'Wednesday', 'Netflix', 'Netflix', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Wednesday_(TV_series)', '"Wednesday" (Netflix OR Jenna Ortega OR season)', 0),
+  (94997, 'house-of-the-dragon', 'House of the Dragon', 'HBO', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'House_of_the_Dragon', '"House of the Dragon" (HBO OR episode OR season)', 0),
+  (95396, 'severance', 'Severance', 'Apple TV+', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#C66A3D', 'Severance_(TV_series)', '"Severance" (Apple OR Lumon OR episode)', 0),
+  (100088, 'the-last-of-us', 'The Last of Us', 'HBO', 'HBO', 'Drama & Sci-Fi', '2024–2025', '#886F99', 'The_Last_of_Us_(TV_series)', '"The Last of Us" (HBO OR Joel OR Ellie)', 0),
+  (136315, 'the-bear', 'The Bear', 'FX / Hulu', 'FX / Hulu', 'Comedy & Drama', '2024–2025', '#5C828C', 'The_Bear_(TV_series)', '"The Bear" (Hulu OR FX OR Carmy)', 0),
+  (91239, 'bridgerton', 'Bridgerton', 'Netflix', 'Netflix', 'Drama', '2024–2025', '#6E8761', 'Bridgerton', '"Bridgerton" (Netflix OR season OR episode)', 0),
+  (111803, 'the-white-lotus', 'The White Lotus', 'HBO', 'HBO', 'Drama', '2024–2025', '#A65D67', 'The_White_Lotus', '"The White Lotus" (HBO OR episode OR finale)', 0),
+  (76479, 'the-boys', 'The Boys', 'Prime Video', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#C59A44', 'The_Boys_(TV_series)', '"The Boys" (Prime OR Homelander OR episode)', 0),
+  (106379, 'fallout', 'Fallout', 'Prime Video', 'Prime Video', 'Drama & Sci-Fi', '2024–2025', '#6E8761', 'Fallout_(American_TV_series)', '"Fallout" (Prime OR Vault OR episode)', 0),
+  (76331, 'succession', 'Succession', 'HBO', 'HBO', 'Drama', '2023–2024', '#886F99', 'Succession_(TV_series)', '"Succession" (HBO OR Kendall OR Roy)', 0),
+  (125988, 'silo', 'Silo', 'Apple TV+', 'Apple TV+', 'Drama & Sci-Fi', '2024–2025', '#5C828C', 'Silo_(TV_series)', '"Silo" (Apple OR Juliette OR episode)', 0)
 ON CONFLICT (tmdb_id) DO NOTHING;
 
 
@@ -277,6 +311,39 @@ CREATE POLICY "Allow users update own profile" ON profiles FOR UPDATE USING (aut
 DROP POLICY IF EXISTS "Allow users insert own profile" ON profiles;
 CREATE POLICY "Allow users insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
+-- Signed-in users can save shows to a private, user-owned watchlist.
+CREATE TABLE IF NOT EXISTS user_watchlist (
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  series_id UUID NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, series_id)
+);
+
+CREATE INDEX IF NOT EXISTS user_watchlist_user_created_idx
+  ON user_watchlist (user_id, created_at DESC);
+
+ALTER TABLE user_watchlist ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON user_watchlist FROM anon, authenticated;
+GRANT SELECT, INSERT, DELETE ON user_watchlist TO authenticated;
+
+DROP POLICY IF EXISTS "Users can read own watchlist" ON user_watchlist;
+CREATE POLICY "Users can read own watchlist"
+  ON user_watchlist
+  FOR SELECT TO authenticated
+  USING ((SELECT auth.uid()) = user_id);
+
+DROP POLICY IF EXISTS "Users can add to own watchlist" ON user_watchlist;
+CREATE POLICY "Users can add to own watchlist"
+  ON user_watchlist
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT auth.uid()) = user_id);
+
+DROP POLICY IF EXISTS "Users can remove from own watchlist" ON user_watchlist;
+CREATE POLICY "Users can remove from own watchlist"
+  ON user_watchlist
+  FOR DELETE TO authenticated
+  USING ((SELECT auth.uid()) = user_id);
+
 -- Profile creation trigger on auth.users
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
@@ -324,6 +391,8 @@ DROP POLICY IF EXISTS "Users can read own scores" ON user_scores;
 CREATE POLICY "Users can read own scores" ON user_scores FOR SELECT USING (auth.uid() = user_id);
 
 -- Validated Daily Score Submission RPC
+ALTER TABLE user_scores ADD COLUMN IF NOT EXISTS correctness BOOLEAN[];
+
 CREATE OR REPLACE FUNCTION submit_daily_score(p_date DATE, p_answers JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -333,10 +402,11 @@ AS $$
 DECLARE
   v_uid UUID;
   v_deck UUID[];
-  v_calculated_score INT := 0;
   v_today DATE := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE;
   v_yesterday DATE := v_today - INTERVAL '1 day';
-  i INT;
+  v_calculated_score INT := 0;
+  v_correctness BOOLEAN[] := ARRAY[]::BOOLEAN[];
+  v_is_correct BOOLEAN;
   v_show_a_id UUID;
   v_show_b_id UUID;
   v_score_a BIGINT;
@@ -345,84 +415,126 @@ DECLARE
   v_deck_len INT;
 BEGIN
   v_uid := auth.uid();
-  IF v_uid IS NULL THEN
-    RAISE EXCEPTION 'Authentication required to submit score';
-  END IF;
-
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'Authentication required to submit score'; END IF;
   IF p_date < v_yesterday OR p_date > v_today THEN
     RAISE EXCEPTION 'Score submissions are only accepted for today or yesterday UTC';
   END IF;
-
   SELECT series_ids INTO v_deck FROM daily_challenges WHERE date = p_date;
-  IF v_deck IS NULL THEN
-    RAISE EXCEPTION 'No challenge deck found for date %', p_date;
-  END IF;
-
+  IF v_deck IS NULL THEN RAISE EXCEPTION 'No challenge deck found for date %', p_date; END IF;
   v_deck_len := array_length(v_deck, 1);
-  IF v_deck_len < 2 THEN
-    RAISE EXCEPTION 'Challenge deck is incomplete';
+  IF v_deck_len < 2 THEN RAISE EXCEPTION 'Challenge deck is incomplete'; END IF;
+  IF jsonb_typeof(p_answers) <> 'array' OR jsonb_array_length(p_answers) <> v_deck_len - 1 THEN
+    RAISE EXCEPTION 'p_answers must be a JSON array of % answers', v_deck_len - 1;
   END IF;
-
-  -- Validate p_answers structure: must be an array of matching length
-  IF jsonb_typeof(p_answers) <> 'array' OR jsonb_array_length(p_answers) <> (v_deck_len - 1) THEN
-    RAISE EXCEPTION 'p_answers must be a JSON array of % answers', (v_deck_len - 1);
-  END IF;
-
   IF EXISTS (
-    SELECT 1 FROM user_scores
-    WHERE user_id = v_uid AND date = p_date
+    SELECT 1 FROM jsonb_array_elements_text(p_answers) AS submitted(answer)
+    WHERE answer IS NULL OR answer NOT IN ('higher', 'lower')
   ) THEN
+    RAISE EXCEPTION 'Each answer must be higher or lower';
+  END IF;
+  IF EXISTS (SELECT 1 FROM user_scores WHERE user_id = v_uid AND date = p_date) THEN
     RAISE EXCEPTION 'Score already submitted for this daily challenge';
   END IF;
 
-  -- Grade against the same dynamic leaderboard score used to build the deck.
-  FOR i IN 0 .. (LEAST(v_deck_len - 2, 9)) LOOP
+  FOR i IN 0 .. LEAST(v_deck_len - 2, 9) LOOP
     v_show_a_id := v_deck[i + 1];
     v_show_b_id := v_deck[i + 2];
     v_guess := p_answers->>i;
-
-    SELECT COALESCE(current_7d_score, 0) INTO v_score_a
-    FROM series_leaderboard WHERE id = v_show_a_id;
-
-    SELECT COALESCE(current_7d_score, 0) INTO v_score_b
-    FROM series_leaderboard WHERE id = v_show_b_id;
-
-    IF (v_guess = 'higher' AND v_score_b > v_score_a)
-      OR (v_guess = 'lower' AND v_score_b < v_score_a) THEN
-      v_calculated_score := v_calculated_score + 1;
-    END IF;
+    SELECT COALESCE(current_7d_score, 0) INTO v_score_a FROM series_leaderboard WHERE id = v_show_a_id;
+    SELECT COALESCE(current_7d_score, 0) INTO v_score_b FROM series_leaderboard WHERE id = v_show_b_id;
+    v_is_correct := COALESCE((v_guess = 'higher' AND v_score_b > v_score_a)
+      OR (v_guess = 'lower' AND v_score_b < v_score_a), FALSE);
+    v_correctness := array_append(v_correctness, v_is_correct);
+    IF v_is_correct THEN v_calculated_score := v_calculated_score + 1; END IF;
   END LOOP;
 
-  INSERT INTO user_scores (user_id, date, score, answers, completed_at)
-  VALUES (v_uid, p_date, v_calculated_score, p_answers, now());
-
+  INSERT INTO user_scores (user_id, date, score, answers, correctness, completed_at)
+  VALUES (v_uid, p_date, v_calculated_score, p_answers, v_correctness, now());
   UPDATE profiles
   SET current_streak = CASE
         WHEN last_played_date = p_date - INTERVAL '1 day' THEN current_streak + 1
         WHEN last_played_date = p_date THEN current_streak
-        ELSE 1
-      END,
-      best_streak = GREATEST(
-        best_streak,
-        CASE
-          WHEN last_played_date = p_date - INTERVAL '1 day' THEN current_streak + 1
-          ELSE 1
-        END
-      ),
+        ELSE 1 END,
+      best_streak = GREATEST(best_streak, CASE
+        WHEN last_played_date = p_date - INTERVAL '1 day' THEN current_streak + 1 ELSE 1 END),
       last_played_date = p_date,
       updated_at = now()
   WHERE id = v_uid;
+  RETURN jsonb_build_object('success', true, 'score', v_calculated_score, 'date', p_date);
+END;
+$$;
 
+REVOKE EXECUTE ON FUNCTION submit_daily_score(DATE, JSONB) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION submit_daily_score(DATE, JSONB) TO authenticated;
+
+CREATE TABLE daily_score_shares (
+  share_token UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  date DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, date),
+  FOREIGN KEY (user_id, date) REFERENCES user_scores(user_id, date) ON DELETE CASCADE
+);
+
+ALTER TABLE daily_score_shares ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can read own daily score shares"
+  ON daily_score_shares FOR SELECT USING (auth.uid() = user_id);
+GRANT SELECT ON daily_score_shares TO authenticated;
+REVOKE INSERT, UPDATE, DELETE ON daily_score_shares FROM anon, authenticated;
+
+CREATE OR REPLACE FUNCTION create_daily_score_share(p_date DATE)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_share_token UUID;
+  v_score INT;
+  v_correctness BOOLEAN[];
+BEGIN
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'Authentication required to create a score share'; END IF;
+  SELECT score, correctness INTO v_score, v_correctness
+  FROM user_scores WHERE user_id = v_uid AND date = p_date;
+  IF NOT FOUND OR cardinality(v_correctness) <> 10 THEN
+    RAISE EXCEPTION 'A server-verified 10-round score is required before sharing';
+  END IF;
+
+  INSERT INTO daily_score_shares (user_id, date) VALUES (v_uid, p_date)
+  ON CONFLICT (user_id, date) DO NOTHING;
+  SELECT share_token INTO v_share_token
+  FROM daily_score_shares WHERE user_id = v_uid AND date = p_date;
   RETURN jsonb_build_object(
-    'success', true,
-    'score', v_calculated_score,
-    'date', p_date
+    'token', v_share_token,
+    'date', p_date,
+    'score', v_score,
+    'correctness', to_jsonb(v_correctness)
   );
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION submit_daily_score(DATE, JSONB) FROM anon;
-GRANT EXECUTE ON FUNCTION submit_daily_score(DATE, JSONB) TO authenticated;
+REVOKE EXECUTE ON FUNCTION create_daily_score_share(DATE) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION create_daily_score_share(DATE) TO authenticated;
+
+CREATE OR REPLACE FUNCTION get_daily_score_share(p_share_token UUID)
+RETURNS JSONB
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT jsonb_build_object(
+    'date', us.date,
+    'score', us.score,
+    'correctness', to_jsonb(us.correctness)
+  )
+  FROM daily_score_shares share
+  JOIN user_scores us ON us.user_id = share.user_id AND us.date = share.date
+  WHERE share.share_token = p_share_token AND us.correctness IS NOT NULL;
+$$;
+
+REVOKE EXECUTE ON FUNCTION get_daily_score_share(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION get_daily_score_share(UUID) TO anon, authenticated;
 
 -- Safe Leaderboard RPCs (No emails exposed)
 CREATE OR REPLACE FUNCTION daily_leaderboard(p_date DATE)

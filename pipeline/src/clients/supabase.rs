@@ -21,7 +21,7 @@ pub fn fetch_deck_candidates(client: &ureq::Agent, config: &Config) -> Result<Ve
 
 pub fn fetch_series(client: &ureq::Agent, config: &Config) -> Result<Vec<SeriesRow>> {
     let list_url = format!(
-        "{}/rest/v1/series?select=*&order=buzz_score.desc",
+        "{}/rest/v1/series?select=id,tmdb_id,slug,title,network,genre_group,release_years,chart_color,wiki_slug,reddit_query&order=slug.asc",
         config.supabase_url
     );
     let list_res = client
