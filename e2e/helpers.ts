@@ -30,6 +30,12 @@ export async function mockSupabase(page: Page, dailyDeckLength = shows.length) {
       body = shows.map((show) => ({ series_id: show.id, daily_series: [show.buzz_score], daily_dates: show.daily_dates }));
     } else if (path.endsWith('/daily_challenges')) {
       body = [{ series_ids: shows.slice(0, dailyDeckLength).map((show) => show.id) }];
+    } else if (path.endsWith('/rpc/get_daily_score_share')) {
+      body = {
+        date: '2026-10-15',
+        score: 7,
+        correctness: [true, true, false, true, true, true, false, true, true, false],
+      };
     }
 
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
