@@ -502,8 +502,9 @@ BEGIN
   END IF;
 
   SELECT correctness INTO v_correctness FROM user_scores WHERE user_id = v_user_id AND date = v_today;
-  IF v_correctness IS NULL OR array_length(v_correctness, 1) <> 2
-     OR cardinality(ARRAY(SELECT value FROM unnest(v_correctness) value WHERE value)) <> (v_res->>'score')::INT THEN
+  IF v_correctness IS NULL
+     OR array_length(v_correctness, 1) <> jsonb_array_length(v_answers)
+     OR (SELECT count(*) FROM unnest(v_correctness) AS item(correct) WHERE correct) <> (v_res->>'score')::INT THEN
     RAISE EXCEPTION 'submit_daily_score did not persist its server-calculated correctness grid';
   END IF;
   INSERT INTO user_scores (user_id, date, score, answers, correctness, completed_at)
