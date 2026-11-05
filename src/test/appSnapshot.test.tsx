@@ -21,6 +21,7 @@ describe('app snapshot fallback', () => {
         slug: 'show-one',
         title: 'Show One',
         network: 'Network One',
+        network_group: 'Network One',
         genre_group: 'Drama',
         release_years: '2024–2025',
         chart_color: '#ffffff',

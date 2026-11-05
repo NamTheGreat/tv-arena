@@ -12,6 +12,7 @@ import { useAuth } from './lib/auth';
 import { ArenaStats, computeArenaStats } from './lib/svgMath';
 import { ChartRange } from './components/TrajectoryChart';
 import { DatabaseStatusCard } from './components/DatabaseStatusCard';
+import { DailySharePage } from './components/DailySharePage';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
 import { leaderboardScore } from './lib/derivedScore';
 import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
@@ -528,6 +529,14 @@ export default function App() {
     }
     return ['ALL', ...Array.from(set).sort()];
   }, [seriesList]);
+
+  if (location.pathname.startsWith('/daily/')) {
+    return (
+      <Routes>
+        <Route path="/daily/:n" element={<DailySharePage />} />
+      </Routes>
+    );
+  }
 
   // When static data is available, keep the app usable without Supabase.
   if ((!isSupabaseConfigured && seriesList.length === 0) || dbError) {

@@ -11,12 +11,12 @@ const csvPath = resolve(root, 'public/snapshot.csv');
 const data = {
   series_leaderboard: [{
     id: 'series-1', tmdb_id: 1, slug: 'show-one', title: 'Show One', network: 'Network One',
-    genre_group: 'Drama', release_years: '2024–2025', chart_color: '#ffffff', current_7d_score: 125,
+    network_group: 'Network One', genre_group: 'Drama', release_years: '2024–2025', chart_color: '#ffffff', current_7d_score: 125,
     previous_7d_score: 100, delta_pct: 25, rank: 1,
   }],
   series: [{
     id: 'series-1', tmdb_id: 1, slug: 'show-one', title: 'Show One', network: 'Network One',
-    genre_group: 'Drama', release_years: '2024–2025', chart_color: '#ffffff', wiki_slug: 'Show_One',
+    network_group: 'Network One', genre_group: 'Drama', release_years: '2024–2025', chart_color: '#ffffff', wiki_slug: 'Show_One',
     reddit_query: 'Show One', updated_at: null,
   }],
   series_recent_telemetry: [{ series_id: 'series-1', daily_series: [100, 125], daily_dates: ['2026-11-03', '2026-11-04'] }],
