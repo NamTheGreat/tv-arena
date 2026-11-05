@@ -300,6 +300,24 @@ export type Database = {
         }
         Relationships: []
       }
+      user_watchlist: {
+        Row: {
+          user_id: string
+          series_id: string
+          created_at: string
+        }
+        Insert: {
+          user_id: string
+          series_id: string
+          created_at?: string
+        }
+        Update: {
+          user_id?: string
+          series_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       user_scores: {
         Row: {
           user_id: string
