@@ -306,6 +306,7 @@ export type Database = {
           date: string
           score: number
           answers: Json
+          correctness: boolean[] | null
           completed_at: string | null
         }
         Insert: {
@@ -313,6 +314,7 @@ export type Database = {
           date: string
           score: number
           answers?: Json
+          correctness?: boolean[] | null
           completed_at?: string | null
         }
         Update: {
@@ -320,7 +322,29 @@ export type Database = {
           date?: string
           score?: number
           answers?: Json
+          correctness?: boolean[] | null
           completed_at?: string | null
+        }
+        Relationships: []
+      }
+      daily_score_shares: {
+        Row: {
+          share_token: string
+          user_id: string
+          date: string
+          created_at: string
+        }
+        Insert: {
+          share_token?: string
+          user_id: string
+          date: string
+          created_at?: string
+        }
+        Update: {
+          share_token?: string
+          user_id?: string
+          date?: string
+          created_at?: string
         }
         Relationships: []
       }
@@ -390,6 +414,14 @@ export type Database = {
           p_date: string
           p_answers: Json
         }
+        Returns: Json
+      }
+      create_daily_score_share: {
+        Args: { p_date: string }
+        Returns: Json
+      }
+      get_daily_score_share: {
+        Args: { p_share_token: string }
         Returns: Json
       }
       daily_leaderboard: {
