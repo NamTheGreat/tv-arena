@@ -19,7 +19,7 @@ jobs:
           PAGES_BUILD_HOOK_URL: ${{ secrets.MOVERS_PAGES_DEPLOY_HOOK_URL }}
         run: |
           if [ -z "$PAGES_BUILD_HOOK_URL" ]; then
-            echo "::warning::MOVERS_PAGES_DEPLOY_HOOK_URL is not configured; the feed will refresh on the next Pages deployment."
-            exit 0
+            echo "::error::MOVERS_PAGES_DEPLOY_HOOK_URL is required to refresh movers.xml after a successful nightly sync."
+            exit 1
           fi
           curl --fail --silent --show-error --request POST "$PAGES_BUILD_HOOK_URL" --output /dev/null
