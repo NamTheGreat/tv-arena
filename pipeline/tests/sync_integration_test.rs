@@ -91,6 +91,7 @@ fn test_sync_full_run_against_mock_server() {
         supabase_url: server.base_url(),
         supabase_key: "test-anon-key".to_string(),
         tmdb_api_key: Some("test-tmdb-key".to_string()),
+        digest_webhook_url: None,
     };
 
     let client = create_http_client();
