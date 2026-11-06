@@ -296,7 +296,13 @@ CREATE TABLE IF NOT EXISTS profiles (
   last_played_date DATE,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
-  CONSTRAINT username_format CHECK (username ~ '^[a-z0-9_]{3,20}$')
+  CONSTRAINT username_format CHECK (username ~ '^[a-z0-9_]{3,20}$'),
+  CONSTRAINT profiles_username_not_blocked CHECK (lower(username) NOT IN (
+    'admin', 'administrator', 'help', 'moderator', 'mod', 'official', 'owner',
+    'root', 'security', 'staff', 'support', 'system', 'tv_arena', 'tvarena',
+    'verified', 'nigger', 'nigga', 'faggot', 'tranny', 'retard', 'kike',
+    'spic', 'chink', 'coon', 'wetback'
+  ))
 );
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;

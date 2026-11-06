@@ -173,6 +173,7 @@ DO $$
 DECLARE
   v_user_id UUID := '11111111-1111-1111-1111-111111111111'::UUID;
   v_caught BOOLEAN := FALSE;
+  v_blocked BOOLEAN := FALSE;
 BEGIN
   RAISE NOTICE 'Testing Profile Column Privileges...';
 
@@ -206,6 +207,17 @@ BEGIN
 
   -- Legitimate update to username must succeed
   UPDATE profiles SET username = 'updated_pilot' WHERE id = v_user_id;
+
+  BEGIN
+    UPDATE profiles SET username = 'admin' WHERE id = v_user_id;
+  EXCEPTION WHEN check_violation THEN
+    v_blocked := TRUE;
+  END;
+
+  IF NOT v_blocked THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'Security failure: reserved username was accepted';
+  END IF;
 
   RESET ROLE;
 
