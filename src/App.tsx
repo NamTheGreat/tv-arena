@@ -16,6 +16,7 @@ import { DailySharePage } from './components/DailySharePage';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
 import { leaderboardScore } from './lib/derivedScore';
 import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
+import { fetchArenaSnapshot } from './lib/snapshot';
 import { useWatchlist } from './lib/useWatchlist';
 
 const AuthModal = React.lazy(() =>
@@ -344,7 +345,7 @@ export default function App() {
   const [isLearnModalOpen, setIsLearnModalOpen] = useState(false);
   const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [viewWarning, setViewWarning] = useState<string | null>(null);
 
@@ -368,12 +369,19 @@ export default function App() {
   // Load live data from Supabase if configured
   useEffect(() => {
     async function loadFromSupabase() {
+      setIsLoading(true);
+      setDbError(null);
+      const snapshot = await fetchArenaSnapshot();
+      if (snapshot) {
+        setSeriesList(snapshot.series);
+        setViewWarning(null);
+        setIsLoading(false);
+        return;
+      }
       if (!supabase) {
         setIsLoading(false);
         return;
       }
-      setIsLoading(true);
-      setDbError(null);
       // The leaderboard view is the only source for displayed scores.
       const { data, error } = await supabase
         .from('series_leaderboard')
@@ -530,8 +538,8 @@ export default function App() {
     );
   }
 
-  // If Supabase is unconfigured or returns an error, render the clear setup card
-  if (!isSupabaseConfigured || dbError) {
+  // When static data is available, keep the app usable without Supabase.
+  if ((!isSupabaseConfigured && seriesList.length === 0) || dbError) {
     return (
       <DatabaseStatusCard
         type={!isSupabaseConfigured ? 'unconfigured' : 'error'}
