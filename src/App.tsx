@@ -47,8 +47,11 @@ const ShowDetailView = React.lazy(() =>
 const NotFoundView = React.lazy(() =>
   import('./components/NotFoundView').then((m) => ({ default: m.NotFoundView }))
 );
+const MoversView = React.lazy(() =>
+  import('./components/MoversView').then((m) => ({ default: m.MoversView }))
+);
 
-type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'watchlist';
+type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist';
 
 function RouteLoadingFallback() {
   return (
@@ -357,6 +360,7 @@ export default function App() {
     if (location.pathname.startsWith('/arena')) return 'arena';
     if (location.pathname.startsWith('/charts')) return 'charts';
     if (location.pathname.startsWith('/guess')) return 'guess';
+    if (location.pathname.startsWith('/movers')) return 'movers';
     if (location.pathname.startsWith('/watchlist')) return 'watchlist';
     return 'leaderboard';
   }, [location.pathname]);
@@ -562,6 +566,7 @@ export default function App() {
     { label: 'Contenders', tabKey: 'arena' as TabKey, path: '/arena' },
     { label: 'Charts', tabKey: 'charts' as TabKey, path: '/charts' },
     { label: 'Guess', tabKey: 'guess' as TabKey, path: '/guess' },
+    { label: 'Movers', tabKey: 'movers' as TabKey, path: '/movers' },
     ...(user ? [{ label: 'Watchlist', tabKey: 'watchlist' as TabKey, path: '/watchlist' }] : []),
   ];
 
@@ -680,6 +685,7 @@ export default function App() {
             path="/show/:slug"
             element={<ShowDetailView seriesList={seriesList} />}
           />
+          <Route path="/movers" element={<MoversView seriesList={seriesList} />} />
           <Route path="*" element={<NotFoundView />} />
         </Routes>
       </Suspense>

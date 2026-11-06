@@ -425,6 +425,21 @@ export type Database = {
         }
         Relationships: []
       }
+      series_weekly_movers: {
+        Row: {
+          period_start: string
+          series_id: string
+          slug: string
+          title: string
+          network: string
+          current_7d_score: number
+          previous_7d_score: number
+          delta_pct: number
+          mover_rank: number
+          faller_rank: number
+        }
+        Relationships: []
+      }
     }
     Functions: {
       submit_daily_score: {
