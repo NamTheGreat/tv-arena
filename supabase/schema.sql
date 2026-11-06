@@ -601,3 +601,177 @@ CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON sync_runs(started_at DESC);
 ALTER TABLE sync_runs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read on sync_runs" ON sync_runs;
 CREATE POLICY "Allow public read on sync_runs" ON sync_runs FOR SELECT USING (true);
+
+-- Shared weekly mover rankings for the feed and prediction grading.
+CREATE VIEW series_weekly_movers
+WITH (security_invoker = on) AS
+WITH periods AS (
+  SELECT DISTINCT recorded_date AS period_start
+  FROM series_daily_telemetry
+), week_scores AS (
+  SELECT
+    w.period_start,
+    t.series_id,
+    SUM(d.daily_score) FILTER (
+      WHERE t.recorded_date >= w.period_start AND t.recorded_date < w.period_start + 7
+    ) AS current_7d_score,
+    SUM(d.daily_score) FILTER (
+      WHERE t.recorded_date >= w.period_start - 7 AND t.recorded_date < w.period_start
+    ) AS previous_7d_score,
+    COUNT(DISTINCT t.recorded_date) FILTER (
+      WHERE t.recorded_date >= w.period_start AND t.recorded_date < w.period_start + 7
+    ) AS current_days
+  FROM periods w
+  JOIN series_daily_telemetry t
+    ON t.recorded_date >= w.period_start - 7 AND t.recorded_date < w.period_start + 7
+  JOIN series_daily_scores d ON d.telemetry_id = t.id
+  GROUP BY w.period_start, t.series_id
+), eligible AS (
+  SELECT
+    ws.period_start,
+    ws.series_id,
+    ws.current_7d_score,
+    ws.previous_7d_score,
+    ROUND(((ws.current_7d_score - ws.previous_7d_score)::NUMERIC / ws.previous_7d_score) * 100, 2) AS delta_pct,
+    s.slug,
+    s.title,
+    s.network
+  FROM week_scores ws
+  JOIN series s ON s.id = ws.series_id
+  WHERE ws.current_days = 7 AND ws.previous_7d_score > 0
+)
+SELECT
+  period_start,
+  series_id,
+  slug,
+  title,
+  network,
+  current_7d_score,
+  previous_7d_score,
+  delta_pct,
+  ROW_NUMBER() OVER (
+    PARTITION BY period_start
+    ORDER BY delta_pct DESC, title ASC, series_id ASC
+  ) AS mover_rank,
+  ROW_NUMBER() OVER (
+    PARTITION BY period_start
+    ORDER BY delta_pct ASC, title ASC, series_id ASC
+  ) AS faller_rank
+FROM eligible;
+
+GRANT SELECT ON series_weekly_movers TO anon, authenticated;
+
+CREATE TABLE mover_predictions (
+  week_start DATE NOT NULL CHECK (EXTRACT(ISODOW FROM week_start) = 1),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  series_id UUID NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+  points BIGINT CHECK (points IS NULL OR points IN (0, 1, 3)),
+  actual_rank BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  graded_at TIMESTAMPTZ,
+  PRIMARY KEY (week_start, user_id),
+  CHECK ((graded_at IS NULL AND points IS NULL AND actual_rank IS NULL)
+      OR (graded_at IS NOT NULL AND points IS NOT NULL))
+);
+
+ALTER TABLE mover_predictions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can read own mover predictions"
+  ON mover_predictions FOR SELECT USING (auth.uid() = user_id);
+GRANT SELECT ON mover_predictions TO authenticated;
+REVOKE INSERT, UPDATE, DELETE ON mover_predictions FROM anon, authenticated;
+
+CREATE FUNCTION submit_mover_prediction(p_week_start DATE, p_series_id UUID)
+RETURNS mover_predictions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id UUID := auth.uid();
+  v_next_week DATE := date_trunc('week', (now() AT TIME ZONE 'UTC'))::DATE + 7;
+  v_prediction mover_predictions;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Authentication required to submit a mover prediction';
+  END IF;
+  IF p_week_start <> v_next_week THEN
+    RAISE EXCEPTION 'Predictions are accepted only for next week starting %', v_next_week;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM series_daily_telemetry t
+    WHERE t.series_id = p_series_id AND t.recorded_date < p_week_start
+    GROUP BY t.series_id HAVING COUNT(DISTINCT t.recorded_date) >= 7
+  ) THEN
+    RAISE EXCEPTION 'Show must have at least seven days of telemetry before prediction week';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM series_daily_telemetry t
+    JOIN series_daily_scores d ON d.telemetry_id = t.id
+    WHERE t.series_id = p_series_id
+      AND t.recorded_date >= p_week_start - 7
+      AND t.recorded_date < p_week_start
+    GROUP BY t.series_id
+    HAVING SUM(d.daily_score) > 0
+  ) THEN
+    RAISE EXCEPTION 'Show must have a positive prior-week score to be eligible for mover ranking';
+  END IF;
+
+  INSERT INTO mover_predictions (week_start, user_id, series_id)
+  VALUES (p_week_start, v_user_id, p_series_id)
+  RETURNING * INTO v_prediction;
+  RETURN v_prediction;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION submit_mover_prediction(DATE, UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION submit_mover_prediction(DATE, UUID) TO authenticated;
+
+CREATE FUNCTION grade_mover_predictions_after_sync()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_max_date DATE;
+BEGIN
+  IF NEW.status <> 'success' OR OLD.status = 'success' THEN
+    RETURN NEW;
+  END IF;
+  SELECT MAX(recorded_date) INTO v_max_date FROM series_daily_telemetry;
+  IF v_max_date IS NULL THEN RETURN NEW; END IF;
+
+  WITH pending_weeks AS (
+    SELECT DISTINCT p.week_start
+    FROM mover_predictions p
+    WHERE p.graded_at IS NULL AND p.week_start + 6 <= v_max_date
+  ), ranked AS (
+    SELECT m.period_start AS week_start, m.series_id, m.mover_rank AS actual_rank
+    FROM series_weekly_movers m
+    JOIN pending_weeks w ON w.week_start = m.period_start
+  ), graded AS (
+    SELECT p.week_start, p.user_id, r.actual_rank,
+      CASE WHEN r.actual_rank = 1 THEN 3
+           WHEN r.actual_rank <= 3 THEN 1
+           ELSE 0 END::BIGINT AS points
+    FROM mover_predictions p
+    LEFT JOIN ranked r ON r.week_start = p.week_start AND r.series_id = p.series_id
+    WHERE p.graded_at IS NULL
+      AND p.week_start + 6 <= v_max_date
+      AND EXISTS (SELECT 1 FROM ranked any_rank WHERE any_rank.week_start = p.week_start)
+  )
+  UPDATE mover_predictions p
+  SET points = g.points, actual_rank = g.actual_rank, graded_at = now()
+  FROM graded g
+  WHERE p.week_start = g.week_start AND p.user_id = g.user_id;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION grade_mover_predictions_after_sync() FROM PUBLIC, anon, authenticated;
+CREATE TRIGGER grade_mover_predictions_after_successful_sync
+  AFTER UPDATE OF status ON sync_runs
+  FOR EACH ROW
+  WHEN (NEW.status = 'success' AND OLD.status IS DISTINCT FROM NEW.status)
+  EXECUTE FUNCTION grade_mover_predictions_after_sync();

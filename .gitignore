@@ -11,6 +11,9 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+/public/movers.xml
+/public/snapshot.json
+/public/snapshot.csv
 *.local
 .vite/
 .wrangler/
