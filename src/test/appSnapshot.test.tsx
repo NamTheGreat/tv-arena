@@ -14,7 +14,7 @@ afterEach(() => {
 describe('app snapshot fallback', () => {
   it('renders the static leaderboard when Supabase is unavailable', async () => {
     const snapshot = {
-      generated_at: '2026-11-05T00:00:00.000Z',
+      generated_at: new Date().toISOString(),
       series: [{
         id: 'series-1',
         tmdb_id: 1,
