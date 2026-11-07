@@ -125,10 +125,15 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         })];
 
         if let Err(e) = batch_record_daily_telemetry(client, config, telemetry_batch) {
-            eprintln!(
-                "❌ Failed batch recording daily telemetry for '{}': {}",
+            let msg = format!(
+                "Failed batch recording daily telemetry for '{}': {:#}",
                 show.title, e
             );
+            eprintln!("❌ {}", msg);
+            if !error_log.is_empty() {
+                error_log.push_str("; ");
+            }
+            error_log.push_str(&msg);
             fetch_failures += 1;
             continue;
         }
