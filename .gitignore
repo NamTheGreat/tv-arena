@@ -58,3 +58,7 @@ temp/
 # Playwright artifacts
 playwright-report/
 test-results/
+
+# Agent coordination folder
+.agent-comms/
+
