@@ -13,7 +13,7 @@ fn backfill_insert_ignores_existing_series_dates() {
             .query_param("on_conflict", "series_id,recorded_date")
             .header("Prefer", "resolution=ignore-duplicates")
             .json_body_partial(
-                r#"[{"recorded_date":"2026-11-03","wiki_views":1234,"reddit_comments":null,"reddit_upvotes":null}]"#,
+                r#"[{"recorded_date":"2026-11-03","daily_score":0,"daily_viewers":0,"wiki_views":1234,"reddit_comments":null,"reddit_upvotes":null}]"#,
             );
         then.status(201).json_body(json!([]));
     });
@@ -27,6 +27,8 @@ fn backfill_insert_ignores_existing_series_dates() {
     let row = json!({
         "series_id": "11111111-1111-1111-1111-111111111111",
         "recorded_date": "2026-11-03",
+        "daily_score": 0,
+        "daily_viewers": 0,
         "wiki_views": 1234,
         "reddit_comments": null,
         "reddit_upvotes": null,
@@ -61,6 +63,8 @@ fn backfill_insert_surfaces_http_status_and_body_on_error() {
     let row = json!({
         "series_id": "11111111-1111-1111-1111-111111111111",
         "recorded_date": "2026-11-03",
+        "daily_score": 0,
+        "daily_viewers": 0,
         "wiki_views": 1234,
         "reddit_comments": null,
         "reddit_upvotes": null,
