@@ -118,6 +118,8 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         let telemetry_batch = vec![json!({
             "series_id": show_id,
             "recorded_date": date_iso,
+            "daily_score": 0,
+            "daily_viewers": 0,
             "wiki_views": day.views,
             "reddit_comments": reddit_comments,
             "reddit_upvotes": reddit_upvotes,

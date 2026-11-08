@@ -78,7 +78,7 @@ fn test_sync_full_run_against_mock_server() {
             .query_param("on_conflict", "series_id,recorded_date")
             .header("Prefer", "resolution=ignore-duplicates")
             .json_body_partial(
-                r#"[{"wiki_views": 10000, "reddit_comments": 1000, "reddit_upvotes": 4000}]"#,
+                r#"[{"daily_score": 0, "daily_viewers": 0, "wiki_views": 10000, "reddit_comments": 1000, "reddit_upvotes": 4000}]"#,
             );
         then.status(201).json_body(json!({}));
     });
