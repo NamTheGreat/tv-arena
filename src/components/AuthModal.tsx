@@ -27,6 +27,78 @@ declare global {
   }
 }
 
+let turnstileScriptPromise: Promise<TurnstileApi> | null = null;
+
+export function loadTurnstileScript(): Promise<TurnstileApi> {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('Window unavailable'));
+  }
+  if (window.turnstile) {
+    return Promise.resolve(window.turnstile);
+  }
+  if (turnstileScriptPromise) {
+    return turnstileScriptPromise;
+  }
+
+  turnstileScriptPromise = new Promise<TurnstileApi>((resolve, reject) => {
+    let script = document.querySelector<HTMLScriptElement>('script[data-tv-arena-turnstile]');
+    if (!script) {
+      script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.dataset.tvArenaTurnstile = 'true';
+      document.head.appendChild(script);
+    }
+
+    const checkReady = () => {
+      if (window.turnstile) {
+        resolve(window.turnstile);
+        return true;
+      }
+      return false;
+    };
+
+    if (checkReady()) return;
+
+    const onLoad = () => {
+      cleanup();
+      if (!checkReady()) {
+        const interval = setInterval(() => {
+          if (checkReady()) {
+            clearInterval(interval);
+          }
+        }, 30);
+        setTimeout(() => {
+          clearInterval(interval);
+          if (window.turnstile) {
+            resolve(window.turnstile);
+          } else {
+            turnstileScriptPromise = null;
+            reject(new Error('Turnstile API not found on window'));
+          }
+        }, 4000);
+      }
+    };
+
+    const onError = () => {
+      cleanup();
+      turnstileScriptPromise = null;
+      reject(new Error('Failed to load Turnstile script'));
+    };
+
+    const cleanup = () => {
+      script?.removeEventListener('load', onLoad);
+      script?.removeEventListener('error', onError);
+    };
+
+    script.addEventListener('load', onLoad, { once: true });
+    script.addEventListener('error', onError, { once: true });
+  });
+
+  return turnstileScriptPromise;
+}
+
 function TurnstileWidget({
   siteKey,
   resetKey,
@@ -40,6 +112,7 @@ function TurnstileWidget({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
+  const isMountedRef = useRef(true);
   const onTokenRef = useRef(onToken);
   const onErrorRef = useRef(onError);
 
@@ -47,52 +120,67 @@ function TurnstileWidget({
   onErrorRef.current = onError;
 
   useEffect(() => {
-    let active = true;
-    const renderWidget = () => {
-      if (!active || !window.turnstile || !containerRef.current || widgetIdRef.current) return;
-      try {
-        widgetIdRef.current = window.turnstile.render(containerRef.current, {
-          sitekey: siteKey,
-          callback: (token) => onTokenRef.current(token),
-          'expired-callback': () => onTokenRef.current(''),
-          'error-callback': () => {
-            onTokenRef.current('');
-            onErrorRef.current();
-          },
-        });
-      } catch {
-        onErrorRef.current();
-      }
-    };
+    isMountedRef.current = true;
+    let cancelled = false;
 
-    const existing = document.querySelector<HTMLScriptElement>('script[data-tv-arena-turnstile]');
-    if (window.turnstile) {
-      renderWidget();
-    } else {
-      const script = existing ?? document.createElement('script');
-      script.addEventListener('load', renderWidget, { once: true });
-      script.addEventListener('error', () => active && onErrorRef.current(), { once: true });
-      if (!existing) {
-        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-        script.async = true;
-        script.defer = true;
-        script.dataset.tvArenaTurnstile = 'true';
-        document.head.appendChild(script);
-      }
-    }
+    loadTurnstileScript()
+      .then((turnstile) => {
+        if (cancelled || !isMountedRef.current || !containerRef.current || widgetIdRef.current) {
+          return;
+        }
+        try {
+          widgetIdRef.current = turnstile.render(containerRef.current, {
+            sitekey: siteKey,
+            callback: (token) => {
+              if (isMountedRef.current) {
+                onTokenRef.current(token);
+              }
+            },
+            'expired-callback': () => {
+              if (isMountedRef.current) {
+                onTokenRef.current('');
+              }
+            },
+            'error-callback': () => {
+              if (isMountedRef.current) {
+                onTokenRef.current('');
+                onErrorRef.current();
+              }
+            },
+          });
+        } catch {
+          if (isMountedRef.current) {
+            onErrorRef.current();
+          }
+        }
+      })
+      .catch(() => {
+        if (isMountedRef.current) {
+          onErrorRef.current();
+        }
+      });
 
     return () => {
-      active = false;
+      cancelled = true;
+      isMountedRef.current = false;
       if (widgetIdRef.current && window.turnstile) {
-        window.turnstile.remove(widgetIdRef.current);
+        try {
+          window.turnstile.remove(widgetIdRef.current);
+        } catch {
+          // ignore removal errors during unmount
+        }
         widgetIdRef.current = null;
       }
     };
   }, [siteKey]);
 
   useEffect(() => {
-    if (widgetIdRef.current && window.turnstile) {
-      window.turnstile.reset(widgetIdRef.current);
+    if (widgetIdRef.current && window.turnstile && isMountedRef.current) {
+      try {
+        window.turnstile.reset(widgetIdRef.current);
+      } catch {
+        // ignore reset errors
+      }
     }
   }, [resetKey]);
 
