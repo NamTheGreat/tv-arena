@@ -59,6 +59,7 @@ export function TriviaGame({
   const [dailyStatusUnavailable, setDailyStatusUnavailable] = useState(false);
   const [dailyStartBlocked, setDailyStartBlocked] = useState(false);
   const [dailyCheckAttempt, setDailyCheckAttempt] = useState(0);
+  const deckDateRef = useRef<string>(todayStr);
   const dailyFinishedRef = useRef(false);
   const dailySubmissionInFlightRef = useRef(false);
   const dailyTransferAttemptRef = useRef<string | null>(null);
@@ -211,6 +212,7 @@ export function TriviaGame({
         const deck = await fetchDailyDeck(todayStr);
         if (active) {
           if (deck && deck.length >= 2) {
+            deckDateRef.current = todayStr;
             setDailyDeckIds(deck);
           } else {
             setDailyDeckIds(null);
@@ -390,7 +392,9 @@ export function TriviaGame({
     if (dailyFinishedRef.current) return;
     dailyFinishedRef.current = true;
     releaseDailyTabLock();
-    const challengeDate = dailyRunDateRef.current || todayStr;
+    const challengeDate = deckDateRef.current || dailyRunDateRef.current || todayStr;
+    const currentDate = getTodayDateString();
+    const midnightPassed = challengeDate !== currentDate;
 
     const result: StoredDailyResult = {
       date: challengeDate,
@@ -404,7 +408,7 @@ export function TriviaGame({
     setDailyResult(result);
     setDailySubmissionError(null);
 
-    if (user) {
+    if (user && !midnightPassed) {
       await submitCompletedDailyRun(result, completedAnswers);
     }
   };
@@ -682,6 +686,14 @@ export function TriviaGame({
           submissionError={dailySubmissionError}
           onRetry={retryDailySubmission}
           onOpenAuth={onOpenAuth}
+          todayDateStr={todayStr}
+          onPlayToday={() => {
+            dailyRunDateRef.current = null;
+            const current = getTodayDateString();
+            setTodayStr(current);
+            setDailyResult(null);
+            setDailyStartBlocked(false);
+          }}
         />
       ) : gameMode === 'daily' && isCheckingDailyResult ? (
         <div className="text-center py-12 text-sm text-arena-muted">Checking today's challenge status…</div>
