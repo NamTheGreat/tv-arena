@@ -71,6 +71,8 @@ describe('TriviaGame timer and finish guards', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Daily Round/i)).toBeInTheDocument();
+      expect(screen.getByText('1 / 10')).toBeInTheDocument();
+      expect(screen.getByText('Show 1')).toBeInTheDocument();
     });
 
     expect(screen.getByText('1 / 10')).toBeInTheDocument();
@@ -114,6 +116,8 @@ describe('TriviaGame timer and finish guards', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Daily Round/i)).toBeInTheDocument();
+      expect(screen.getByText('1 / 10')).toBeInTheDocument();
+      expect(screen.getByText('Show 1')).toBeInTheDocument();
     });
 
     vi.useFakeTimers();
@@ -124,9 +128,12 @@ describe('TriviaGame timer and finish guards', () => {
       act(() => {
         fireEvent.click(higherBtn);
       });
-      // Advance auto-advance timer (1250ms) + slide timer (320ms)
+      // Advance auto-advance timer (1250ms) then slide timer (320ms)
       act(() => {
-        vi.advanceTimersByTime(1600);
+        vi.advanceTimersByTime(1250);
+      });
+      act(() => {
+        vi.advanceTimersByTime(350);
       });
     }
 
