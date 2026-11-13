@@ -21,7 +21,10 @@ WITH periods AS (
     ) AS previous_7d_score,
     COUNT(DISTINCT t.recorded_date) FILTER (
       WHERE t.recorded_date >= w.period_start AND t.recorded_date < w.period_start + 7
-    ) AS current_days
+    ) AS current_days,
+    COUNT(DISTINCT t.recorded_date) FILTER (
+      WHERE t.recorded_date >= w.period_start - 7 AND t.recorded_date < w.period_start
+    ) AS previous_days
   FROM periods w
   JOIN series_daily_telemetry t
     ON t.recorded_date >= w.period_start - 7 AND t.recorded_date < w.period_start + 7
@@ -39,7 +42,7 @@ WITH periods AS (
     s.network
   FROM week_scores ws
   JOIN series s ON s.id = ws.series_id
-  WHERE ws.current_days = 7 AND ws.previous_7d_score > 0
+  WHERE ws.current_days = 7 AND ws.previous_days = 7 AND ws.previous_7d_score > 0
 )
 SELECT
   period_start,

@@ -41,20 +41,25 @@ function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
 
   useEffect(() => {
     let active = true;
+    if (!user || !supabase) {
+      setExistingPrediction(null);
+      return;
+    }
+    const currentUserId = user.id;
+    const client = supabase;
     async function loadPrediction() {
-      if (!user || !supabase) return;
       try {
-        const { data, error } = await supabase
+        const { data, error } = await client
           .from('mover_predictions')
           .select('series_id')
-          .eq('user_id', user.id)
+          .eq('user_id', currentUserId)
           .eq('week_start', nextWeekStart)
           .maybeSingle();
-        if (active && !error && data) {
-          setExistingPrediction(data);
+        if (active) {
+          setExistingPrediction(!error && data ? data : null);
         }
       } catch {
-        // Ignore network / auth errors
+        if (active) setExistingPrediction(null);
       }
     }
     loadPrediction();
@@ -124,7 +129,7 @@ function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
           >
             <option value="">Choose a show...</option>
             {seriesList
-              .filter((s) => (s.current_7d_score ?? 0) > 0)
+              .filter((s) => (s.previous_7d_score ?? 0) > 0)
               .sort((a, b) => a.title.localeCompare(b.title))
               .map((s) => (
                 <option key={s.id} value={s.id}>{s.title} ({s.network})</option>

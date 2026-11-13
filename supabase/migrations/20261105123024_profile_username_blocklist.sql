@@ -12,6 +12,13 @@ ALTER TABLE public.profiles
     'spic', 'chink', 'coon', 'wetback'
   )) NOT VALID;
 
+COMMIT;
+
+BEGIN;
+
+SET LOCAL lock_timeout = '1s';
+SET LOCAL statement_timeout = '5s';
+
 ALTER TABLE public.profiles
   VALIDATE CONSTRAINT profiles_username_not_blocked;
 
