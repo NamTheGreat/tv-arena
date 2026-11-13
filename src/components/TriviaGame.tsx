@@ -52,6 +52,7 @@ export function TriviaGame({
   const [isLoadingDailyDeck, setIsLoadingDailyDeck] = useState(true);
   const [dailyDeckError, setDailyDeckError] = useState(false);
   const [isSubmittingScore, setIsSubmittingScore] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
   const [dailyResult, setDailyResult] = useState<StoredDailyResult | null>(null);
   const [dailySubmissionError, setDailySubmissionError] = useState<string | null>(null);
   const [retryDailyAnswers, setRetryDailyAnswers] = useState<('higher' | 'lower')[] | null>(null);
@@ -59,6 +60,7 @@ export function TriviaGame({
   const [dailyStatusUnavailable, setDailyStatusUnavailable] = useState(false);
   const [dailyStartBlocked, setDailyStartBlocked] = useState(false);
   const [dailyCheckAttempt, setDailyCheckAttempt] = useState(0);
+  const deckDateRef = useRef<string>(todayStr);
   const dailyFinishedRef = useRef(false);
   const dailySubmissionInFlightRef = useRef(false);
   const dailyTransferAttemptRef = useRef<string | null>(null);
@@ -107,6 +109,7 @@ export function TriviaGame({
 
   const startDailyGame = () => {
     clearGameTimers();
+    setIsFinishing(false);
     const currentDate = getTodayDateString();
     dailyRunDateRef.current = currentDate;
     if (currentDate !== todayStr) {
@@ -211,6 +214,7 @@ export function TriviaGame({
         const deck = await fetchDailyDeck(todayStr);
         if (active) {
           if (deck && deck.length >= 2) {
+            deckDateRef.current = todayStr;
             setDailyDeckIds(deck);
           } else {
             setDailyDeckIds(null);
@@ -383,9 +387,10 @@ export function TriviaGame({
     }
   };
 
-  const handleClearSavedResult = (date: string) => {
+  const handleClearSavedResult = (date?: string) => {
+    const targetDate = date || dailyResult?.date || todayStr;
     try {
-      localStorage.removeItem(`tv_arena_daily_${date}`);
+      localStorage.removeItem(`tv_arena_daily_${targetDate}`);
     } catch {
       // LocalStorage clear best-effort
     }
@@ -398,8 +403,12 @@ export function TriviaGame({
   ) => {
     if (dailyFinishedRef.current) return;
     dailyFinishedRef.current = true;
+    setIsFinishing(true);
+    clearGameTimers();
     releaseDailyTabLock();
-    const challengeDate = dailyRunDateRef.current || todayStr;
+    const challengeDate = deckDateRef.current || dailyRunDateRef.current || todayStr;
+    const currentDate = getTodayDateString();
+    const midnightPassed = challengeDate !== currentDate;
 
     const result: StoredDailyResult = {
       date: challengeDate,
@@ -413,7 +422,7 @@ export function TriviaGame({
     setDailyResult(result);
     setDailySubmissionError(null);
 
-    if (user) {
+    if (user && !midnightPassed) {
       await submitCompletedDailyRun(result, completedAnswers);
     }
   };
@@ -425,6 +434,7 @@ export function TriviaGame({
     if (gameMode === 'daily') {
       const nextRound = dailyRound + 1;
       if (nextRound >= 10 || nextRound + 1 >= activeDeck.length) {
+        setIsFinishing(true);
         finishDailyRun(userAnswers, guessHistory);
         return;
       }
@@ -496,6 +506,8 @@ export function TriviaGame({
   };
 
   const handlePlayAgain = () => {
+    clearGameTimers();
+    setIsFinishing(false);
     const bag = shuffledIndexes(activeDeck.length);
     dispatchGame({ type: 'reset' });
     dispatchGame({ type: 'initialize-endless', knownIdx: bag[0], challengerIdx: bag[1], endlessBag: bag.slice(2) });
@@ -549,7 +561,10 @@ export function TriviaGame({
               <button
                 key={deck.id}
                 type="button"
-                onClick={() => setDeckFilter(deck.id as DeckFilter)}
+                onClick={() => {
+                  clearGameTimers();
+                  setDeckFilter(deck.id as DeckFilter);
+                }}
                 className={`px-2.5 py-0.5 rounded-full border transition-colors cursor-pointer ${
                   deckFilter === deck.id
                     ? 'border-arena-terracotta bg-arena-terracotta/10 text-arena-terracotta'
@@ -565,7 +580,10 @@ export function TriviaGame({
           <div className="inline-flex items-center bg-stone-100 p-0.5 rounded-full text-[11px] font-semibold">
             <button
               type="button"
-              onClick={() => setDailySubView('play')}
+              onClick={() => {
+                clearGameTimers();
+                setDailySubView('play');
+              }}
               className={`px-3 py-1 rounded-full transition-colors cursor-pointer ${
                 dailySubView === 'play'
                   ? 'bg-white text-stone-900 shadow-sm'
@@ -576,7 +594,10 @@ export function TriviaGame({
             </button>
             <button
               type="button"
-              onClick={() => setDailySubView('leaderboard')}
+              onClick={() => {
+                clearGameTimers();
+                setDailySubView('leaderboard');
+              }}
               className={`px-3 py-1 rounded-full transition-colors cursor-pointer ${
                 dailySubView === 'leaderboard'
                   ? 'bg-white text-arena-terracotta shadow-sm font-bold'
@@ -606,7 +627,10 @@ export function TriviaGame({
             <div className="inline-flex items-center bg-stone-100 p-0.5 rounded-full text-xs font-semibold">
               <button
                 type="button"
-                onClick={() => setLeaderboardTab('daily')}
+                onClick={() => {
+                  clearGameTimers();
+                  setLeaderboardTab('daily');
+                }}
                 className={`px-3 py-1 rounded-full transition-colors cursor-pointer ${
                   leaderboardTab === 'daily'
                     ? 'bg-white text-arena-terracotta shadow-sm font-bold'
@@ -617,7 +641,10 @@ export function TriviaGame({
               </button>
               <button
                 type="button"
-                onClick={() => setLeaderboardTab('streak')}
+                onClick={() => {
+                  clearGameTimers();
+                  setLeaderboardTab('streak');
+                }}
                 className={`px-3 py-1 rounded-full transition-colors cursor-pointer ${
                   leaderboardTab === 'streak'
                     ? 'bg-white text-arena-terracotta shadow-sm font-bold'
@@ -639,7 +666,10 @@ export function TriviaGame({
                   No verified scores yet for this board.{' '}
                   <button
                     type="button"
-                    onClick={() => setDailySubView('play')}
+                    onClick={() => {
+                      clearGameTimers();
+                      setDailySubView('play');
+                    }}
                     className="text-arena-terracotta font-semibold hover:underline"
                   >
                     Be the first to play!
@@ -691,6 +721,14 @@ export function TriviaGame({
           submissionError={dailySubmissionError}
           onRetry={retryDailySubmission}
           onOpenAuth={onOpenAuth}
+          todayDateStr={todayStr}
+          onPlayToday={() => {
+            dailyRunDateRef.current = null;
+            const current = getTodayDateString();
+            setTodayStr(current);
+            setDailyResult(null);
+            setDailyStartBlocked(false);
+          }}
           onClearSavedResult={() => handleClearSavedResult(dailyResult.date)}
         />
       ) : gameMode === 'daily' && isCheckingDailyResult ? (
@@ -897,7 +935,10 @@ export function TriviaGame({
               <button
                 type="button"
                 onClick={advanceToNextRound}
-                className="inline-flex items-center justify-center px-8 sm:px-10 py-2.5 sm:py-3 rounded-full bg-arena-terracotta text-white font-medium text-xs sm:text-sm tracking-widest uppercase shadow-pill hover:bg-arena-terracottaHover transition-all cursor-pointer"
+                disabled={isFinishing}
+                className={`inline-flex items-center justify-center px-8 sm:px-10 py-2.5 sm:py-3 rounded-full bg-arena-terracotta text-white font-medium text-xs sm:text-sm tracking-widest uppercase shadow-pill transition-all ${
+                  isFinishing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-arena-terracottaHover cursor-pointer'
+                }`}
               >
                 <span>{dailyRound >= 9 ? 'Complete Run' : 'Next Round'}</span>
                 <span className="ml-2">→</span>
@@ -943,7 +984,10 @@ export function TriviaGame({
         challengerScore={challengerScore}
         guessHistory={guessHistory}
         onPlayAgain={handlePlayAgain}
-        onClose={() => dispatchGame({ type: 'game-over', value: false })}
+        onClose={() => {
+          clearGameTimers();
+          dispatchGame({ type: 'game-over', value: false });
+        }}
         onViewLeaderboard={onViewLeaderboard}
       />
     </main>

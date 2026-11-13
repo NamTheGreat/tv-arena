@@ -8,6 +8,8 @@ interface DailyResultCardProps {
   submissionError: string | null;
   onRetry: () => void;
   onOpenAuth?: () => void;
+  todayDateStr?: string;
+  onPlayToday?: () => void;
   onClearSavedResult?: () => void;
 }
 
@@ -18,17 +20,22 @@ export function DailyResultCard({
   submissionError,
   onRetry,
   onOpenAuth,
+  todayDateStr,
+  onPlayToday,
   onClearSavedResult,
 }: DailyResultCardProps) {
   const [shareStatus, setShareStatus] = useState('');
   const hasNoAnswers = !result.answers?.length;
+  const isDayChanged = Boolean(todayDateStr && result.date !== todayDateStr && !result.verified);
   const status = result.verified
     ? 'Verified and saved to your account.'
-    : hasNoAnswers
-      ? 'Saved on this device only.'
-      : isAuthenticated
-        ? 'Your score has not been verified yet.'
-        : 'Saved on this device only.';
+    : isDayChanged
+      ? 'Saved on this device only (not on the leaderboard).'
+      : hasNoAnswers
+        ? 'Saved on this device only.'
+        : isAuthenticated
+          ? 'Your score has not been verified yet.'
+          : 'Saved on this device only.';
   const shareResult = async () => {
     try {
       let score: number;
@@ -79,7 +86,21 @@ export function DailyResultCard({
       </button>
       {shareStatus && <p role={shareStatus.startsWith('Could not') ? 'alert' : 'status'} className="mt-2 text-xs text-stone-500">{shareStatus}</p>}
       {isSubmitting && <p role="status" className="text-xs text-stone-500">Verifying your score…</p>}
-      {hasNoAnswers && !result.verified && onClearSavedResult && (
+      {isDayChanged && (
+        <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50 p-3 text-xs text-stone-600">
+          <p>The challenge date ({result.date}) has passed. Scores from previous days are saved to this device only and cannot be submitted to the leaderboard.</p>
+          {onPlayToday && (
+            <button
+              type="button"
+              onClick={onPlayToday}
+              className="mt-2.5 inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-arena-terracotta text-white font-semibold text-xs hover:bg-arena-terracottaHover transition-colors cursor-pointer"
+            >
+              Play today's challenge →
+            </button>
+          )}
+        </div>
+      )}
+      {!result.answers?.length && !isDayChanged && !result.verified && onClearSavedResult && (
         <div className="mt-4">
           <p className="text-xs text-stone-500 mb-2">
             This saved result has no answers and cannot be submitted to the leaderboard.
@@ -93,7 +114,7 @@ export function DailyResultCard({
           </button>
         </div>
       )}
-      {!hasNoAnswers && submissionError && (
+      {!hasNoAnswers && !isDayChanged && submissionError && (
         <div role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
           <p>{submissionError}</p>
           <button type="button" onClick={onRetry} disabled={isSubmitting} className="mt-2 font-semibold underline disabled:opacity-50">
@@ -101,7 +122,7 @@ export function DailyResultCard({
           </button>
         </div>
       )}
-      {!isAuthenticated && onOpenAuth && !hasNoAnswers && result.answers?.length === result.correctness.length && result.answers.length > 0 && (
+      {!isAuthenticated && onOpenAuth && !isDayChanged && !hasNoAnswers && result.answers?.length === result.correctness.length && result.answers.length > 0 && (
         <div className="mt-4 text-sm text-stone-600">
           <p>Sign in to save your score to the leaderboard.</p>
           <button type="button" onClick={onOpenAuth} className="mt-2 font-semibold text-arena-terracotta underline">
@@ -109,10 +130,10 @@ export function DailyResultCard({
           </button>
         </div>
       )}
-      {!isAuthenticated && !result.answers?.length && (
+      {!isAuthenticated && !isDayChanged && !result.answers?.length && (
         <p className="mt-4 text-xs text-stone-500">This saved result cannot be transferred to a leaderboard account.</p>
       )}
-      <p className="text-xs text-stone-400 mt-6">Come back tomorrow for a new challenge.</p>
+      {!isDayChanged && <p className="text-xs text-stone-400 mt-6">Come back tomorrow for a new challenge.</p>}
     </section>
   );
 }

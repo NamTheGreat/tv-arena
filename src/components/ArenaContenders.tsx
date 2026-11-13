@@ -18,7 +18,8 @@ function handleComboboxKeyDown(
   setOpen: (open: boolean) => void,
   activeIndex: number,
   setActiveIndex: (index: number) => void,
-  onSelect: (show: SeriesItem) => void
+  onSelect: (show: SeriesItem) => void,
+  onRevert?: () => void
 ) {
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     if (!options.length) return;
@@ -34,6 +35,7 @@ function handleComboboxKeyDown(
   } else if (event.key === 'Escape') {
     setOpen(false);
     setActiveIndex(-1);
+    onRevert?.();
   }
 }
 
@@ -90,6 +92,22 @@ export function ArenaContenders({
     setRightActiveIndex(-1);
   };
 
+  const handleLeftBlur = () => {
+    setLeftDropdownOpen(false);
+    setLeftActiveIndex(-1);
+    if (leftShow && leftSearch !== leftShow.title) {
+      setLeftSearch(leftShow.title);
+    }
+  };
+
+  const handleRightBlur = () => {
+    setRightDropdownOpen(false);
+    setRightActiveIndex(-1);
+    if (rightShow && rightSearch !== rightShow.title) {
+      setRightSearch(rightShow.title);
+    }
+  };
+
   const handleCopyLink = async () => {
     setCopied(false);
     setCopyFailed(false);
@@ -119,18 +137,36 @@ export function ArenaContenders({
               aria-activedescendant={leftDropdownOpen && leftOptions[leftActiveIndex] ? `left-show-option-${leftOptions[leftActiveIndex].slug}` : undefined}
               value={leftSearch}
               onFocus={() => { setLeftDropdownOpen(true); setLeftActiveIndex(leftOptions.length ? 0 : -1); }}
-              onBlur={() => setTimeout(() => setLeftDropdownOpen(false), 180)}
+              onBlur={handleLeftBlur}
               onChange={(e) => {
                 setLeftSearch(e.target.value);
                 setLeftDropdownOpen(true);
                 setLeftActiveIndex(0);
               }}
-              onKeyDown={(event) => handleComboboxKeyDown(event, leftOptions, leftDropdownOpen, setLeftDropdownOpen, leftActiveIndex, setLeftActiveIndex, selectLeft)}
+              onKeyDown={(event) =>
+                handleComboboxKeyDown(
+                  event,
+                  leftOptions,
+                  leftDropdownOpen,
+                  setLeftDropdownOpen,
+                  leftActiveIndex,
+                  setLeftActiveIndex,
+                  selectLeft,
+                  () => {
+                    if (leftShow && leftSearch !== leftShow.title) setLeftSearch(leftShow.title);
+                  }
+                )
+              }
               placeholder="Type a series..."
               className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm focus:border-arena-terracotta focus:ring-0 outline-none"
             />
             {leftDropdownOpen && (
-              <div id="left-show-options" role="listbox" className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden">
+              <div
+                id="left-show-options"
+                role="listbox"
+                onMouseDown={(event) => event.preventDefault()}
+                className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden"
+              >
                 {leftOptions.map((show, index) => (
                   <div
                     id={`left-show-option-${show.slug}`}
@@ -139,6 +175,7 @@ export function ArenaContenders({
                     aria-selected={index === leftActiveIndex}
                     onMouseEnter={() => setLeftActiveIndex(index)}
                     onMouseDown={(event) => event.preventDefault()}
+                    onPointerDown={(event) => event.preventDefault()}
                     onClick={() => selectLeft(show)}
                     className={`w-full text-left px-4 py-2.5 flex items-center justify-between text-sm font-serif cursor-pointer ${index === leftActiveIndex ? 'bg-arena-cream' : ''}`}
                   >
@@ -154,6 +191,7 @@ export function ArenaContenders({
           <button
             type="button"
             onClick={onSwapShows}
+            onMouseDown={(event) => event.preventDefault()}
             title="Swap Contenders"
             className="hidden sm:flex absolute left-1/2 -translate-x-1/2 z-10 w-8 h-8 rounded-full bg-arena-cream border border-arena-border items-center justify-center text-arena-muted text-xs font-serif italic shadow-sm hover:border-arena-terracotta"
           >
@@ -172,18 +210,36 @@ export function ArenaContenders({
               aria-activedescendant={rightDropdownOpen && rightOptions[rightActiveIndex] ? `right-show-option-${rightOptions[rightActiveIndex].slug}` : undefined}
               value={rightSearch}
               onFocus={() => { setRightDropdownOpen(true); setRightActiveIndex(rightOptions.length ? 0 : -1); }}
-              onBlur={() => setTimeout(() => setRightDropdownOpen(false), 180)}
+              onBlur={handleRightBlur}
               onChange={(e) => {
                 setRightSearch(e.target.value);
                 setRightDropdownOpen(true);
                 setRightActiveIndex(0);
               }}
-              onKeyDown={(event) => handleComboboxKeyDown(event, rightOptions, rightDropdownOpen, setRightDropdownOpen, rightActiveIndex, setRightActiveIndex, selectRight)}
+              onKeyDown={(event) =>
+                handleComboboxKeyDown(
+                  event,
+                  rightOptions,
+                  rightDropdownOpen,
+                  setRightDropdownOpen,
+                  rightActiveIndex,
+                  setRightActiveIndex,
+                  selectRight,
+                  () => {
+                    if (rightShow && rightSearch !== rightShow.title) setRightSearch(rightShow.title);
+                  }
+                )
+              }
               placeholder="Type a series..."
               className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm focus:border-arena-sage focus:ring-0 outline-none"
             />
             {rightDropdownOpen && (
-              <div id="right-show-options" role="listbox" className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden">
+              <div
+                id="right-show-options"
+                role="listbox"
+                onMouseDown={(event) => event.preventDefault()}
+                className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden"
+              >
                 {rightOptions.map((show, index) => (
                   <div
                     id={`right-show-option-${show.slug}`}
@@ -192,6 +248,7 @@ export function ArenaContenders({
                     aria-selected={index === rightActiveIndex}
                     onMouseEnter={() => setRightActiveIndex(index)}
                     onMouseDown={(event) => event.preventDefault()}
+                    onPointerDown={(event) => event.preventDefault()}
                     onClick={() => selectRight(show)}
                     className={`w-full text-left px-4 py-2.5 flex items-center justify-between text-sm font-serif cursor-pointer ${index === rightActiveIndex ? 'bg-arena-cream' : ''}`}
                   >
