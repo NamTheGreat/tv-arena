@@ -90,14 +90,18 @@ async function generate() {
   const baseUrl = process.env.VITE_SUPABASE_URL;
   const key = process.env.VITE_SUPABASE_ANON_KEY;
   if (baseUrl && key) {
-    const since = new Date();
-    since.setUTCDate(since.getUTCDate() - 6);
-    const date = since.toISOString().slice(0, 10);
-    [movers, shows, breakouts] = await Promise.all([
-      fetchRows(baseUrl, key, 'series_weekly_movers', 'select=period_start,series_id,slug,title,network,current_7d_score,previous_7d_score,delta_pct,mover_rank,faller_rank&order=period_start.desc,mover_rank.asc&limit=1000'),
-      fetchRows(baseUrl, key, 'series', 'select=id,slug,title&limit=1000'),
-      fetchRows(baseUrl, key, 'series_breakouts', `select=series_id,detected_date,signal,reason&detected_date=gte.${date}&order=detected_date.desc&limit=50`),
-    ]);
+    try {
+      const since = new Date();
+      since.setUTCDate(since.getUTCDate() - 6);
+      const date = since.toISOString().slice(0, 10);
+      [movers, shows, breakouts] = await Promise.all([
+        fetchRows(baseUrl, key, 'series_weekly_movers', 'select=period_start,series_id,slug,title,network,current_7d_score,previous_7d_score,delta_pct,mover_rank,faller_rank&order=period_start.desc,mover_rank.asc&limit=1000'),
+        fetchRows(baseUrl, key, 'series', 'select=id,slug,title&limit=1000'),
+        fetchRows(baseUrl, key, 'series_breakouts', `select=series_id,detected_date,signal,reason&detected_date=gte.${date}&order=detected_date.desc&limit=50`),
+      ]);
+    } catch (error) {
+      console.warn(`Movers feed fetch failed; generating valid empty feed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   } else {
     console.warn('Supabase build variables missing; generating a valid empty movers feed.');
   }
