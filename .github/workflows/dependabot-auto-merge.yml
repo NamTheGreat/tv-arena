@@ -34,6 +34,10 @@ jobs:
             if [ -n "$checks" ] && [ "$(jq 'length' <<< "$checks")" -gt 0 ]; then
               filtered="$(jq '[.[] | select(.name != "auto-merge" and (.name | test("auto-merge"; "i") | not))]' <<< "$checks")"
               total="$(jq 'length' <<< "$filtered")"
+              if [ "$total" -eq 0 ] && [ "$attempt" -ge 3 ]; then
+                echo "No external checks configured for this PR."
+                exit 0
+              fi
               if [ "$total" -gt 0 ]; then
                 pending="$(jq '[.[] | select(.bucket == "pending")] | length' <<< "$filtered")"
                 failed="$(jq '[.[] | select(.bucket == "fail" or .bucket == "cancel")] | length' <<< "$filtered")"

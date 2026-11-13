@@ -53,7 +53,7 @@ BEGIN
     JOIN series_daily_scores d ON d.telemetry_id = t.id
     WHERE t.series_id = p_series_id
       AND t.recorded_date >= p_week_start - 14
-      AND t.recorded_date < p_week_start
+      AND t.recorded_date < p_week_start - 7
     GROUP BY t.series_id
     HAVING SUM(d.daily_score) > 0
   ) THEN
