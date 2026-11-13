@@ -387,6 +387,16 @@ export function TriviaGame({
     }
   };
 
+  const handleClearSavedResult = (date?: string) => {
+    const targetDate = date || dailyResult?.date || todayStr;
+    try {
+      localStorage.removeItem(`tv_arena_daily_${targetDate}`);
+    } catch {
+      // LocalStorage clear best-effort
+    }
+    setDailyResult(null);
+  };
+
   const finishDailyRun = async (
     completedAnswers: ('higher' | 'lower')[],
     completedCorrectness: boolean[]
@@ -719,6 +729,7 @@ export function TriviaGame({
             setDailyResult(null);
             setDailyStartBlocked(false);
           }}
+          onClearSavedResult={() => handleClearSavedResult(dailyResult.date)}
         />
       ) : gameMode === 'daily' && isCheckingDailyResult ? (
         <div className="text-center py-12 text-sm text-arena-muted">Checking today's challenge status…</div>

@@ -47,7 +47,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session && new URLSearchParams(window.location.search).get('password-reset') === '1') {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (session && (searchParams.get('password-reset') === '1' || searchParams.get('mode') === 'update-password')) {
         setPasswordRecovery(true);
       }
       setLoading(false);

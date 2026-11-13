@@ -336,7 +336,7 @@ function GuessRouteWrapper({
 }
 
 export default function App() {
-  const { user, signOut, passwordRecovery } = useAuth();
+  const { user, signOut, passwordRecovery, clearPasswordRecovery } = useAuth();
   const watchlist = useWatchlist(user?.id);
   const navigate = useNavigate();
   const location = useLocation();
@@ -361,7 +361,10 @@ export default function App() {
   const closeAuthModal = () => {
     setIsAuthModalOpen(false);
     setAuthModalMode('signin');
-    if (location.search.includes('password-reset=1')) navigate('/', { replace: true });
+    clearPasswordRecovery();
+    if (location.search.includes('password-reset=1') || location.search.includes('mode=update-password')) {
+      navigate('/', { replace: true });
+    }
   };
 
   // Leaderboard Filter State
