@@ -29,15 +29,28 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          for attempt in $(seq 1 60); do
-            checks="$(gh pr checks "$PR_URL" --json bucket 2>/dev/null || true)"
+          for attempt in $(seq 1 120); do
+            checks="$(gh pr checks "$PR_URL" --json name,bucket 2>/dev/null || true)"
             if [ -n "$checks" ] && [ "$(jq 'length' <<< "$checks")" -gt 0 ]; then
-              gh pr checks "$PR_URL" --watch --fail-fast --interval 10
-              exit $?
+              filtered="$(jq '[.[] | select(.name != "auto-merge" and (.name | test("auto-merge"; "i") | not))]' <<< "$checks")"
+              total="$(jq 'length' <<< "$filtered")"
+              if [ "$total" -gt 0 ]; then
+                pending="$(jq '[.[] | select(.bucket == "pending")] | length' <<< "$filtered")"
+                failed="$(jq '[.[] | select(.bucket == "fail" or .bucket == "cancel")] | length' <<< "$filtered")"
+                if [ "$failed" -gt 0 ]; then
+                  echo "One or more checks failed:"
+                  jq '.[] | select(.bucket == "fail" or .bucket == "cancel")' <<< "$filtered"
+                  exit 1
+                fi
+                if [ "$pending" -eq 0 ]; then
+                  echo "All $total external checks passed successfully."
+                  exit 0
+                fi
+              fi
             fi
             sleep 10
           done
-          echo "No CI checks appeared for the Dependabot pull request."
+          echo "Timed out waiting for checks to pass."
           exit 1
 
       - name: Enable squash auto-merge
@@ -45,4 +58,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge "$PR_URL" --auto --squash --delete-branch
+        run: |
+          gh pr merge "$PR_URL" --auto --squash --delete-branch 2>/dev/null || gh pr merge "$PR_URL" --squash --delete-branch
