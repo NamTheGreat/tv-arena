@@ -26,9 +26,28 @@ vi.mock('../lib/supabase', async () => {
   return {
     ...actual,
     supabase: null,
-    fetchArenaSnapshot: vi.fn().mockResolvedValue({ series: [{ id: '1', slug: 'show-1', title: 'Show 1', buzz_score: 100, daily_dates: [], daily_series: [] }] }),
   };
 });
+
+vi.mock('../lib/snapshot', () => ({
+  fetchArenaSnapshot: vi.fn().mockResolvedValue({
+    generated_at: new Date().toISOString(),
+    series: [{
+      id: '1',
+      slug: 'show-1',
+      title: 'Show 1',
+      network: 'Network',
+      network_group: 'Network',
+      genre_group: 'Drama',
+      buzz_score: 100,
+      current_7d_score: 100,
+      daily_series: [100],
+      daily_dates: ['2026-11-13'],
+      events: [],
+      is_breakout: false,
+    }],
+  }),
+}));
 
 describe('Password recovery single source of truth', () => {
   beforeEach(() => {
