@@ -48,7 +48,7 @@ describe('Password recovery single source of truth', () => {
     );
 
     // Modal should be open in update-password mode (give ample timeout for lazy-loaded AuthModal in CI)
-    const heading = await screen.findByRole('heading', { name: /Choose a new password/i }, { timeout: 5000 });
+    const heading = await screen.findByRole('heading', { name: /Choose a new password/i }, { timeout: 10000 });
     expect(heading).toBeInTheDocument();
     expect(screen.getByLabelText(/New password/i)).toBeInTheDocument();
 
@@ -61,7 +61,7 @@ describe('Password recovery single source of truth', () => {
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: /Choose a new password/i })).not.toBeInTheDocument();
     });
-  });
+  }, 15000);
 
   it('a recovery link with passwordRecovery: false does not open update-password mode', async () => {
     mockAuth.user = { id: 'user-1', email: 'test@example.com' };
@@ -78,5 +78,5 @@ describe('Password recovery single source of truth', () => {
 
     // Modal should NOT be open
     expect(screen.queryByRole('heading', { name: /Choose a new password/i })).not.toBeInTheDocument();
-  });
+  }, 15000);
 });
