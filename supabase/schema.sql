@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS series_daily_telemetry (
 );
 
 CREATE INDEX IF NOT EXISTS idx_telemetry_series_date ON series_daily_telemetry(series_id, recorded_date DESC);
+CREATE INDEX IF NOT EXISTS idx_telemetry_recorded_date ON series_daily_telemetry(recorded_date DESC);
 
 -- Score Weights Configuration
 CREATE TABLE IF NOT EXISTS score_weights (
@@ -677,6 +678,8 @@ CREATE TABLE mover_predictions (
   CHECK ((graded_at IS NULL AND points IS NULL AND actual_rank IS NULL)
       OR (graded_at IS NOT NULL AND points IS NOT NULL))
 );
+
+CREATE INDEX IF NOT EXISTS idx_mover_predictions_user_id ON mover_predictions(user_id);
 
 ALTER TABLE mover_predictions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can read own mover predictions"

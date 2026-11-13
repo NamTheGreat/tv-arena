@@ -100,18 +100,20 @@ export function DailyResultCard({
           )}
         </div>
       )}
-      {!result.answers?.length && !isDayChanged && !result.verified && onClearSavedResult && (
+      {!result.answers?.length && !isDayChanged && !result.verified && (
         <div className="mt-4">
           <p className="text-xs text-stone-500 mb-2">
             This saved result has no answers and cannot be submitted to the leaderboard.
           </p>
-          <button
-            type="button"
-            onClick={onClearSavedResult}
-            className="rounded-xl border border-stone-300 px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 hover:text-stone-900 transition-colors cursor-pointer"
-          >
-            Clear saved result
-          </button>
+          {onClearSavedResult && (
+            <button
+              type="button"
+              onClick={onClearSavedResult}
+              className="rounded-xl border border-stone-300 px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 hover:text-stone-900 transition-colors cursor-pointer"
+            >
+              Clear saved result
+            </button>
+          )}
         </div>
       )}
       {!hasNoAnswers && !isDayChanged && submissionError && (
@@ -129,9 +131,6 @@ export function DailyResultCard({
             Sign in
           </button>
         </div>
-      )}
-      {!isAuthenticated && !isDayChanged && !result.answers?.length && (
-        <p className="mt-4 text-xs text-stone-500">This saved result cannot be transferred to a leaderboard account.</p>
       )}
       {!isDayChanged && <p className="text-xs text-stone-400 mt-6">Come back tomorrow for a new challenge.</p>}
     </section>

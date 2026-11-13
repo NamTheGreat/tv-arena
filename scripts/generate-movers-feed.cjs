@@ -68,18 +68,30 @@ ${items.join('\n')}
 `;
 }
 
-async function fetchRows(baseUrl, key, table, query) {
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/rest/v1/${table}?${query}`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
-  });
-  if (!response.ok) {
-    if (response.status === 404 && table === 'series_weekly_movers') {
-      console.warn('Weekly movers view is not deployed; generating a feed without mover entries.');
-      return [];
+async function fetchRows(baseUrl, key, table, query, { pageSize = 1000 } = {}) {
+  const rows = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/rest/v1/${table}?${query}`, {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Range-Unit': 'items',
+        Range: `${offset}-${offset + pageSize - 1}`,
+      },
+    });
+    if (response.status === 416) return rows;
+    if (!response.ok) {
+      if (response.status === 404 && table === 'series_weekly_movers') {
+        console.warn('Weekly movers view is not deployed; generating a feed without mover entries.');
+        return [];
+      }
+      throw new Error(`Supabase ${table} query failed (${response.status})`);
     }
-    throw new Error(`Supabase ${table} query failed (${response.status})`);
+    const page = await response.json();
+    if (!Array.isArray(page)) throw new Error(`${table} returned an invalid response`);
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
   }
-  return response.json();
 }
 
 async function generate() {
@@ -95,8 +107,8 @@ async function generate() {
       since.setUTCDate(since.getUTCDate() - 6);
       const date = since.toISOString().slice(0, 10);
       [movers, shows, breakouts] = await Promise.all([
-        fetchRows(baseUrl, key, 'series_weekly_movers', 'select=period_start,series_id,slug,title,network,current_7d_score,previous_7d_score,delta_pct,mover_rank,faller_rank&order=period_start.desc,mover_rank.asc&limit=1000'),
-        fetchRows(baseUrl, key, 'series', 'select=id,slug,title&limit=1000'),
+        fetchRows(baseUrl, key, 'series_weekly_movers', 'select=period_start,series_id,slug,title,network,current_7d_score,previous_7d_score,delta_pct,mover_rank,faller_rank&order=period_start.desc,mover_rank.asc'),
+        fetchRows(baseUrl, key, 'series', 'select=id,slug,title&order=id.asc'),
         fetchRows(baseUrl, key, 'series_breakouts', `select=series_id,detected_date,signal,reason&detected_date=gte.${date}&order=detected_date.desc&limit=50`),
       ]);
     } catch (error) {

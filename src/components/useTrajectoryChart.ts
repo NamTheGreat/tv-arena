@@ -50,9 +50,11 @@ export function useTrajectoryChart({ seriesList, chartRange, focusedSlug }: {
   // Sync focusedSlug from props ONLY when the route slug itself changes
   const lastRouteFocusedSlugRef = useRef<string | undefined>(focusedSlug);
   useEffect(() => {
-    if (focusedSlug && focusedSlug !== lastRouteFocusedSlugRef.current) {
+    if (focusedSlug !== lastRouteFocusedSlugRef.current) {
       lastRouteFocusedSlugRef.current = focusedSlug;
-      setSelectedSlugs((prev) => (prev.includes(focusedSlug) ? prev : [focusedSlug, ...prev.slice(0, 7)]));
+      if (focusedSlug) {
+        setSelectedSlugs((prev) => (prev.includes(focusedSlug) ? prev : [focusedSlug, ...prev.slice(0, 7)]));
+      }
     }
   }, [focusedSlug]);
 
