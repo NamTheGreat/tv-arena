@@ -701,6 +701,12 @@ BEGIN
   IF p_week_start <> v_next_week THEN
     RAISE EXCEPTION 'Predictions are accepted only for next week starting %', v_next_week;
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM mover_predictions
+    WHERE week_start = p_week_start AND user_id = v_user_id
+  ) THEN
+    RAISE EXCEPTION 'A prediction has already been locked in for this week';
+  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM series_daily_telemetry t
     WHERE t.series_id = p_series_id AND t.recorded_date < p_week_start
@@ -714,7 +720,7 @@ BEGIN
     JOIN series_daily_scores d ON d.telemetry_id = t.id
     WHERE t.series_id = p_series_id
       AND t.recorded_date >= p_week_start - 14
-      AND t.recorded_date < p_week_start - 7
+      AND t.recorded_date < p_week_start
     GROUP BY t.series_id
     HAVING SUM(d.daily_score) > 0
   ) THEN

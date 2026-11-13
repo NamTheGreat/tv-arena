@@ -95,6 +95,24 @@ pub fn fetch_prev_reddit_metrics(
         })
 }
 
+fn handle_postgrest_response(
+    res: std::result::Result<ureq::Response, ureq::Error>,
+    context: &str,
+) -> Result<()> {
+    match res {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(code, res)) => {
+            let body = res.into_string().unwrap_or_default();
+            if body.trim().is_empty() {
+                bail!("{} error HTTP {}", context, code);
+            } else {
+                bail!("{} error HTTP {}: {}", context, code, body);
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
 pub fn batch_record_daily_telemetry(
     client: &ureq::Agent,
     config: &Config,
@@ -113,22 +131,7 @@ pub fn batch_record_daily_telemetry(
         .set("Prefer", "resolution=ignore-duplicates")
         .send_json(serde_json::Value::Array(telemetry_batch));
 
-    match res {
-        Ok(_) => Ok(()),
-        Err(ureq::Error::Status(code, res)) => {
-            let body = res.into_string().unwrap_or_default();
-            if body.trim().is_empty() {
-                bail!("Supabase daily telemetry batch insert error HTTP {}", code);
-            } else {
-                bail!(
-                    "Supabase daily telemetry batch insert error HTTP {}: {}",
-                    code,
-                    body
-                );
-            }
-        }
-        Err(e) => Err(e.into()),
-    }
+    handle_postgrest_response(res, "Supabase daily telemetry batch insert")
 }
 
 pub fn insert_backfill_telemetry(
@@ -150,22 +153,7 @@ pub fn insert_backfill_telemetry(
         .set("Prefer", "resolution=ignore-duplicates")
         .send_json(serde_json::Value::Array(rows));
 
-    match res {
-        Ok(_) => Ok(()),
-        Err(ureq::Error::Status(code, res)) => {
-            let body = res.into_string().unwrap_or_default();
-            if body.trim().is_empty() {
-                bail!("Supabase backfill telemetry insert error HTTP {}", code);
-            } else {
-                bail!(
-                    "Supabase backfill telemetry insert error HTTP {}: {}",
-                    code,
-                    body
-                );
-            }
-        }
-        Err(e) => Err(e.into()),
-    }
+    handle_postgrest_response(res, "Supabase backfill telemetry insert")
 }
 
 pub fn insert_daily_challenge(

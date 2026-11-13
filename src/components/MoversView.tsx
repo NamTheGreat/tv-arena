@@ -102,6 +102,11 @@ function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
         <h2 className="font-serif text-xl text-arena-charcoal">Predict Next Week&apos;s #1 Mover</h2>
         <span className="text-xs font-medium text-stone-500">Week of {nextWeekStart}</span>
       </div>
+      {successMessage && (
+        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-xs font-semibold text-emerald-700">
+          {successMessage}
+        </p>
+      )}
       {!user ? (
         <p className="mt-3 text-xs text-stone-500">
           Sign in to submit your prediction for next week&apos;s fastest-rising show and earn leaderboard points.
@@ -129,7 +134,7 @@ function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
           >
             <option value="">Choose a show...</option>
             {seriesList
-              .filter((s) => (s.previous_7d_score ?? 0) > 0)
+              .filter((s) => (s.current_7d_score ?? 0) > 0 || (s.previous_7d_score ?? 0) > 0)
               .sort((a, b) => a.title.localeCompare(b.title))
               .map((s) => (
                 <option key={s.id} value={s.id}>{s.title} ({s.network})</option>
@@ -143,7 +148,6 @@ function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
             {isSubmitting ? 'Locking in...' : 'Lock In Pick'}
           </button>
           {errorMessage && <p className="w-full text-xs text-rose-600">{errorMessage}</p>}
-          {successMessage && <p className="w-full text-xs text-emerald-600">{successMessage}</p>}
         </form>
       )}
     </section>

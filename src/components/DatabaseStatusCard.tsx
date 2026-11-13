@@ -56,12 +56,6 @@ export function getNextSyncCountdown(
   return `${diffHours}h ${diffMinutes}m`;
 }
 
-/**
- * Backwards compatibility helper for existing callers.
- */
-export const getNext0200UtcCountdown = (fromEpochMs?: number): string =>
-  getNextSyncCountdown(fromEpochMs);
-
 interface DatabaseStatusCardProps {
   type: DatabaseStatusType;
   errorMessage?: string | null;

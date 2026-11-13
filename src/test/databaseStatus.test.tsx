@@ -6,7 +6,6 @@ import nightlySyncWorkflow from '../../.github/workflows/nightly-sync.yml?raw';
 import {
   formatRelativeTime,
   getNextSyncCountdown,
-  getNext0200UtcCountdown,
   NIGHTLY_SYNC_UTC_HOUR,
   NIGHTLY_SYNC_SCHEDULE_TEXT,
   DatabaseStatusCard,
@@ -77,11 +76,6 @@ describe('DatabaseStatusCard & Operational Health helpers', () => {
       // 06:00:00 UTC -> 24 hours until tomorrow's run
       const date = new Date(Date.UTC(2026, 0, 15, 6, 0, 0, 0)).getTime();
       expect(getNextSyncCountdown(date, 6)).toBe('24h 0m');
-    });
-
-    it('retains backwards compatibility via getNext0200UtcCountdown alias', () => {
-      const countdown = getNext0200UtcCountdown();
-      expect(countdown).toMatch(/^\d+h \d+m$/);
     });
   });
 
