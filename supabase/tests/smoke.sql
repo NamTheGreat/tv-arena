@@ -568,6 +568,26 @@ BEGIN
   RAISE NOTICE '✓ submit_daily_score RPC validation & scoring verified.';
 END $$;
 
+-- 6. Legacy Telemetry Column Resilience
+DO $$
+BEGIN
+  RAISE NOTICE 'Testing legacy telemetry column resilience...';
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'series_daily_telemetry' AND column_name = 'daily_viewers'
+  ) THEN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'series_daily_telemetry' AND column_name = 'daily_viewers' AND is_nullable = 'NO'
+    ) THEN
+      RAISE EXCEPTION 'Expected legacy daily_viewers column to be nullable';
+    END IF;
+  END IF;
+
+  RAISE NOTICE '✓ Legacy telemetry column resilience verified.';
+END $$;
+
 ROLLBACK;
 
 \echo '===================================='
