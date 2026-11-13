@@ -185,13 +185,7 @@ mod tests {
         let mut found = 0;
 
         for (title, date, suffix) in examples {
-            let slug = if suffix.ends_with("_TV_series") && suffix != "TV_series" {
-                format!("{}_({})", title.replace(' ', "_"), suffix)
-            } else if suffix == "TV_series" {
-                format!("{}_({})", title.replace(' ', "_"), suffix)
-            } else {
-                format!("{}_({})", title.replace(' ', "_"), suffix)
-            };
+            let slug = format!("{}_({})", title.replace(' ', "_"), suffix);
             let canonical = slug.replace('_', " ");
             let _mock = server.mock(|when, then| {
                 when.method(GET).path(format!(

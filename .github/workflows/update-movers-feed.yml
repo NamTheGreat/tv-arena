@@ -1,0 +1,25 @@
+name: Refresh Static Movers Feed
+
+on:
+  workflow_run:
+    workflows: [TV Arena Nightly Rust Sync]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-static-feed:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Cloudflare Pages build
+        env:
+          PAGES_BUILD_HOOK_URL: ${{ secrets.MOVERS_PAGES_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$PAGES_BUILD_HOOK_URL" ]; then
+            echo "::warning::MOVERS_PAGES_DEPLOY_HOOK_URL is not configured; skipping static feed redeploy."
+            exit 0
+          fi
+          curl --fail --silent --show-error --request POST "$PAGES_BUILD_HOOK_URL" --output /dev/null

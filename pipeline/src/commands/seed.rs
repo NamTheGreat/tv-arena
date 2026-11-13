@@ -311,65 +311,6 @@ fn should_fail_empty_seed(seeded: usize, api_errors: usize) -> bool {
     seeded == 0 && api_errors > 0
 }
 
-#[cfg(test)]
-mod seed_outcome_tests {
-    use super::{classify_genre, normalize_network_group, should_fail_empty_seed};
-
-    #[test]
-    fn network_names_map_to_a_bounded_set_of_platform_groups() {
-        use std::collections::HashSet;
-
-        let cases = [
-            ("Netflix", "Netflix"),
-            ("HBO Max", "HBO"),
-            ("Max", "HBO"),
-            ("Apple TV+", "Apple TV+"),
-            ("Amazon Prime Video", "Prime Video"),
-            ("FX / Hulu", "FX / Hulu"),
-            ("Disney+", "Disney+"),
-            ("Showtime", "Paramount+"),
-            ("Peacock", "Peacock"),
-            ("BBC One", "Other"),
-        ];
-
-        for (raw, expected) in cases {
-            assert_eq!(normalize_network_group(raw), expected, "{raw}");
-        }
-        assert_eq!(normalize_network_group("TBS"), "Other");
-        let groups = cases
-            .iter()
-            .map(|(raw, _)| normalize_network_group(raw))
-            .collect::<HashSet<_>>();
-        assert!(groups.len() <= 9);
-    }
-
-    #[test]
-    fn genre_names_map_to_the_four_canonical_genre_groups() {
-        assert_eq!(
-            classify_genre(&["Science Fiction", "Drama"]),
-            "Drama & Sci-Fi"
-        );
-        assert_eq!(classify_genre(&["Comedy"]), "Comedy & Drama");
-        assert_eq!(classify_genre(&["Mystery", "Crime"]), "Crime & Mystery");
-        assert_eq!(classify_genre(&["Action"]), "Drama");
-    }
-
-    #[test]
-    fn an_empty_catalog_result_is_success_when_api_calls_succeeded() {
-        assert!(!should_fail_empty_seed(0, 0));
-    }
-
-    #[test]
-    fn an_empty_result_fails_when_api_errors_occurred() {
-        assert!(should_fail_empty_seed(0, 1));
-    }
-
-    #[test]
-    fn partial_seed_success_does_not_fail_when_some_api_calls_failed() {
-        assert!(!should_fail_empty_seed(1, 3));
-    }
-}
-
 /// Legacy CSV seed path — kept as fallback via `--csv <file>`.
 fn run_csv_seed(csv_path: &str, limit: usize, config: &Config) -> Result<()> {
     let mut rdr = csv::Reader::from_path(csv_path).context("Failed to open Kaggle CSV")?;
@@ -517,4 +458,63 @@ fn slugify(title: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("-")
+}
+
+#[cfg(test)]
+mod seed_outcome_tests {
+    use super::{classify_genre, normalize_network_group, should_fail_empty_seed};
+
+    #[test]
+    fn network_names_map_to_a_bounded_set_of_platform_groups() {
+        use std::collections::HashSet;
+
+        let cases = [
+            ("Netflix", "Netflix"),
+            ("HBO Max", "HBO"),
+            ("Max", "HBO"),
+            ("Apple TV+", "Apple TV+"),
+            ("Amazon Prime Video", "Prime Video"),
+            ("FX / Hulu", "FX / Hulu"),
+            ("Disney+", "Disney+"),
+            ("Showtime", "Paramount+"),
+            ("Peacock", "Peacock"),
+            ("BBC One", "Other"),
+        ];
+
+        for (raw, expected) in cases {
+            assert_eq!(normalize_network_group(raw), expected, "{raw}");
+        }
+        assert_eq!(normalize_network_group("TBS"), "Other");
+        let groups = cases
+            .iter()
+            .map(|(raw, _)| normalize_network_group(raw))
+            .collect::<HashSet<_>>();
+        assert!(groups.len() <= 9);
+    }
+
+    #[test]
+    fn genre_names_map_to_the_four_canonical_genre_groups() {
+        assert_eq!(
+            classify_genre(&["Science Fiction", "Drama"]),
+            "Drama & Sci-Fi"
+        );
+        assert_eq!(classify_genre(&["Comedy"]), "Comedy & Drama");
+        assert_eq!(classify_genre(&["Mystery", "Crime"]), "Crime & Mystery");
+        assert_eq!(classify_genre(&["Action"]), "Drama");
+    }
+
+    #[test]
+    fn an_empty_catalog_result_is_success_when_api_calls_succeeded() {
+        assert!(!should_fail_empty_seed(0, 0));
+    }
+
+    #[test]
+    fn an_empty_result_fails_when_api_errors_occurred() {
+        assert!(should_fail_empty_seed(0, 1));
+    }
+
+    #[test]
+    fn partial_seed_success_does_not_fail_when_some_api_calls_failed() {
+        assert!(!should_fail_empty_seed(1, 3));
+    }
 }

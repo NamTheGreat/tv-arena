@@ -95,6 +95,24 @@ pub fn fetch_prev_reddit_metrics(
         })
 }
 
+fn handle_postgrest_response(
+    res: std::result::Result<ureq::Response, ureq::Error>,
+    context: &str,
+) -> Result<()> {
+    match res {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(code, res)) => {
+            let body = res.into_string().unwrap_or_default();
+            if body.trim().is_empty() {
+                bail!("{} error HTTP {}", context, code);
+            } else {
+                bail!("{} error HTTP {}: {}", context, code, body);
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
 pub fn batch_record_daily_telemetry(
     client: &ureq::Agent,
     config: &Config,
@@ -104,15 +122,16 @@ pub fn batch_record_daily_telemetry(
         "{}/rest/v1/series_daily_telemetry?on_conflict=series_id,recorded_date",
         config.supabase_url
     );
-    client
+    let res = client
         .post(&telemetry_url)
         .set("apikey", &config.supabase_key)
         .set("Authorization", &format!("Bearer {}", config.supabase_key))
         // A same-day retry must not replace valid observations with NULLs after
         // a transient source throttle.
         .set("Prefer", "resolution=ignore-duplicates")
-        .send_json(serde_json::Value::Array(telemetry_batch))?;
-    Ok(())
+        .send_json(serde_json::Value::Array(telemetry_batch));
+
+    handle_postgrest_response(res, "Supabase daily telemetry batch insert")
 }
 
 pub fn insert_backfill_telemetry(
@@ -127,13 +146,14 @@ pub fn insert_backfill_telemetry(
         "{}/rest/v1/series_daily_telemetry?on_conflict=series_id,recorded_date",
         config.supabase_url
     );
-    client
+    let res = client
         .post(&url)
         .set("apikey", &config.supabase_key)
         .set("Authorization", &format!("Bearer {}", config.supabase_key))
         .set("Prefer", "resolution=ignore-duplicates")
-        .send_json(serde_json::Value::Array(rows))?;
-    Ok(())
+        .send_json(serde_json::Value::Array(rows));
+
+    handle_postgrest_response(res, "Supabase backfill telemetry insert")
 }
 
 pub fn insert_daily_challenge(

@@ -66,6 +66,7 @@ export type Database = {
           series_id: string
           recorded_date: string
           daily_score: number
+          daily_viewers?: number | null
           wiki_views: number | null
           reddit_comments: number | null
           reddit_upvotes: number | null
@@ -76,6 +77,7 @@ export type Database = {
           series_id: string
           recorded_date?: string
           daily_score: number
+          daily_viewers?: number | null
           wiki_views?: number | null
           reddit_comments?: number | null
           reddit_upvotes?: number | null
@@ -86,6 +88,7 @@ export type Database = {
           series_id?: string
           recorded_date?: string
           daily_score?: number
+          daily_viewers?: number | null
           wiki_views?: number | null
           reddit_comments?: number | null
           reddit_upvotes?: number | null
@@ -366,6 +369,36 @@ export type Database = {
         }
         Relationships: []
       }
+      mover_predictions: {
+        Row: {
+          week_start: string
+          user_id: string
+          series_id: string
+          points: number | null
+          actual_rank: number | null
+          created_at: string
+          graded_at: string | null
+        }
+        Insert: {
+          week_start: string
+          user_id: string
+          series_id: string
+          points?: number | null
+          actual_rank?: number | null
+          created_at?: string
+          graded_at?: string | null
+        }
+        Update: {
+          week_start?: string
+          user_id?: string
+          series_id?: string
+          points?: number | null
+          actual_rank?: number | null
+          created_at?: string
+          graded_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       series_leaderboard: {
@@ -425,6 +458,21 @@ export type Database = {
         }
         Relationships: []
       }
+      series_weekly_movers: {
+        Row: {
+          period_start: string
+          series_id: string
+          slug: string
+          title: string
+          network: string
+          current_7d_score: number
+          previous_7d_score: number
+          delta_pct: number
+          mover_rank: number
+          faller_rank: number
+        }
+        Relationships: []
+      }
     }
     Functions: {
       submit_daily_score: {
@@ -451,6 +499,13 @@ export type Database = {
       streak_leaderboard: {
         Args: Record<PropertyKey, never>
         Returns: Json
+      }
+      submit_mover_prediction: {
+        Args: {
+          p_week_start: string
+          p_series_id: string
+        }
+        Returns: Database['public']['Tables']['mover_predictions']['Row']
       }
     }
     Enums: {

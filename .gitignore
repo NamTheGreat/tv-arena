@@ -11,6 +11,9 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+/public/movers.xml
+/public/snapshot.json
+/public/snapshot.csv
 *.local
 .vite/
 .wrangler/
@@ -55,3 +58,6 @@ temp/
 # Playwright artifacts
 playwright-report/
 test-results/
+
+# Agent coordination folder
+.agent-comms/

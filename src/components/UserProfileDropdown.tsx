@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { isBlockedUsername } from '../lib/usernameBlocklist';
+import { summarizeMoverPredictions } from '../lib/moverPredictionStats';
 
 export interface UserProfileDropdownProps {
   user: any;
   bestStreak: number;
-  onSelectTab: (tab: 'leaderboard' | 'arena' | 'charts' | 'guess' | 'watchlist') => void;
+  onSelectTab: (tab: 'leaderboard' | 'arena' | 'charts' | 'guess' | 'watchlist' | 'movers') => void;
   onOpenAuth: () => void;
   onSignOut: () => void;
   onOpenMethodology: () => void;
@@ -26,27 +28,38 @@ export function UserProfileDropdown({
   const [usernameDraft, setUsernameDraft] = useState('');
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [predictionStats, setPredictionStats] = useState<ReturnType<typeof summarizeMoverPredictions> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Load user profile username from database
   useEffect(() => {
+    setPredictionStats(null);
     if (!user?.id || !supabase) {
       setUsername('');
+      setPredictionStats(null);
       return;
     }
     let active = true;
     async function loadProfile() {
       try {
         if (!supabase) return;
-        const { data } = await supabase
+        const [{ data }, { data: predictions }] = await Promise.all([
+          supabase
           .from('profiles')
           .select('username')
           .eq('id', user.id)
-          .maybeSingle();
+          .maybeSingle(),
+          supabase
+            .from('mover_predictions')
+            .select('points')
+            .eq('user_id', user.id)
+            .not('graded_at', 'is', null),
+        ]);
 
         if (active && data?.username) {
           setUsername(data.username);
         }
+        if (active && predictions) setPredictionStats(summarizeMoverPredictions(predictions));
       } catch {
         // Fall back gracefully to email prefix
       }
@@ -70,6 +83,10 @@ export function UserProfileDropdown({
       setUsernameError('3–20 lowercase chars (letters, numbers, _ only)');
       return;
     }
+    if (isBlockedUsername(trimmed)) {
+      setUsernameError('That username is reserved or unavailable.');
+      return;
+    }
     setIsSaving(true);
     setUsernameError(null);
     try {
@@ -86,6 +103,8 @@ export function UserProfileDropdown({
       if (error) {
         if (error.code === '23505') {
           setUsernameError('Username already taken');
+        } else if (error.code === '23514') {
+          setUsernameError('That username is reserved or unavailable.');
         } else {
           setUsernameError(error.message || 'Failed to update username');
         }
@@ -239,6 +258,11 @@ export function UserProfileDropdown({
                   <p className="text-xs text-arena-muted font-sans truncate">
                     {user ? user.email : 'viewer@tvarena.internal'}
                   </p>
+                  {user && predictionStats && predictionStats.graded > 0 && (
+                    <p className="mt-1 text-[10px] text-arena-muted" aria-label="Weekly mover prediction accuracy">
+                      Weekly movers: top 3 {predictionStats.topThree}/{predictionStats.graded} · {predictionStats.points} points
+                    </p>
+                  )}
                 </>
               )}
             </div>
@@ -394,6 +418,36 @@ export function UserProfileDropdown({
                 </div>
               </button>
             )}
+
+            {/* Weekly Movers & Predictions */}
+            <button
+              type="button"
+              onClick={() => {
+                onSelectTab('movers');
+                setIsOpen(false);
+              }}
+              className="w-full group flex items-center justify-between px-3.5 py-2.5 rounded-xl hover:bg-arena-surface transition-colors duration-150 text-stone-700 hover:text-stone-900 text-left"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-arena-muted group-hover:text-arena-terracotta transition-colors">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span className="text-sm font-medium">Movers & Predictions</span>
+              </div>
+            </button>
 
             {/* Intelligence Methodology */}
             <button

@@ -47,12 +47,23 @@ export function useTrajectoryChart({ seriesList, chartRange, focusedSlug }: {
   const pickerRef = useRef<HTMLDivElement>(null);
   const genreRef = useRef<HTMLDivElement>(null);
 
-  // Sync focusedSlug from props if it changes
+  // Sync focusedSlug from props ONLY when the route slug itself changes
+  const lastRouteFocusedSlugRef = useRef<string | undefined>(focusedSlug);
   useEffect(() => {
-    if (focusedSlug && !selectedSlugs.includes(focusedSlug)) {
-      setSelectedSlugs((prev) => [focusedSlug, ...prev.slice(0, 7)]);
+    if (focusedSlug !== lastRouteFocusedSlugRef.current) {
+      lastRouteFocusedSlugRef.current = focusedSlug;
+      if (focusedSlug) {
+        setSelectedSlugs((prev) => (prev.includes(focusedSlug) ? prev : [focusedSlug, ...prev.slice(0, 7)]));
+      }
     }
   }, [focusedSlug]);
+
+  // Invariant: if isolated show is no longer in selectedSlugs, reset isolation so lines are not all muted
+  useEffect(() => {
+    if (isolatedSlug && !selectedSlugs.includes(isolatedSlug)) {
+      setIsolatedSlug(null);
+    }
+  }, [selectedSlugs, isolatedSlug]);
 
   // Sync selectedSlugs to URL search params (?chart=...)
   useEffect(() => {
@@ -277,15 +288,19 @@ export function useTrajectoryChart({ seriesList, chartRange, focusedSlug }: {
     return eventsWithCoords;
   }, [activeShows, chartStartDate, chartEndDate]);
 
-  // Add / Pin show (capped at 8, replaces oldest non-focused if full)
+  // Add / Pin show (capped at 8, replaces oldest candidate that is neither focused nor isolated)
   const addShow = (slug: string) => {
     if (selectedSlugs.includes(slug)) return;
     setSelectedSlugs((prev) => {
       if (prev.length < 8) {
         return [...prev, slug];
       }
-      // If at 8, drop first non-focused show (FIFO)
-      const dropIndex = prev.findIndex((s) => s !== focusedSlug);
+      // Eviction should never drop the focused or isolated show when another candidate exists
+      let dropIndex = prev.findIndex((s) => s !== focusedSlug && s !== isolatedSlug);
+      if (dropIndex === -1) {
+        // Fall back to oldest non-focused show if all other shows are isolated
+        dropIndex = prev.findIndex((s) => s !== focusedSlug);
+      }
       const next = [...prev];
       if (dropIndex !== -1) {
         next.splice(dropIndex, 1);

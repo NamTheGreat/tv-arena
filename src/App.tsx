@@ -16,6 +16,8 @@ import { DailySharePage } from './components/DailySharePage';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
 import { leaderboardScore } from './lib/derivedScore';
 import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
+import type { AuthModalMode } from './components/AuthModal';
+import { fetchArenaSnapshot } from './lib/snapshot';
 import { useWatchlist } from './lib/useWatchlist';
 
 const AuthModal = React.lazy(() =>
@@ -47,8 +49,11 @@ const ShowDetailView = React.lazy(() =>
 const NotFoundView = React.lazy(() =>
   import('./components/NotFoundView').then((m) => ({ default: m.NotFoundView }))
 );
+const MoversView = React.lazy(() =>
+  import('./components/MoversView').then((m) => ({ default: m.MoversView }))
+);
 
-type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'watchlist';
+type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist';
 
 function RouteLoadingFallback() {
   return (
@@ -331,19 +336,36 @@ function GuessRouteWrapper({
 }
 
 export default function App() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, passwordRecovery, clearPasswordRecovery } = useAuth();
   const watchlist = useWatchlist(user?.id);
   const navigate = useNavigate();
   const location = useLocation();
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<AuthModalMode>('signin');
   const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
   const [isLearnModalOpen, setIsLearnModalOpen] = useState(false);
   const [isHealthModalOpen, setIsHealthModalOpen] = useState(false);
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(isSupabaseConfigured);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [viewWarning, setViewWarning] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user && passwordRecovery) {
+      setAuthModalMode('update-password');
+      setIsAuthModalOpen(true);
+    }
+  }, [user, passwordRecovery]);
+
+  const closeAuthModal = () => {
+    setIsAuthModalOpen(false);
+    setAuthModalMode('signin');
+    clearPasswordRecovery();
+    if (location.search.includes('password-reset=1') || location.search.includes('mode=update-password')) {
+      navigate('/', { replace: true });
+    }
+  };
 
   // Leaderboard Filter State
   const [platformFilter, setPlatformFilter] = useState<string>('ALL');
@@ -357,6 +379,7 @@ export default function App() {
     if (location.pathname.startsWith('/arena')) return 'arena';
     if (location.pathname.startsWith('/charts')) return 'charts';
     if (location.pathname.startsWith('/guess')) return 'guess';
+    if (location.pathname.startsWith('/movers')) return 'movers';
     if (location.pathname.startsWith('/watchlist')) return 'watchlist';
     return 'leaderboard';
   }, [location.pathname]);
@@ -364,20 +387,32 @@ export default function App() {
   // Load live data from Supabase if configured
   useEffect(() => {
     async function loadFromSupabase() {
-      if (!supabase) {
-        setIsLoading(false);
-        return;
-      }
       setIsLoading(true);
       setDbError(null);
+      const snapshot = await fetchArenaSnapshot();
+      let hasSnapshot = false;
+      if (snapshot) {
+        setSeriesList(snapshot.series);
+        setViewWarning(null);
+        setIsLoading(false);
+        hasSnapshot = true;
+      }
+      if (!supabase) {
+        if (!hasSnapshot) {
+          setIsLoading(false);
+        }
+        return;
+      }
       // The leaderboard view is the only source for displayed scores.
       const { data, error } = await supabase
         .from('series_leaderboard')
         .select('*');
 
       if (error) {
-        setViewWarning(`Failed to query dynamic 'series_leaderboard' view (${error.message}).`);
-        setDbError(error.message);
+        if (!hasSnapshot) {
+          setViewWarning(`Failed to query dynamic 'series_leaderboard' view (${error.message}).`);
+          setDbError(error.message);
+        }
         setIsLoading(false);
         return;
       }
@@ -436,10 +471,29 @@ export default function App() {
           }
         }
 
-        const { data: eventsData } = await supabase
-          .from('series_events')
-          .select('id, series_id, event_date, kind, label, source')
-          .order('event_date', { ascending: true });
+        // Query breakouts detected in the last 7 days (aligning with weekly movers feed and snapshot)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+        const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+
+        const [
+          { data: eventsData },
+          { data: breakoutData },
+          { data: contributionData },
+        ] = await Promise.all([
+          supabase
+            .from('series_events')
+            .select('id, series_id, event_date, kind, label, source')
+            .order('event_date', { ascending: true }),
+          supabase
+            .from('series_breakouts')
+            .select('series_id, reason, detected_date')
+            .gte('detected_date', sevenDaysAgoStr)
+            .order('detected_date', { ascending: false }),
+          supabase
+            .from('series_signal_contributions')
+            .select('series_id, wiki_contribution, reddit_contribution, telemetry_days, reddit_observed_days'),
+        ]);
 
         const eventsMap = new Map<string, any[]>();
         if (eventsData) {
@@ -449,16 +503,6 @@ export default function App() {
             eventsMap.set(ev.series_id, arr);
           }
         }
-        // Query breakouts detected in the last 2 days
-        const twoDaysAgo = new Date();
-        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-        const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
-
-        const { data: breakoutData } = await supabase
-          .from('series_breakouts')
-          .select('series_id, reason, detected_date')
-          .gte('detected_date', twoDaysAgoStr)
-          .order('detected_date', { ascending: false });
 
         const breakoutMap = new Map<string, string>();
         if (breakoutData) {
@@ -469,9 +513,6 @@ export default function App() {
           }
         }
 
-        const { data: contributionData } = await supabase
-          .from('series_signal_contributions')
-          .select('series_id, wiki_contribution, reddit_contribution, telemetry_days, reddit_observed_days');
         const contributionMap = new Map(
           (contributionData || []).map((row) => [row.series_id, {
             wiki_contribution: Number(row.wiki_contribution),
@@ -526,8 +567,8 @@ export default function App() {
     );
   }
 
-  // If Supabase is unconfigured or returns an error, render the clear setup card
-  if (!isSupabaseConfigured || dbError) {
+  // When static data is available, keep the app usable without Supabase.
+  if ((!isSupabaseConfigured && seriesList.length === 0) || dbError) {
     return (
       <DatabaseStatusCard
         type={!isSupabaseConfigured ? 'unconfigured' : 'error'}
@@ -562,6 +603,7 @@ export default function App() {
     { label: 'Contenders', tabKey: 'arena' as TabKey, path: '/arena' },
     { label: 'Charts', tabKey: 'charts' as TabKey, path: '/charts' },
     { label: 'Guess', tabKey: 'guess' as TabKey, path: '/guess' },
+    { label: 'Movers', tabKey: 'movers' as TabKey, path: '/movers' },
     ...(user ? [{ label: 'Watchlist', tabKey: 'watchlist' as TabKey, path: '/watchlist' }] : []),
   ];
 
@@ -680,6 +722,7 @@ export default function App() {
             path="/show/:slug"
             element={<ShowDetailView seriesList={seriesList} />}
           />
+          <Route path="/movers" element={<MoversView seriesList={seriesList} />} />
           <Route path="*" element={<NotFoundView />} />
         </Routes>
       </Suspense>
@@ -755,7 +798,7 @@ export default function App() {
 
       <Suspense fallback={null}>
         {isAuthModalOpen && (
-          <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+          <AuthModal isOpen={isAuthModalOpen} onClose={closeAuthModal} initialMode={authModalMode} />
         )}
         {isMethodologyOpen && (
           <MethodologyModal
