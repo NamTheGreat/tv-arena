@@ -57,6 +57,119 @@ interface ArenaContendersProps {
   arenaStats: ArenaStats;
 }
 
+interface ContenderComboboxProps {
+  side: 'left' | 'right';
+  currentShow: SeriesItem;
+  search: string;
+  setSearch: (val: string) => void;
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
+  onSelect: (show: SeriesItem) => void;
+  seriesList: SeriesItem[];
+  borderColorClass: string;
+}
+
+export function ContenderCombobox({
+  side,
+  currentShow,
+  search,
+  setSearch,
+  isOpen,
+  setIsOpen,
+  onSelect,
+  seriesList,
+  borderColorClass,
+}: ContenderComboboxProps) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const options = seriesList
+    .filter((show) => show.title.toLowerCase().includes(search.toLowerCase()))
+    .slice(0, 6);
+
+  const select = (show: SeriesItem) => {
+    onSelect(show);
+    setIsOpen(false);
+    setActiveIndex(-1);
+  };
+
+  const handleBlur = () => {
+    setIsOpen(false);
+    setActiveIndex(-1);
+    if (currentShow && search !== currentShow.title) {
+      setSearch(currentShow.title);
+    }
+  };
+
+  const prefix = side;
+  const label = side === 'left' ? 'Search left contender' : 'Search right contender';
+  const listboxId = `${prefix}-show-options`;
+
+  return (
+    <div className="relative w-full">
+      <input
+        type="text"
+        role="combobox"
+        aria-label={label}
+        aria-autocomplete="list"
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? listboxId : undefined}
+        aria-activedescendant={isOpen && options[activeIndex] ? `${prefix}-show-option-${options[activeIndex].slug}` : undefined}
+        value={search}
+        onFocus={() => {
+          setIsOpen(true);
+          setActiveIndex(options.length ? 0 : -1);
+        }}
+        onBlur={handleBlur}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setIsOpen(true);
+          setActiveIndex(0);
+        }}
+        onKeyDown={(event) =>
+          handleComboboxKeyDown(
+            event,
+            options,
+            isOpen,
+            setIsOpen,
+            activeIndex,
+            setActiveIndex,
+            select,
+            () => {
+              if (currentShow && search !== currentShow.title) setSearch(currentShow.title);
+            }
+          )
+        }
+        placeholder="Type a series..."
+        className={`w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm ${borderColorClass} focus:ring-0 outline-none`}
+      />
+      {isOpen && (
+        <div
+          id={listboxId}
+          role="listbox"
+          onMouseDown={(event) => event.preventDefault()}
+          className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden"
+        >
+          {options.map((show, index) => (
+            <div
+              id={`${prefix}-show-option-${show.slug}`}
+              key={show.slug}
+              role="option"
+              aria-selected={index === activeIndex}
+              onMouseEnter={() => setActiveIndex(index)}
+              onMouseDown={(event) => event.preventDefault()}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => select(show)}
+              className={`w-full text-left px-4 py-2.5 flex items-center justify-between text-sm font-serif cursor-pointer ${index === activeIndex ? 'bg-arena-cream' : ''}`}
+            >
+              <span className="font-semibold">{show.title}</span>
+              <span className="text-xs font-sans text-arena-muted">{show.network}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ArenaContenders({
   seriesList,
   leftShow,
@@ -76,37 +189,6 @@ export function ArenaContenders({
 }: ArenaContendersProps) {
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
-  const [leftActiveIndex, setLeftActiveIndex] = useState(0);
-  const [rightActiveIndex, setRightActiveIndex] = useState(0);
-  const leftOptions = seriesList.filter((show) => show.title.toLowerCase().includes(leftSearch.toLowerCase())).slice(0, 6);
-  const rightOptions = seriesList.filter((show) => show.title.toLowerCase().includes(rightSearch.toLowerCase())).slice(0, 6);
-
-  const selectLeft = (show: SeriesItem) => {
-    onSelectLeftShow(show);
-    setLeftDropdownOpen(false);
-    setLeftActiveIndex(-1);
-  };
-  const selectRight = (show: SeriesItem) => {
-    onSelectRightShow(show);
-    setRightDropdownOpen(false);
-    setRightActiveIndex(-1);
-  };
-
-  const handleLeftBlur = () => {
-    setLeftDropdownOpen(false);
-    setLeftActiveIndex(-1);
-    if (leftShow && leftSearch !== leftShow.title) {
-      setLeftSearch(leftShow.title);
-    }
-  };
-
-  const handleRightBlur = () => {
-    setRightDropdownOpen(false);
-    setRightActiveIndex(-1);
-    if (rightShow && rightSearch !== rightShow.title) {
-      setRightSearch(rightShow.title);
-    }
-  };
 
   const handleCopyLink = async () => {
     setCopied(false);
@@ -125,67 +207,17 @@ export function ArenaContenders({
       {/* Search & Contender Selector */}
       <section className="w-full mb-5 sm:mb-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-4 relative items-center">
-          {/* Left Input */}
-          <div className="relative w-full">
-            <input
-              type="text"
-              role="combobox"
-              aria-label="Search left contender"
-              aria-autocomplete="list"
-              aria-expanded={leftDropdownOpen}
-              aria-controls={leftDropdownOpen ? 'left-show-options' : undefined}
-              aria-activedescendant={leftDropdownOpen && leftOptions[leftActiveIndex] ? `left-show-option-${leftOptions[leftActiveIndex].slug}` : undefined}
-              value={leftSearch}
-              onFocus={() => { setLeftDropdownOpen(true); setLeftActiveIndex(leftOptions.length ? 0 : -1); }}
-              onBlur={handleLeftBlur}
-              onChange={(e) => {
-                setLeftSearch(e.target.value);
-                setLeftDropdownOpen(true);
-                setLeftActiveIndex(0);
-              }}
-              onKeyDown={(event) =>
-                handleComboboxKeyDown(
-                  event,
-                  leftOptions,
-                  leftDropdownOpen,
-                  setLeftDropdownOpen,
-                  leftActiveIndex,
-                  setLeftActiveIndex,
-                  selectLeft,
-                  () => {
-                    if (leftShow && leftSearch !== leftShow.title) setLeftSearch(leftShow.title);
-                  }
-                )
-              }
-              placeholder="Type a series..."
-              className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm focus:border-arena-terracotta focus:ring-0 outline-none"
-            />
-            {leftDropdownOpen && (
-              <div
-                id="left-show-options"
-                role="listbox"
-                onMouseDown={(event) => event.preventDefault()}
-                className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden"
-              >
-                {leftOptions.map((show, index) => (
-                  <div
-                    id={`left-show-option-${show.slug}`}
-                    key={show.slug}
-                    role="option"
-                    aria-selected={index === leftActiveIndex}
-                    onMouseEnter={() => setLeftActiveIndex(index)}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={() => selectLeft(show)}
-                    className={`w-full text-left px-4 py-2.5 flex items-center justify-between text-sm font-serif cursor-pointer ${index === leftActiveIndex ? 'bg-arena-cream' : ''}`}
-                  >
-                    <span className="font-semibold">{show.title}</span>
-                    <span className="text-xs font-sans text-arena-muted">{show.network}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <ContenderCombobox
+            side="left"
+            currentShow={leftShow}
+            search={leftSearch}
+            setSearch={setLeftSearch}
+            isOpen={leftDropdownOpen}
+            setIsOpen={setLeftDropdownOpen}
+            onSelect={onSelectLeftShow}
+            seriesList={seriesList}
+            borderColorClass="focus:border-arena-terracotta"
+          />
 
           {/* Clickable Swap Badge */}
           <button
@@ -198,67 +230,17 @@ export function ArenaContenders({
             vs
           </button>
 
-          {/* Right Input */}
-          <div className="relative w-full">
-            <input
-              type="text"
-              role="combobox"
-              aria-label="Search right contender"
-              aria-autocomplete="list"
-              aria-expanded={rightDropdownOpen}
-              aria-controls={rightDropdownOpen ? 'right-show-options' : undefined}
-              aria-activedescendant={rightDropdownOpen && rightOptions[rightActiveIndex] ? `right-show-option-${rightOptions[rightActiveIndex].slug}` : undefined}
-              value={rightSearch}
-              onFocus={() => { setRightDropdownOpen(true); setRightActiveIndex(rightOptions.length ? 0 : -1); }}
-              onBlur={handleRightBlur}
-              onChange={(e) => {
-                setRightSearch(e.target.value);
-                setRightDropdownOpen(true);
-                setRightActiveIndex(0);
-              }}
-              onKeyDown={(event) =>
-                handleComboboxKeyDown(
-                  event,
-                  rightOptions,
-                  rightDropdownOpen,
-                  setRightDropdownOpen,
-                  rightActiveIndex,
-                  setRightActiveIndex,
-                  selectRight,
-                  () => {
-                    if (rightShow && rightSearch !== rightShow.title) setRightSearch(rightShow.title);
-                  }
-                )
-              }
-              placeholder="Type a series..."
-              className="w-full bg-arena-surface border border-arena-border text-arena-charcoal text-sm sm:text-base font-serif px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-sm focus:border-arena-sage focus:ring-0 outline-none"
-            />
-            {rightDropdownOpen && (
-              <div
-                id="right-show-options"
-                role="listbox"
-                onMouseDown={(event) => event.preventDefault()}
-                className="absolute z-30 mt-2 w-full bg-arena-surface border border-arena-border rounded-2xl shadow-soft-card overflow-hidden"
-              >
-                {rightOptions.map((show, index) => (
-                  <div
-                    id={`right-show-option-${show.slug}`}
-                    key={show.slug}
-                    role="option"
-                    aria-selected={index === rightActiveIndex}
-                    onMouseEnter={() => setRightActiveIndex(index)}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onPointerDown={(event) => event.preventDefault()}
-                    onClick={() => selectRight(show)}
-                    className={`w-full text-left px-4 py-2.5 flex items-center justify-between text-sm font-serif cursor-pointer ${index === rightActiveIndex ? 'bg-arena-cream' : ''}`}
-                  >
-                    <span className="font-semibold">{show.title}</span>
-                    <span className="text-xs font-sans text-arena-muted">{show.network}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <ContenderCombobox
+            side="right"
+            currentShow={rightShow}
+            search={rightSearch}
+            setSearch={setRightSearch}
+            isOpen={rightDropdownOpen}
+            setIsOpen={setRightDropdownOpen}
+            onSelect={onSelectRightShow}
+            seriesList={seriesList}
+            borderColorClass="focus:border-arena-sage"
+          />
         </div>
       </section>
 

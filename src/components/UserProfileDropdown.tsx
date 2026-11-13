@@ -6,7 +6,7 @@ import { summarizeMoverPredictions } from '../lib/moverPredictionStats';
 export interface UserProfileDropdownProps {
   user: any;
   bestStreak: number;
-  onSelectTab: (tab: 'leaderboard' | 'arena' | 'charts' | 'guess' | 'watchlist') => void;
+  onSelectTab: (tab: 'leaderboard' | 'arena' | 'charts' | 'guess' | 'watchlist' | 'movers') => void;
   onOpenAuth: () => void;
   onSignOut: () => void;
   onOpenMethodology: () => void;
@@ -418,6 +418,36 @@ export function UserProfileDropdown({
                 </div>
               </button>
             )}
+
+            {/* Weekly Movers & Predictions */}
+            <button
+              type="button"
+              onClick={() => {
+                onSelectTab('movers');
+                setIsOpen(false);
+              }}
+              className="w-full group flex items-center justify-between px-3.5 py-2.5 rounded-xl hover:bg-arena-surface transition-colors duration-150 text-stone-700 hover:text-stone-900 text-left"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-arena-muted group-hover:text-arena-terracotta transition-colors">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span className="text-sm font-medium">Movers & Predictions</span>
+              </div>
+            </button>
 
             {/* Intelligence Methodology */}
             <button

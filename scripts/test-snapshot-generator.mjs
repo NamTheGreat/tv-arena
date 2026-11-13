@@ -22,6 +22,13 @@ const data = {
   series_recent_telemetry: [{ series_id: 'series-1', daily_series: [100, 125], daily_dates: ['2026-11-03', '2026-11-04'] }],
   series_events: [],
   series_breakouts: [],
+  series_signal_contributions: [{
+    series_id: 'series-1',
+    wiki_contribution: 75,
+    reddit_contribution: 25,
+    telemetry_days: 7,
+    reddit_observed_days: 7,
+  }],
 };
 
 const server = createServer((request, response) => {
@@ -67,6 +74,12 @@ try {
   assert.equal(snapshot.series[0].buzz_score, 125);
   assert.deepEqual(snapshot.series[0].daily_series, [100, 125]);
   assert.deepEqual(snapshot.series[0].daily_dates, ['2026-11-03', '2026-11-04']);
+  assert.deepEqual(snapshot.series[0].signal_contributions, {
+    wiki_contribution: 75,
+    reddit_contribution: 25,
+    telemetry_days: 7,
+    reddit_observed_days: 7,
+  });
   const csvContent = await readFile(csvPath, 'utf8');
   assert.match(csvContent, /Show One/);
   assert.match(csvContent, /Network One/);

@@ -471,10 +471,29 @@ export default function App() {
           }
         }
 
-        const { data: eventsData } = await supabase
-          .from('series_events')
-          .select('id, series_id, event_date, kind, label, source')
-          .order('event_date', { ascending: true });
+        // Query breakouts detected in the last 7 days (aligning with weekly movers feed and snapshot)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+        const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+
+        const [
+          { data: eventsData },
+          { data: breakoutData },
+          { data: contributionData },
+        ] = await Promise.all([
+          supabase
+            .from('series_events')
+            .select('id, series_id, event_date, kind, label, source')
+            .order('event_date', { ascending: true }),
+          supabase
+            .from('series_breakouts')
+            .select('series_id, reason, detected_date')
+            .gte('detected_date', sevenDaysAgoStr)
+            .order('detected_date', { ascending: false }),
+          supabase
+            .from('series_signal_contributions')
+            .select('series_id, wiki_contribution, reddit_contribution, telemetry_days, reddit_observed_days'),
+        ]);
 
         const eventsMap = new Map<string, any[]>();
         if (eventsData) {
@@ -484,16 +503,6 @@ export default function App() {
             eventsMap.set(ev.series_id, arr);
           }
         }
-        // Query breakouts detected in the last 2 days
-        const twoDaysAgo = new Date();
-        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-        const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
-
-        const { data: breakoutData } = await supabase
-          .from('series_breakouts')
-          .select('series_id, reason, detected_date')
-          .gte('detected_date', twoDaysAgoStr)
-          .order('detected_date', { ascending: false });
 
         const breakoutMap = new Map<string, string>();
         if (breakoutData) {
@@ -504,9 +513,6 @@ export default function App() {
           }
         }
 
-        const { data: contributionData } = await supabase
-          .from('series_signal_contributions')
-          .select('series_id, wiki_contribution, reddit_contribution, telemetry_days, reddit_observed_days');
         const contributionMap = new Map(
           (contributionData || []).map((row) => [row.series_id, {
             wiki_contribution: Number(row.wiki_contribution),

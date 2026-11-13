@@ -31,9 +31,9 @@ jobs:
         run: |
           for attempt in $(seq 1 30); do
             checks="$(gh pr checks "$PR_URL" --json name,bucket 2>/dev/null || true)"
-            if [ -n "$checks" ] && [ "$(jq 'length' <<< "$checks")" -gt 0 ]; then
-              filtered="$(jq '[.[] | select(.name != "auto-merge" and (.name | test("auto-merge"; "i") | not))]' <<< "$checks")"
-              total="$(jq 'length' <<< "$filtered")"
+            if [ -n "$checks" ]; then
+              filtered="$(jq '[.[] | select(.name != "auto-merge" and (.name | test("auto-merge"; "i") | not))]' <<< "$checks" 2>/dev/null || echo "[]")"
+              total="$(jq 'length' <<< "$filtered" 2>/dev/null || echo "0")"
               if [ "$total" -eq 0 ] && [ "$attempt" -ge 12 ]; then
                 echo "No external checks registered after 2 minutes; proceeding."
                 exit 0
@@ -51,6 +51,9 @@ jobs:
                   exit 0
                 fi
               fi
+            elif [ "$attempt" -ge 12 ]; then
+              echo "No checks output available after 2 minutes; proceeding."
+              exit 0
             fi
             sleep 10
           done

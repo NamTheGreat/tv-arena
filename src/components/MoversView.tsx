@@ -41,6 +41,8 @@ function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
 
   useEffect(() => {
     let active = true;
+    setSuccessMessage(null);
+    setErrorMessage(null);
     if (!user || !supabase) {
       setExistingPrediction(null);
       return;
@@ -65,6 +67,8 @@ function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
     loadPrediction();
     return () => {
       active = false;
+      setSuccessMessage(null);
+      setErrorMessage(null);
     };
   }, [user?.id, nextWeekStart]);
 
@@ -120,7 +124,7 @@ function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
             {predictedShow ? predictedShow.title : 'Prediction submitted'}
           </p>
           <p className="mt-1 text-[11px] text-stone-400">
-            Graded on Monday following the 06:00 UTC telemetry sync. (1st place = 3 pts, Top 3 = 1 pt)
+            Picks are final once locked in. Graded on Monday following the 06:00 UTC telemetry sync. (1st place = 3 pts, Top 3 = 1 pt)
           </p>
         </div>
       ) : (
@@ -147,6 +151,9 @@ function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
           >
             {isSubmitting ? 'Locking in...' : 'Lock In Pick'}
           </button>
+          <p className="w-full text-[11px] text-stone-400">
+            Picks are final once locked in for the week.
+          </p>
           {errorMessage && <p className="w-full text-xs text-rose-600">{errorMessage}</p>}
         </form>
       )}

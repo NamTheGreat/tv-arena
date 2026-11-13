@@ -51,15 +51,16 @@ async function main() {
 
   try {
     const baseUrl = `${supabaseUrl.replace(/\/$/, '')}/`;
-    const [leaderboard, metadata, telemetry, events, breakouts] = await Promise.all([
+    const [leaderboard, metadata, telemetry, events, breakouts, contributions] = await Promise.all([
       fetchRows(baseUrl, anonKey, 'series_leaderboard', 'id,tmdb_id,slug,title,network,network_group,genre_group,release_years,chart_color,current_7d_score,previous_7d_score,delta_pct,rank', { order: 'rank.asc' }),
       fetchRows(baseUrl, anonKey, 'series', 'id,tmdb_id,slug,title,network,network_group,genre_group,release_years,chart_color,wiki_slug,reddit_query,updated_at', { order: 'slug.asc' }),
       fetchRows(baseUrl, anonKey, 'series_recent_telemetry', 'series_id,daily_series,daily_dates', { order: 'series_id.asc' }),
       fetchRows(baseUrl, anonKey, 'series_events', 'id,series_id,event_date,kind,label,source', { order: 'event_date.asc' }),
       fetchRows(baseUrl, anonKey, 'series_breakouts', 'series_id,reason,detected_date', {
         order: 'detected_date.desc',
-        filter: ['detected_date', `gte.${new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)}`],
+        filter: ['detected_date', `gte.${new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10)}`],
       }),
+      fetchRows(baseUrl, anonKey, 'series_signal_contributions', 'series_id,wiki_contribution,reddit_contribution,telemetry_days,reddit_observed_days', { order: 'series_id.asc' }),
     ]);
 
     const metadataById = new Map(metadata.map((row) => [row.id, row]));
@@ -73,6 +74,15 @@ async function main() {
     const breakoutById = new Map();
     for (const breakout of breakouts) {
       if (!breakoutById.has(breakout.series_id)) breakoutById.set(breakout.series_id, breakout.reason);
+    }
+    const contributionsById = new Map();
+    for (const contrib of contributions) {
+      contributionsById.set(contrib.series_id, {
+        wiki_contribution: Number(contrib.wiki_contribution),
+        reddit_contribution: Number(contrib.reddit_contribution),
+        telemetry_days: Number(contrib.telemetry_days),
+        reddit_observed_days: Number(contrib.reddit_observed_days),
+      });
     }
 
     const series = leaderboard.map((row) => {
@@ -92,6 +102,7 @@ async function main() {
         events: eventsById.get(row.id) || [],
         is_breakout: breakoutById.has(row.id),
         breakout_reason: breakoutById.get(row.id),
+        signal_contributions: contributionsById.get(row.id),
       };
     });
     const snapshot = { generated_at: new Date().toISOString(), series };
