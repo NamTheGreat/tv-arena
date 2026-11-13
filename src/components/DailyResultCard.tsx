@@ -8,6 +8,7 @@ interface DailyResultCardProps {
   submissionError: string | null;
   onRetry: () => void;
   onOpenAuth?: () => void;
+  onClearSavedResult?: () => void;
 }
 
 export function DailyResultCard({
@@ -17,15 +18,17 @@ export function DailyResultCard({
   submissionError,
   onRetry,
   onOpenAuth,
+  onClearSavedResult,
 }: DailyResultCardProps) {
   const [shareStatus, setShareStatus] = useState('');
+  const hasNoAnswers = !result.answers?.length;
   const status = result.verified
     ? 'Verified and saved to your account.'
-    : isAuthenticated
-      ? result.answers?.length
+    : hasNoAnswers
+      ? 'Saved on this device only.'
+      : isAuthenticated
         ? 'Your score has not been verified yet.'
-        : 'This saved result has no answers to submit to the leaderboard.'
-      : 'Saved on this device only.';
+        : 'Saved on this device only.';
   const shareResult = async () => {
     try {
       let score: number;
@@ -76,7 +79,21 @@ export function DailyResultCard({
       </button>
       {shareStatus && <p role={shareStatus.startsWith('Could not') ? 'alert' : 'status'} className="mt-2 text-xs text-stone-500">{shareStatus}</p>}
       {isSubmitting && <p role="status" className="text-xs text-stone-500">Verifying your score…</p>}
-      {submissionError && (
+      {hasNoAnswers && !result.verified && onClearSavedResult && (
+        <div className="mt-4">
+          <p className="text-xs text-stone-500 mb-2">
+            This saved result has no answers and cannot be submitted to the leaderboard.
+          </p>
+          <button
+            type="button"
+            onClick={onClearSavedResult}
+            className="rounded-xl border border-stone-300 px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 hover:text-stone-900 transition-colors cursor-pointer"
+          >
+            Clear saved result
+          </button>
+        </div>
+      )}
+      {!hasNoAnswers && submissionError && (
         <div role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
           <p>{submissionError}</p>
           <button type="button" onClick={onRetry} disabled={isSubmitting} className="mt-2 font-semibold underline disabled:opacity-50">
@@ -84,7 +101,7 @@ export function DailyResultCard({
           </button>
         </div>
       )}
-      {!isAuthenticated && onOpenAuth && result.answers?.length === result.correctness.length && result.answers.length > 0 && (
+      {!isAuthenticated && onOpenAuth && !hasNoAnswers && result.answers?.length === result.correctness.length && result.answers.length > 0 && (
         <div className="mt-4 text-sm text-stone-600">
           <p>Sign in to save your score to the leaderboard.</p>
           <button type="button" onClick={onOpenAuth} className="mt-2 font-semibold text-arena-terracotta underline">
