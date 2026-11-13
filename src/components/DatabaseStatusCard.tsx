@@ -32,10 +32,20 @@ export function formatRelativeTime(dateStr?: string | null): string {
   return `${diffDays}d ago`;
 }
 
-export function getNext0200UtcCountdown(): string {
-  const now = new Date();
+/**
+ * Single source of truth for the nightly Rust telemetry ingestion sync schedule.
+ * Aligned with the cron schedule in `.github/workflows/nightly-sync.yml` ('0 6 * * *').
+ */
+export const NIGHTLY_SYNC_UTC_HOUR = 6;
+export const NIGHTLY_SYNC_SCHEDULE_TEXT = 'Nightly at 06:00 UTC';
+
+export function getNextSyncCountdown(
+  fromEpochMs: number = Date.now(),
+  syncHourUtc: number = NIGHTLY_SYNC_UTC_HOUR
+): string {
+  const now = new Date(fromEpochMs);
   const next = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 2, 0, 0, 0)
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), syncHourUtc, 0, 0, 0)
   );
   if (now.getTime() >= next.getTime()) {
     next.setUTCDate(next.getUTCDate() + 1);
@@ -45,6 +55,12 @@ export function getNext0200UtcCountdown(): string {
   const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
   return `${diffHours}h ${diffMinutes}m`;
 }
+
+/**
+ * Backwards compatibility helper for existing callers.
+ */
+export const getNext0200UtcCountdown = (fromEpochMs?: number): string =>
+  getNextSyncCountdown(fromEpochMs);
 
 interface DatabaseStatusCardProps {
   type: DatabaseStatusType;
@@ -56,13 +72,34 @@ interface DatabaseStatusCardProps {
 export function DatabaseStatusCard({ type, errorMessage, viewWarning, onClose }: DatabaseStatusCardProps) {
   const [latestRun, setLatestRun] = useState<SyncRunRecord | null>(null);
   const [isLoadingRun, setIsLoadingRun] = useState(false);
-  const [countdown, setCountdown] = useState<string>(getNext0200UtcCountdown());
+  const [countdown, setCountdown] = useState<string>(() => getNextSyncCountdown(Date.now()));
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown(getNext0200UtcCountdown());
-    }, 60000);
-    return () => clearInterval(timer);
+    const updateCountdown = () => {
+      setCountdown(getNextSyncCountdown(Date.now()));
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 60000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        updateCountdown();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      updateCountdown();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -196,7 +233,7 @@ export function DatabaseStatusCard({ type, errorMessage, viewWarning, onClose }:
             <div className="font-serif text-xl text-arena-terracotta font-medium">
               in {countdown}
             </div>
-            <p className="text-[11px] text-stone-500 mt-0.5">Nightly at 02:00 UTC</p>
+            <p className="text-[11px] text-stone-500 mt-0.5">{NIGHTLY_SYNC_SCHEDULE_TEXT}</p>
           </div>
 
           <div className="bg-[#FAF7F2] p-4 rounded-2xl border border-stone-200/60">

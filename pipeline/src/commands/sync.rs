@@ -118,6 +118,8 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         let telemetry_batch = vec![json!({
             "series_id": show_id,
             "recorded_date": date_iso,
+            "daily_score": 0,
+            "daily_viewers": 0,
             "wiki_views": day.views,
             "reddit_comments": reddit_comments,
             "reddit_upvotes": reddit_upvotes,
@@ -125,10 +127,15 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         })];
 
         if let Err(e) = batch_record_daily_telemetry(client, config, telemetry_batch) {
-            eprintln!(
-                "❌ Failed batch recording daily telemetry for '{}': {}",
+            let msg = format!(
+                "Failed batch recording daily telemetry for '{}': {:#}",
                 show.title, e
             );
+            eprintln!("❌ {}", msg);
+            if !error_log.is_empty() {
+                error_log.push_str("; ");
+            }
+            error_log.push_str(&msg);
             fetch_failures += 1;
             continue;
         }

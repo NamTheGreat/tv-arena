@@ -75,6 +75,8 @@ fn telemetry_rows(series_id: &str, days: Vec<WikiDay>) -> Result<Vec<serde_json:
             Ok(json!({
                 "series_id": series_id,
                 "recorded_date": date.format("%Y-%m-%d").to_string(),
+                "daily_score": 0,
+                "daily_viewers": 0,
                 "wiki_views": day.views,
                 "reddit_comments": null,
                 "reddit_upvotes": null,
@@ -167,6 +169,8 @@ mod tests {
         .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["recorded_date"], "2026-11-03");
+        assert_eq!(rows[0]["daily_score"], 0);
+        assert_eq!(rows[0]["daily_viewers"], 0);
         assert_eq!(rows[0]["wiki_views"], 1234);
         assert!(rows[0]["reddit_comments"].is_null());
         assert!(rows[0]["reddit_upvotes"].is_null());

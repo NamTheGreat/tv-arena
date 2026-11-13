@@ -66,6 +66,7 @@ export type Database = {
           series_id: string
           recorded_date: string
           daily_score: number
+          daily_viewers?: number | null
           wiki_views: number | null
           reddit_comments: number | null
           reddit_upvotes: number | null
@@ -76,6 +77,7 @@ export type Database = {
           series_id: string
           recorded_date?: string
           daily_score: number
+          daily_viewers?: number | null
           wiki_views?: number | null
           reddit_comments?: number | null
           reddit_upvotes?: number | null
@@ -86,6 +88,7 @@ export type Database = {
           series_id?: string
           recorded_date?: string
           daily_score?: number
+          daily_viewers?: number | null
           wiki_views?: number | null
           reddit_comments?: number | null
           reddit_upvotes?: number | null
