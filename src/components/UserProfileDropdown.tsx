@@ -52,6 +52,7 @@ export function UserProfileDropdown({
           supabase
             .from('mover_predictions')
             .select('points')
+            .eq('user_id', user.id)
             .not('graded_at', 'is', null),
         ]);
 

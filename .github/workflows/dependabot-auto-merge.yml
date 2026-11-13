@@ -29,7 +29,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          for attempt in $(seq 1 120); do
+          for attempt in $(seq 1 30); do
             checks="$(gh pr checks "$PR_URL" --json name,bucket 2>/dev/null || true)"
             if [ -n "$checks" ] && [ "$(jq 'length' <<< "$checks")" -gt 0 ]; then
               filtered="$(jq '[.[] | select(.name != "auto-merge" and (.name | test("auto-merge"; "i") | not))]' <<< "$checks")"

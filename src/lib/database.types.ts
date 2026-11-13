@@ -500,6 +500,13 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      submit_mover_prediction: {
+        Args: {
+          p_week_start: string
+          p_series_id: string
+        }
+        Returns: Database['public']['Tables']['mover_predictions']['Row']
+      }
     }
     Enums: {
       [_ in never]: never

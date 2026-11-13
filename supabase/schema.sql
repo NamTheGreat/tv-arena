@@ -608,6 +608,7 @@ WITH (security_invoker = on) AS
 WITH periods AS (
   SELECT DISTINCT recorded_date AS period_start
   FROM series_daily_telemetry
+  WHERE EXTRACT(ISODOW FROM recorded_date) = 1
 ), week_scores AS (
   SELECT
     w.period_start,
@@ -709,7 +710,7 @@ BEGIN
     FROM series_daily_telemetry t
     JOIN series_daily_scores d ON d.telemetry_id = t.id
     WHERE t.series_id = p_series_id
-      AND t.recorded_date >= p_week_start - 7
+      AND t.recorded_date >= p_week_start - 14
       AND t.recorded_date < p_week_start
     GROUP BY t.series_id
     HAVING SUM(d.daily_score) > 0

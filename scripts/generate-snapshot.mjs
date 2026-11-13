@@ -26,6 +26,7 @@ async function fetchRows(baseUrl, key, table, select, options = {}) {
         Range: `${offset}-${offset + pageSize - 1}`,
       },
     });
+    if (response.status === 416) return rows;
     if (!response.ok) throw new Error(`${table} returned HTTP ${response.status}`);
     const page = await response.json();
     if (!Array.isArray(page)) throw new Error(`${table} returned an invalid response`);
@@ -51,8 +52,8 @@ async function main() {
   try {
     const baseUrl = `${supabaseUrl.replace(/\/$/, '')}/`;
     const [leaderboard, metadata, telemetry, events, breakouts] = await Promise.all([
-      fetchRows(baseUrl, anonKey, 'series_leaderboard', 'id,tmdb_id,slug,title,network,genre_group,release_years,chart_color,current_7d_score,previous_7d_score,delta_pct,rank', { order: 'rank.asc' }),
-      fetchRows(baseUrl, anonKey, 'series', 'id,tmdb_id,slug,title,network,genre_group,release_years,chart_color,wiki_slug,reddit_query,updated_at', { order: 'slug.asc' }),
+      fetchRows(baseUrl, anonKey, 'series_leaderboard', 'id,tmdb_id,slug,title,network,network_group,genre_group,release_years,chart_color,current_7d_score,previous_7d_score,delta_pct,rank', { order: 'rank.asc' }),
+      fetchRows(baseUrl, anonKey, 'series', 'id,tmdb_id,slug,title,network,network_group,genre_group,release_years,chart_color,wiki_slug,reddit_query,updated_at', { order: 'slug.asc' }),
       fetchRows(baseUrl, anonKey, 'series_recent_telemetry', 'series_id,daily_series,daily_dates', { order: 'series_id.asc' }),
       fetchRows(baseUrl, anonKey, 'series_events', 'id,series_id,event_date,kind,label,source', { order: 'event_date.asc' }),
       fetchRows(baseUrl, anonKey, 'series_breakouts', 'series_id,reason,detected_date', {
@@ -97,7 +98,7 @@ async function main() {
     await mkdir(dirname(snapshotPath), { recursive: true });
     await writeFile(snapshotPath, `${JSON.stringify(snapshot)}\n`);
 
-    const columns = ['id', 'slug', 'title', 'network', 'genre_group', 'current_7d_score', 'previous_7d_score', 'delta_pct', 'daily_dates', 'daily_series'];
+    const columns = ['id', 'slug', 'title', 'network', 'network_group', 'genre_group', 'current_7d_score', 'previous_7d_score', 'delta_pct', 'daily_dates', 'daily_series'];
     const csv = [columns.join(','), ...series.map((row) => columns.map((column) => csvCell(row[column])).join(','))].join('\n');
     await writeFile(csvPath, `${csv}\n`);
     console.log(`Generated public snapshot for ${series.length} shows.`);

@@ -8,6 +8,7 @@ WITH (security_invoker = on) AS
 WITH periods AS (
   SELECT DISTINCT recorded_date AS period_start
   FROM series_daily_telemetry
+  WHERE EXTRACT(ISODOW FROM recorded_date) = 1
 ), week_scores AS (
   SELECT
     w.period_start,

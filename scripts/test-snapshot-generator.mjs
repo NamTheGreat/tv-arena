@@ -27,6 +27,16 @@ const data = {
 const server = createServer((request, response) => {
   const url = new URL(request.url, 'http://localhost');
   const table = url.pathname.split('/').pop();
+  const select = url.searchParams.get('select') || '';
+  if (table === 'series_leaderboard' || table === 'series') {
+    assert(select.split(',').includes('network_group'), `${table} select must include network_group`);
+  }
+  const rangeHeader = request.headers['range'] || '';
+  if (rangeHeader.startsWith('1000-')) {
+    response.writeHead(416, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ message: 'Requested range not satisfiable' }));
+    return;
+  }
   response.writeHead(200, { 'content-type': 'application/json' });
   response.end(JSON.stringify(data[table] || []));
 });
@@ -53,10 +63,13 @@ try {
 
   const snapshot = JSON.parse(await readFile(snapshotPath, 'utf8'));
   assert.equal(snapshot.series.length, 1);
+  assert.equal(snapshot.series[0].network_group, 'Network One');
   assert.equal(snapshot.series[0].buzz_score, 125);
   assert.deepEqual(snapshot.series[0].daily_series, [100, 125]);
   assert.deepEqual(snapshot.series[0].daily_dates, ['2026-11-03', '2026-11-04']);
-  assert.match(await readFile(csvPath, 'utf8'), /Show One/);
+  const csvContent = await readFile(csvPath, 'utf8');
+  assert.match(csvContent, /Show One/);
+  assert.match(csvContent, /Network One/);
   console.log('Snapshot JSON and CSV generation tests passed.');
 } finally {
   await Promise.all([rm(snapshotPath, { force: true }), rm(csvPath, { force: true })]);

@@ -102,9 +102,13 @@ async function generate() {
     console.warn('Supabase build variables missing; generating a valid empty movers feed.');
   }
 
+  const feedContent = buildMoversFeed({ movers, shows, breakouts, siteUrl });
   const destination = path.join(process.cwd(), 'public', 'movers.xml');
+  const feedDestination = path.join(process.cwd(), 'public', 'feed', 'movers.xml');
   fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.writeFileSync(destination, buildMoversFeed({ movers, shows, breakouts, siteUrl }), 'utf8');
+  fs.mkdirSync(path.dirname(feedDestination), { recursive: true });
+  fs.writeFileSync(destination, feedContent, 'utf8');
+  fs.writeFileSync(feedDestination, feedContent, 'utf8');
 }
 
 if (require.main === module) {

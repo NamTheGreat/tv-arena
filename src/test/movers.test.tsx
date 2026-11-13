@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { MoversView } from '../components/MoversView';
-import { getMovers } from '../lib/movers';
+import { getMovers, getNextMoverWeekStart } from '../lib/movers';
 import { SeriesItem } from '../lib/supabase';
 
 function series(slug: string, change: number | null, breakout = false): SeriesItem {
@@ -45,5 +45,15 @@ describe('MoversView', () => {
     expect(screen.getByText('-12.0%')).toBeInTheDocument();
     expect(screen.getByText('Subscribe to RSS')).toHaveAttribute('href', '/movers.xml');
     expect(screen.queryByText('new-show')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: "Predict Next Week's #1 Mover" })).toBeInTheDocument();
+  });
+
+  it('computes next Monday UTC for getNextMoverWeekStart', () => {
+    // Wednesday 2026-11-04 -> next Monday is 2026-11-09
+    expect(getNextMoverWeekStart(new Date('2026-11-04T12:00:00Z'))).toBe('2026-11-09');
+    // Sunday 2026-11-08 -> next Monday is 2026-11-09
+    expect(getNextMoverWeekStart(new Date('2026-11-08T23:59:59Z'))).toBe('2026-11-09');
+    // Monday 2026-11-09 -> next Monday is 2026-11-16
+    expect(getNextMoverWeekStart(new Date('2026-11-09T00:00:00Z'))).toBe('2026-11-16');
   });
 });

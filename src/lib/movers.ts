@@ -11,3 +11,11 @@ export function getMovers(seriesList: SeriesItem[]) {
       .sort((a, b) => (b.delta_pct || 0) - (a.delta_pct || 0)).slice(0, 10),
   };
 }
+
+export function getNextMoverWeekStart(now = new Date()): string {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const day = d.getUTCDay();
+  const daysUntilNextMonday = ((8 - (day === 0 ? 7 : day)) % 7) || 7;
+  d.setUTCDate(d.getUTCDate() + daysUntilNextMonday);
+  return d.toISOString().slice(0, 10);
+}

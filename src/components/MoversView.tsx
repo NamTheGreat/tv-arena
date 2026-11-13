@@ -1,6 +1,8 @@
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getMovers } from '../lib/movers';
-import { SeriesItem } from '../lib/supabase';
+import { getMovers, getNextMoverWeekStart } from '../lib/movers';
+import { SeriesItem, supabase } from '../lib/supabase';
+import { useAuth } from '../lib/auth';
 
 function MoversList({ title, shows, emptyText }: { title: string; shows: SeriesItem[]; emptyText: string }) {
   return (
@@ -28,6 +30,121 @@ function MoversList({ title, shows, emptyText }: { title: string; shows: SeriesI
   );
 }
 
+function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
+  const { user } = useAuth();
+  const nextWeekStart = getNextMoverWeekStart();
+  const [existingPrediction, setExistingPrediction] = useState<{ series_id: string } | null>(null);
+  const [selectedSeriesId, setSelectedSeriesId] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    async function loadPrediction() {
+      if (!user || !supabase) return;
+      try {
+        const { data, error } = await supabase
+          .from('mover_predictions')
+          .select('series_id')
+          .eq('user_id', user.id)
+          .eq('week_start', nextWeekStart)
+          .maybeSingle();
+        if (active && !error && data) {
+          setExistingPrediction(data);
+        }
+      } catch {
+        // Ignore network / auth errors
+      }
+    }
+    loadPrediction();
+    return () => {
+      active = false;
+    };
+  }, [user?.id, nextWeekStart]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !supabase || !selectedSeriesId) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      const { error } = await supabase.rpc('submit_mover_prediction', {
+        p_week_start: nextWeekStart,
+        p_series_id: selectedSeriesId,
+      });
+      if (error) {
+        setErrorMessage(error.message);
+      } else {
+        setExistingPrediction({ series_id: selectedSeriesId });
+        setSuccessMessage('Your prediction is locked in for next week!');
+      }
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to submit prediction');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const predictedShow = existingPrediction
+    ? seriesList.find((s) => s.id === existingPrediction.series_id)
+    : null;
+
+  return (
+    <section className="mt-4 rounded-2xl border border-stone-200 bg-white p-4 sm:p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-stone-100 pb-3">
+        <h2 className="font-serif text-xl text-arena-charcoal">Predict Next Week&apos;s #1 Mover</h2>
+        <span className="text-xs font-medium text-stone-500">Week of {nextWeekStart}</span>
+      </div>
+      {!user ? (
+        <p className="mt-3 text-xs text-stone-500">
+          Sign in to submit your prediction for next week&apos;s fastest-rising show and earn leaderboard points.
+        </p>
+      ) : existingPrediction ? (
+        <div className="mt-3">
+          <p className="text-xs text-stone-600">
+            You locked in your pick:
+          </p>
+          <p className="mt-1 font-serif text-lg text-arena-charcoal">
+            {predictedShow ? predictedShow.title : 'Prediction submitted'}
+          </p>
+          <p className="mt-1 text-[11px] text-stone-400">
+            Graded on Monday following the 06:00 UTC telemetry sync. (1st place = 3 pts, Top 3 = 1 pt)
+          </p>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="mt-3 flex flex-wrap items-center gap-3">
+          <label htmlFor="mover-prediction-select" className="sr-only">Select contender</label>
+          <select
+            id="mover-prediction-select"
+            value={selectedSeriesId}
+            onChange={(e) => setSelectedSeriesId(e.target.value)}
+            className="flex-1 min-w-[200px] rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-arena-charcoal focus:border-arena-terracotta focus:outline-none"
+          >
+            <option value="">Choose a show...</option>
+            {seriesList
+              .filter((s) => (s.current_7d_score ?? 0) > 0)
+              .sort((a, b) => a.title.localeCompare(b.title))
+              .map((s) => (
+                <option key={s.id} value={s.id}>{s.title} ({s.network})</option>
+              ))}
+          </select>
+          <button
+            type="submit"
+            disabled={!selectedSeriesId || isSubmitting}
+            className="rounded-xl bg-arena-terracotta px-4 py-2 text-xs font-semibold text-white transition hover:bg-arena-terracotta/90 disabled:opacity-50"
+          >
+            {isSubmitting ? 'Locking in...' : 'Lock In Pick'}
+          </button>
+          {errorMessage && <p className="w-full text-xs text-rose-600">{errorMessage}</p>}
+          {successMessage && <p className="w-full text-xs text-emerald-600">{successMessage}</p>}
+        </form>
+      )}
+    </section>
+  );
+}
+
 export function MoversView({ seriesList }: { seriesList: SeriesItem[] }) {
   const { risers, fallers, breakouts } = getMovers(seriesList);
 
@@ -44,6 +161,7 @@ export function MoversView({ seriesList }: { seriesList: SeriesItem[] }) {
         <MoversList title="Risers" shows={risers} emptyText="No rising shows have a previous-week comparison yet." />
         <MoversList title="Fallers" shows={fallers} emptyText="No falling shows have a previous-week comparison yet." />
       </div>
+      <PredictionSection seriesList={seriesList} />
       <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:p-6">
         <h2 className="mb-3 font-serif text-xl text-arena-charcoal">Recent Breakouts</h2>
         {breakouts.length ? (

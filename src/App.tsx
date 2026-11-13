@@ -390,14 +390,17 @@ export default function App() {
       setIsLoading(true);
       setDbError(null);
       const snapshot = await fetchArenaSnapshot();
+      let hasSnapshot = false;
       if (snapshot) {
         setSeriesList(snapshot.series);
         setViewWarning(null);
         setIsLoading(false);
-        return;
+        hasSnapshot = true;
       }
       if (!supabase) {
-        setIsLoading(false);
+        if (!hasSnapshot) {
+          setIsLoading(false);
+        }
         return;
       }
       // The leaderboard view is the only source for displayed scores.
@@ -406,8 +409,10 @@ export default function App() {
         .select('*');
 
       if (error) {
-        setViewWarning(`Failed to query dynamic 'series_leaderboard' view (${error.message}).`);
-        setDbError(error.message);
+        if (!hasSnapshot) {
+          setViewWarning(`Failed to query dynamic 'series_leaderboard' view (${error.message}).`);
+          setDbError(error.message);
+        }
         setIsLoading(false);
         return;
       }
