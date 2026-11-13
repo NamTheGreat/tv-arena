@@ -73,6 +73,7 @@ describe('TriviaGame timer and finish guards', () => {
       expect(screen.getByText(/Daily Round/i)).toBeInTheDocument();
       expect(screen.getByText('1 / 10')).toBeInTheDocument();
       expect(screen.getByText('Show 1')).toBeInTheDocument();
+      expect(screen.getByText('Show 2')).toBeInTheDocument();
     });
 
     expect(screen.getByText('1 / 10')).toBeInTheDocument();
@@ -118,6 +119,7 @@ describe('TriviaGame timer and finish guards', () => {
       expect(screen.getByText(/Daily Round/i)).toBeInTheDocument();
       expect(screen.getByText('1 / 10')).toBeInTheDocument();
       expect(screen.getByText('Show 1')).toBeInTheDocument();
+      expect(screen.getByText('Show 2')).toBeInTheDocument();
     });
 
     vi.useFakeTimers();
