@@ -47,10 +47,9 @@ describe('Password recovery single source of truth', () => {
       </MemoryRouter>
     );
 
-    // Modal should be open in update-password mode
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /Choose a new password/i })).toBeInTheDocument();
-    });
+    // Modal should be open in update-password mode (give ample timeout for lazy-loaded AuthModal in CI)
+    const heading = await screen.findByRole('heading', { name: /Choose a new password/i }, { timeout: 5000 });
+    expect(heading).toBeInTheDocument();
     expect(screen.getByLabelText(/New password/i)).toBeInTheDocument();
 
     // Close modal
@@ -59,9 +58,12 @@ describe('Password recovery single source of truth', () => {
 
     // clearPasswordRecovery must be called
     expect(mockAuth.clearPasswordRecovery).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: /Choose a new password/i })).not.toBeInTheDocument();
+    });
   });
 
-  it('a recovery link with passwordRecovery: false does not open update-password mode', () => {
+  it('a recovery link with passwordRecovery: false does not open update-password mode', async () => {
     mockAuth.user = { id: 'user-1', email: 'test@example.com' };
     mockAuth.passwordRecovery = false;
 
@@ -70,6 +72,9 @@ describe('Password recovery single source of truth', () => {
         <App />
       </MemoryRouter>
     );
+
+    // Wait for App shell to render
+    await screen.findByRole('heading', { level: 1 });
 
     // Modal should NOT be open
     expect(screen.queryByRole('heading', { name: /Choose a new password/i })).not.toBeInTheDocument();
