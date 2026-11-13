@@ -1,38 +1,14 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fetchPostgrestRows } from './lib/fetchPostgrestRows.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const snapshotPath = resolve(root, 'public/snapshot.json');
 const csvPath = resolve(root, 'public/snapshot.csv');
-const pageSize = 1000;
 
 async function removeGeneratedFiles() {
   await Promise.all([rm(snapshotPath, { force: true }), rm(csvPath, { force: true })]);
-}
-
-async function fetchRows(baseUrl, key, table, select, options = {}) {
-  const rows = [];
-  for (let offset = 0; ; offset += pageSize) {
-    const url = new URL(`/rest/v1/${table}`, baseUrl);
-    url.searchParams.set('select', select);
-    if (options.order) url.searchParams.set('order', options.order);
-    if (options.filter) url.searchParams.set(options.filter[0], options.filter[1]);
-    const response = await fetch(url, {
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        'Range-Unit': 'items',
-        Range: `${offset}-${offset + pageSize - 1}`,
-      },
-    });
-    if (response.status === 416) return rows;
-    if (!response.ok) throw new Error(`${table} returned HTTP ${response.status}`);
-    const page = await response.json();
-    if (!Array.isArray(page)) throw new Error(`${table} returned an invalid response`);
-    rows.push(...page);
-    if (page.length < pageSize) return rows;
-  }
 }
 
 function csvCell(value) {
@@ -52,15 +28,15 @@ async function main() {
   try {
     const baseUrl = `${supabaseUrl.replace(/\/$/, '')}/`;
     const [leaderboard, metadata, telemetry, events, breakouts, contributions] = await Promise.all([
-      fetchRows(baseUrl, anonKey, 'series_leaderboard', 'id,tmdb_id,slug,title,network,network_group,genre_group,release_years,chart_color,current_7d_score,previous_7d_score,delta_pct,rank', { order: 'rank.asc' }),
-      fetchRows(baseUrl, anonKey, 'series', 'id,tmdb_id,slug,title,network,network_group,genre_group,release_years,chart_color,wiki_slug,reddit_query,updated_at', { order: 'slug.asc' }),
-      fetchRows(baseUrl, anonKey, 'series_recent_telemetry', 'series_id,daily_series,daily_dates', { order: 'series_id.asc' }),
-      fetchRows(baseUrl, anonKey, 'series_events', 'id,series_id,event_date,kind,label,source', { order: 'event_date.asc' }),
-      fetchRows(baseUrl, anonKey, 'series_breakouts', 'series_id,reason,detected_date', {
+      fetchPostgrestRows(baseUrl, anonKey, 'series_leaderboard', 'id,tmdb_id,slug,title,network,network_group,genre_group,release_years,chart_color,current_7d_score,previous_7d_score,delta_pct,rank', { order: 'rank.asc' }),
+      fetchPostgrestRows(baseUrl, anonKey, 'series', 'id,tmdb_id,slug,title,network,network_group,genre_group,release_years,chart_color,wiki_slug,reddit_query,updated_at', { order: 'slug.asc' }),
+      fetchPostgrestRows(baseUrl, anonKey, 'series_recent_telemetry', 'series_id,daily_series,daily_dates', { order: 'series_id.asc' }),
+      fetchPostgrestRows(baseUrl, anonKey, 'series_events', 'id,series_id,event_date,kind,label,source', { order: 'event_date.asc' }),
+      fetchPostgrestRows(baseUrl, anonKey, 'series_breakouts', 'series_id,reason,detected_date', {
         order: 'detected_date.desc',
         filter: ['detected_date', `gte.${new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10)}`],
       }),
-      fetchRows(baseUrl, anonKey, 'series_signal_contributions', 'series_id,wiki_contribution,reddit_contribution,telemetry_days,reddit_observed_days', { order: 'series_id.asc' }),
+      fetchPostgrestRows(baseUrl, anonKey, 'series_signal_contributions', 'series_id,wiki_contribution,reddit_contribution,telemetry_days,reddit_observed_days', { order: 'series_id.asc' }),
     ]);
 
     const metadataById = new Map(metadata.map((row) => [row.id, row]));

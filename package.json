@@ -4,13 +4,13 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "predev": "node scripts/generate-movers-feed.cjs",
+    "predev": "node scripts/generate-movers-feed.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/generate-movers-feed.cjs && node scripts/generate-snapshot.mjs",
+    "prebuild": "node scripts/generate-movers-feed.mjs && node scripts/generate-snapshot.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test:e2e": "playwright test",
-    "test": "vitest run && node scripts/test-security-headers.cjs && node scripts/test-movers-feed.cjs && node scripts/test-snapshot-generator.mjs",
+    "test": "vitest run && node scripts/test-security-headers.cjs && node scripts/test-movers-feed.mjs && node scripts/test-snapshot-generator.mjs",
     "types:gen": "supabase gen types typescript --local > src/lib/database.types.ts"
   },
   "dependencies": {
