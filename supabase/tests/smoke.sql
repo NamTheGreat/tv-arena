@@ -416,12 +416,12 @@ BEGIN
   FROM unnest(v_grade_users, ARRAY[v_grade_series[1], v_grade_series[2], v_grade_series[4]]) AS picks(user_id, series_id);
 
   INSERT INTO sync_runs (status) VALUES ('running') RETURNING id INTO v_sync_id;
-  UPDATE sync_runs SET status = 'success', completed_at = now() WHERE id = v_sync_id;
+  UPDATE sync_runs SET status = 'partial', completed_at = now() WHERE id = v_sync_id;
 
   SELECT array_agg(points ORDER BY user_id) INTO v_points
   FROM mover_predictions WHERE week_start = v_week;
   IF v_points IS DISTINCT FROM ARRAY[3::BIGINT, 1::BIGINT, 0::BIGINT] THEN
-    RAISE EXCEPTION 'Expected mover prediction points [3, 1, 0], got %', v_points;
+    RAISE EXCEPTION 'Expected partial sync run to grade mover prediction points [3, 1, 0], got %', v_points;
   END IF;
 
   SET LOCAL ROLE authenticated;
@@ -432,7 +432,7 @@ BEGIN
     RAISE EXCEPTION 'RLS exposed % mover predictions instead of the authenticated user''s own row', v_visible_count;
   END IF;
 
-  RAISE NOTICE '✓ Mover predictions are RPC-only and grade to 3, 1, and 0 points.';
+  RAISE NOTICE '✓ Mover predictions are RPC-only and grade on partial or successful sync to 3, 1, and 0 points.';
 END $$;
 
 -- 5. RPC submit_daily_score Logic & Edge Cases
