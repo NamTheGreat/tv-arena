@@ -321,6 +321,63 @@ export type Database = {
         }
         Relationships: []
       }
+      user_push_subscriptions: {
+        Row: {
+          id: string
+          user_id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+          is_paused: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+          is_paused?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          endpoint?: string
+          p256dh?: string
+          auth?: string
+          is_paused?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_push_deliveries: {
+        Row: {
+          id: string
+          user_id: string
+          series_id: string
+          breakout_date: string
+          delivered_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          series_id: string
+          breakout_date: string
+          delivered_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          series_id?: string
+          breakout_date?: string
+          delivered_at?: string
+        }
+        Relationships: []
+      }
       user_scores: {
         Row: {
           user_id: string

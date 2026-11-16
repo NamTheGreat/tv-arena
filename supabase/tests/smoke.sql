@@ -588,6 +588,43 @@ BEGIN
   RAISE NOTICE '✓ Legacy telemetry column resilience verified.';
 END $$;
 
+-- 7. Push Notifications & Delivery Deduplication
+DO $$
+DECLARE
+  v_sub_id UUID;
+  v_test_user UUID := '11111111-1111-1111-1111-111111111111'::UUID;
+  v_other_user UUID := '22222222-2222-2222-2222-222222222222'::UUID;
+  v_series_id UUID;
+  v_count INT;
+BEGIN
+  RAISE NOTICE 'Testing push subscriptions and delivery deduplication...';
+
+  SELECT id INTO v_series_id FROM series LIMIT 1;
+
+  -- Create test user subscription
+  INSERT INTO user_push_subscriptions (user_id, endpoint, p256dh, auth, is_paused)
+  VALUES (v_test_user, 'https://push.example.com/sub/1', 'key-p256dh', 'auth-secret', false)
+  RETURNING id INTO v_sub_id;
+
+  -- Pause subscription
+  UPDATE user_push_subscriptions SET is_paused = true WHERE id = v_sub_id;
+
+  -- Delivery tracking unique constraint
+  INSERT INTO user_push_deliveries (user_id, series_id, breakout_date)
+  VALUES (v_test_user, v_series_id, CURRENT_DATE);
+
+  -- Duplicate delivery insert on same day should violate unique constraint
+  BEGIN
+    INSERT INTO user_push_deliveries (user_id, series_id, breakout_date)
+    VALUES (v_test_user, v_series_id, CURRENT_DATE);
+    RAISE EXCEPTION 'Expected duplicate push delivery on same date to fail';
+  EXCEPTION WHEN unique_violation THEN
+    -- Expected behavior
+  END;
+
+  RAISE NOTICE '✓ Push notification tables, indexes, and delivery deduplication verified.';
+END $$;
+
 ROLLBACK;
 
 \echo '===================================='
