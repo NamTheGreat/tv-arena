@@ -6,7 +6,7 @@ import { summarizeMoverPredictions } from '../lib/moverPredictionStats';
 export interface UserProfileDropdownProps {
   user: any;
   bestStreak: number;
-  onSelectTab: (tab: 'leaderboard' | 'arena' | 'charts' | 'guess' | 'watchlist' | 'movers') => void;
+  onSelectTab: (tab: 'leaderboard' | 'arena' | 'charts' | 'guess' | 'watchlist' | 'movers' | 'history') => void;
   onOpenAuth: () => void;
   onSignOut: () => void;
   onOpenMethodology: () => void;
@@ -310,6 +310,35 @@ export function UserProfileDropdown({
               <span className="text-xs text-arena-terracotta font-semibold bg-arena-border/50 px-2 py-0.5 rounded-full">
                 Best: {bestStreak}
               </span>
+            </button>
+
+            {/* Daily Challenge History */}
+            <button
+              type="button"
+              onClick={() => {
+                onSelectTab('history');
+                setIsOpen(false);
+              }}
+              className="w-full group flex items-center justify-between px-3.5 py-2.5 rounded-xl hover:bg-arena-surface transition-colors duration-150 text-stone-700 hover:text-stone-900 text-left"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-arena-muted group-hover:text-arena-terracotta transition-colors">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span className="text-sm font-medium">Daily Challenge History</span>
+              </div>
             </button>
 
             {/* Head to Head Arena */}
