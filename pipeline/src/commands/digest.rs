@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono::{Duration, Utc};
 
 use crate::clients::{create_http_client, digest};
@@ -6,12 +6,24 @@ use crate::config::Config;
 
 pub fn run_digest(config: &Config) -> Result<()> {
     let client = create_http_client();
-    let movers = digest::fetch_movers(&client, config)?;
+    let movers = match digest::fetch_movers(&client, config) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("Warning: could not fetch movers for daily digest: {e}");
+            Vec::new()
+        }
+    };
     let yesterday = (Utc::now() - Duration::days(1))
         .date_naive()
         .format("%Y-%m-%d")
         .to_string();
-    let breakouts = digest::fetch_breakouts(&client, config, &yesterday)?;
+    let breakouts = match digest::fetch_breakouts(&client, config, &yesterday) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Warning: could not fetch breakouts for daily digest: {e}");
+            Vec::new()
+        }
+    };
     let message = format_digest(movers, breakouts);
 
     let Some(webhook_url) = config.digest_webhook_url.as_deref() else {
@@ -20,18 +32,18 @@ pub fn run_digest(config: &Config) -> Result<()> {
         return Ok(());
     };
 
-    if client
+    if let Err(e) = client
         .post(webhook_url)
         .send_json(ureq::json!({
             "content": message,
             "allowed_mentions": { "parse": [] }
         }))
-        .is_err()
     {
         // Webhook URLs commonly contain credentials; keep them out of error output.
-        return Err(anyhow!(
-            "Digest webhook request failed; check its configuration."
-        ));
+        eprintln!(
+            "Warning: digest webhook delivery failed (check configuration or destination status): {e}"
+        );
+        return Ok(());
     }
     println!("Daily digest posted.");
     Ok(())
