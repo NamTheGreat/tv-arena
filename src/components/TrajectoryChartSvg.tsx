@@ -1,9 +1,11 @@
 import React from 'react';
 import { sampleDailyValues, buildChartGeometry, buildMobileChartGeometry } from '../lib/svgMath';
-import { ChartRange, ActiveChartShow, ChartEvent } from './trajectoryChartTypes';
+import { ChartRange, ChartMetric, ActiveChartShow, ChartEvent } from './trajectoryChartTypes';
+import { sampleDailyRanks, buildRankChartGeometry, buildMobileRankChartGeometry } from '../lib/historicalRank';
 
 interface Props {
   chartRange: ChartRange;
+  chartMetric?: ChartMetric;
   chartYTicks: Array<{ label: string }>;
   xAxisLabels: string[];
   activeEvents: ChartEvent[];
@@ -14,7 +16,7 @@ interface Props {
   setHoveredSlug: (slug: string | null) => void;
 }
 
-export function TrajectoryChartSvg({ chartRange, chartYTicks, xAxisLabels, activeEvents, activeShows, maxChartScale, isolatedSlug, hoveredSlug, setHoveredSlug }: Props) {
+export function TrajectoryChartSvg({ chartRange, chartMetric = 'score', chartYTicks, xAxisLabels, activeEvents, activeShows, maxChartScale, isolatedSlug, hoveredSlug, setHoveredSlug }: Props) {
   return (
     <>
       {/* Mobile SVG (viewBox="0 0 340 185") */}
@@ -38,7 +40,7 @@ export function TrajectoryChartSvg({ chartRange, chartYTicks, xAxisLabels, activ
           </text>
           <line stroke="#DDD4C7" strokeWidth="1" x1="35" x2="335" y1="162" y2="162" />
           <text fill="#A89F91" fontSize="9" textAnchor="end" x="30" y="165">
-            0
+            {chartYTicks[4]?.label || '0'}
           </text>
 
           {xAxisLabels.map((label, idx) => {
@@ -71,8 +73,10 @@ export function TrajectoryChartSvg({ chartRange, chartYTicks, xAxisLabels, activ
           ))}
 
           {activeShows.map((show) => {
-            const sampled = sampleDailyValues(show.daily_series, chartRange);
-            const { pathD, points } = buildMobileChartGeometry(sampled, maxChartScale);
+            const isRank = chartMetric === 'rank';
+            const { pathD, points } = isRank
+              ? buildMobileRankChartGeometry(sampleDailyRanks(show.daily_ranks || [], chartRange), maxChartScale)
+              : buildMobileChartGeometry(sampleDailyValues(show.daily_series, chartRange), maxChartScale);
             const color = show.assignedColor;
             const isIsolated = isolatedSlug === show.slug;
             const isDimmed = (isolatedSlug && !isIsolated) || (hoveredSlug && hoveredSlug !== show.slug);
@@ -106,6 +110,11 @@ export function TrajectoryChartSvg({ chartRange, chartYTicks, xAxisLabels, activ
             );
           })}
         </svg>
+        {chartMetric === 'rank' && (
+          <p className="text-[11px] text-stone-500 italic text-right mt-1.5" data-testid="rank-relative-note">
+            * Historical rank is a relative measure showing daily standing among all tracked series (1 = highest score).
+          </p>
+        )}
       </div>
 
       {/* Desktop SVG (viewBox="0 0 1000 420") */}
@@ -129,7 +138,7 @@ export function TrajectoryChartSvg({ chartRange, chartYTicks, xAxisLabels, activ
           </text>
           <line stroke="#DDD4C7" strokeWidth="1.25" x1="75" x2="960" y1="340" y2="340" />
           <text fill="#A89F91" fontSize="11" textAnchor="end" x="65" y="344">
-            0
+            {chartYTicks[4]?.label || '0'}
           </text>
 
           {xAxisLabels.map((label, idx) => {
@@ -182,8 +191,10 @@ export function TrajectoryChartSvg({ chartRange, chartYTicks, xAxisLabels, activ
           ))}
 
           {activeShows.map((show) => {
-            const sampled = sampleDailyValues(show.daily_series, chartRange);
-            const { pathD, points } = buildChartGeometry(sampled, maxChartScale);
+            const isRank = chartMetric === 'rank';
+            const { pathD, points } = isRank
+              ? buildRankChartGeometry(sampleDailyRanks(show.daily_ranks || [], chartRange), maxChartScale)
+              : buildChartGeometry(sampleDailyValues(show.daily_series, chartRange), maxChartScale);
             const color = show.assignedColor;
             const isIsolated = isolatedSlug === show.slug;
             const isDimmed = (isolatedSlug && !isIsolated) || (hoveredSlug && hoveredSlug !== show.slug);
@@ -219,6 +230,11 @@ export function TrajectoryChartSvg({ chartRange, chartYTicks, xAxisLabels, activ
             );
           })}
         </svg>
+        {chartMetric === 'rank' && (
+          <p className="text-[11px] text-stone-500 italic text-right mt-1.5" data-testid="rank-relative-note">
+            * Historical rank is a relative measure showing daily standing among all tracked series (1 = highest score).
+          </p>
+        )}
       </div>
     </>
   );

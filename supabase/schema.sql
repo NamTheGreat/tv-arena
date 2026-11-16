@@ -187,8 +187,13 @@ recent_scores AS (
   SELECT
     d.series_id,
     d.recorded_date,
-    d.daily_score
+    d.daily_score,
+    ROW_NUMBER() OVER (
+      PARTITION BY d.recorded_date
+      ORDER BY d.daily_score DESC, s.title ASC
+    ) AS daily_rank
   FROM series_daily_scores d
+  JOIN series s ON s.id = d.series_id
   CROSS JOIN anchor a
   WHERE d.recorded_date > a.max_date - INTERVAL '90 days'
     AND d.recorded_date <= a.max_date
@@ -202,7 +207,11 @@ SELECT
   COALESCE(
     array_agg(r.recorded_date::text ORDER BY r.recorded_date ASC) FILTER (WHERE r.recorded_date IS NOT NULL),
     ARRAY[]::TEXT[]
-  ) AS daily_dates
+  ) AS daily_dates,
+  COALESCE(
+    array_agg(r.daily_rank ORDER BY r.recorded_date ASC) FILTER (WHERE r.daily_rank IS NOT NULL),
+    ARRAY[]::BIGINT[]
+  ) AS daily_ranks
 FROM series s
 LEFT JOIN recent_scores r ON s.id = r.series_id
 GROUP BY s.id;
