@@ -492,7 +492,7 @@ export default function App() {
             .order('detected_date', { ascending: false }),
           supabase
             .from('series_signal_contributions')
-            .select('series_id, wiki_contribution, reddit_contribution, telemetry_days, reddit_observed_days'),
+            .select('*'),
         ]);
 
         const eventsMap = new Map<string, any[]>();
@@ -514,11 +514,13 @@ export default function App() {
         }
 
         const contributionMap = new Map(
-          (contributionData || []).map((row) => [row.series_id, {
+          (contributionData || []).map((row: any) => [row.series_id, {
             wiki_contribution: Number(row.wiki_contribution),
             reddit_contribution: Number(row.reddit_contribution),
             telemetry_days: row.telemetry_days,
             reddit_observed_days: row.reddit_observed_days,
+            last_wiki_date: row.last_wiki_date || null,
+            last_reddit_date: row.last_reddit_date || null,
           }])
         );
 

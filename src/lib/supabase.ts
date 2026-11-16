@@ -15,6 +15,8 @@ export interface SignalContributions {
   reddit_contribution: number;
   telemetry_days: number;
   reddit_observed_days: number;
+  last_wiki_date?: string | null;
+  last_reddit_date?: string | null;
 }
 
 export type SeriesRow = Tables<'series'>;

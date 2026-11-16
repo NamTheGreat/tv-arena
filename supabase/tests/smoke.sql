@@ -16,6 +16,8 @@ DECLARE
   v_wiki_contribution NUMERIC;
   v_reddit_contribution NUMERIC;
   v_reddit_days BIGINT;
+  v_last_wiki_date TEXT;
+  v_last_reddit_date TEXT;
   v_network_group TEXT;
 BEGIN
   RAISE NOTICE 'Testing View Schema & Column Integrity...';
@@ -63,13 +65,13 @@ BEGIN
   IF v_count <> 1 THEN
     RAISE EXCEPTION 'Expected signal contribution row for Stranger Things';
   END IF;
-  SELECT wiki_contribution, reddit_contribution, reddit_observed_days
-  INTO v_wiki_contribution, v_reddit_contribution, v_reddit_days
+  SELECT wiki_contribution, reddit_contribution, reddit_observed_days, last_wiki_date, last_reddit_date
+  INTO v_wiki_contribution, v_reddit_contribution, v_reddit_days, v_last_wiki_date, v_last_reddit_date
   FROM series_signal_contributions
   WHERE series_id = (SELECT id FROM series WHERE slug = 'stranger-things');
-  IF v_wiki_contribution <> 10 OR v_reddit_contribution <> 375 OR v_reddit_days <> 1 THEN
-    RAISE EXCEPTION 'Unexpected signal contributions: wiki %, reddit %, observed days %',
-      v_wiki_contribution, v_reddit_contribution, v_reddit_days;
+  IF v_wiki_contribution <> 10 OR v_reddit_contribution <> 375 OR v_reddit_days <> 1 OR v_last_wiki_date IS NULL OR v_last_reddit_date IS NULL THEN
+    RAISE EXCEPTION 'Unexpected signal contributions: wiki %, reddit %, observed days %, wiki_date %, reddit_date %',
+      v_wiki_contribution, v_reddit_contribution, v_reddit_days, v_last_wiki_date, v_last_reddit_date;
   END IF;
 
   -- Test series_recent_telemetry array aggregation view

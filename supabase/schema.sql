@@ -87,7 +87,11 @@ SELECT
   COUNT(t.recorded_date)::BIGINT AS telemetry_days,
   COUNT(t.recorded_date) FILTER (
     WHERE t.reddit_observed AND (t.reddit_comments IS NOT NULL OR t.reddit_upvotes IS NOT NULL)
-  )::BIGINT AS reddit_observed_days
+  )::BIGINT AS reddit_observed_days,
+  MAX(t.recorded_date) FILTER (WHERE t.wiki_views IS NOT NULL)::TEXT AS last_wiki_date,
+  MAX(t.recorded_date) FILTER (
+    WHERE t.reddit_observed AND (t.reddit_comments IS NOT NULL OR t.reddit_upvotes IS NOT NULL)
+  )::TEXT AS last_reddit_date
 FROM series s
 CROSS JOIN anchor a
 CROSS JOIN score_weights w
