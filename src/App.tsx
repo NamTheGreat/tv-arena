@@ -19,6 +19,8 @@ import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
 import type { AuthModalMode } from './components/AuthModal';
 import { fetchArenaSnapshot } from './lib/snapshot';
 import { useWatchlist } from './lib/useWatchlist';
+import { useOnlineStatus } from './lib/useOnlineStatus';
+import { OfflineBanner } from './components/OfflineBanner';
 
 const AuthModal = React.lazy(() =>
   import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
@@ -350,6 +352,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [viewWarning, setViewWarning] = useState<string | null>(null);
+  const [snapshotTime, setSnapshotTime] = useState<string | null>(null);
+  const isOnline = useOnlineStatus();
 
   useEffect(() => {
     if (user && passwordRecovery) {
@@ -392,6 +396,7 @@ export default function App() {
       const snapshot = await fetchArenaSnapshot();
       let hasSnapshot = false;
       if (snapshot) {
+        setSnapshotTime(snapshot.generated_at);
         setSeriesList(snapshot.series);
         setViewWarning(null);
         setIsLoading(false);
@@ -623,8 +628,10 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-arena-sand flex flex-col items-center justify-start py-4 sm:py-10 px-3 sm:px-6 text-arena-charcoal">
-      {/* Top Floating User Profile Header */}
+    <div className="min-h-screen bg-arena-sand flex flex-col items-center justify-start text-arena-charcoal">
+      <OfflineBanner isOnline={isOnline} snapshotTime={snapshotTime} />
+      <div className="w-full max-w-6xl flex flex-col items-center justify-start py-4 sm:py-10 px-3 sm:px-6">
+        {/* Top Floating User Profile Header */}
       <div className="w-full max-w-4xl flex items-center justify-end mb-3 sm:mb-4 px-2">
         <UserProfileDropdown
           user={user}
@@ -813,6 +820,7 @@ export default function App() {
           />
         )}
       </Suspense>
+      </div>
     </div>
   );
 }

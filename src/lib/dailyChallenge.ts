@@ -75,6 +75,9 @@ export async function submitDailyScore(
   dateStr: string,
   answers: ('higher' | 'lower')[]
 ): Promise<{ success: true; score: number; date: string } | { success: false; error: string }> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return { success: false, error: 'You are offline. Daily challenge scores cannot be submitted while offline.' };
+  }
   if (!supabase) return { success: false, error: 'Supabase is not configured.' };
   try {
     const { data, error } = await supabase.rpc('submit_daily_score', {
