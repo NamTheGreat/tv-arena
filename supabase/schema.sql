@@ -774,7 +774,7 @@ AS $$
 DECLARE
   v_max_date DATE;
 BEGIN
-  IF NEW.status <> 'success' OR OLD.status = 'success' THEN
+  IF NEW.status NOT IN ('success', 'partial') THEN
     RETURN NEW;
   END IF;
   SELECT MAX(recorded_date) INTO v_max_date FROM series_daily_telemetry;
@@ -808,8 +808,8 @@ END;
 $$;
 
 REVOKE EXECUTE ON FUNCTION grade_mover_predictions_after_sync() FROM PUBLIC, anon, authenticated;
-CREATE TRIGGER grade_mover_predictions_after_successful_sync
+CREATE OR REPLACE TRIGGER grade_mover_predictions_after_successful_sync
   AFTER UPDATE OF status ON sync_runs
   FOR EACH ROW
-  WHEN (NEW.status = 'success' AND OLD.status IS DISTINCT FROM NEW.status)
+  WHEN (NEW.status IN ('success', 'partial') AND OLD.status IS DISTINCT FROM NEW.status)
   EXECUTE FUNCTION grade_mover_predictions_after_sync();
