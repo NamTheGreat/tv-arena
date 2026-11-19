@@ -1,6 +1,7 @@
 import React from 'react';
 import { SeriesItem } from '../lib/supabase';
 import { WatchlistPushBanner } from './WatchlistPushBanner';
+import { generateLeaderboardCsv, downloadCsv } from '../lib/csvExport';
 
 interface LeaderboardTableProps {
   rankedShows: SeriesItem[];
@@ -52,6 +53,13 @@ export function LeaderboardTable({
   watchlistError = null,
 }: LeaderboardTableProps) {
   const visibleShows = rankedShows.slice(0, displayCount);
+
+  const handleExportCsv = () => {
+    const csv = generateLeaderboardCsv(rankedShows, sortBy);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    downloadCsv(csv, `tv-arena-leaderboard-${dateStr}.csv`);
+  };
+
   return (
     <main className="w-full max-w-4xl bg-white/90 backdrop-blur-xl rounded-[28px] sm:rounded-[32px] p-4 sm:p-10 shadow-card border border-[#EFEAE2]/90">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-[#F2ECE3]">
@@ -119,6 +127,19 @@ export function LeaderboardTable({
               </svg>
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            className="inline-flex items-center gap-1.5 bg-white hover:bg-stone-50 text-[#786E63] px-3 py-1 sm:py-1.5 rounded-full font-medium border border-[#E9E2D5] transition-colors cursor-pointer outline-none focus:border-brand-terracotta text-[11px] sm:text-xs"
+            aria-label="Export leaderboard to CSV"
+            title="Export filtered leaderboard as CSV"
+          >
+            <svg className="w-3.5 h-3.5 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span>Export CSV</span>
+          </button>
         </div>
       </div>
 

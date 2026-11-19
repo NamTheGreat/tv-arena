@@ -8,6 +8,8 @@ on:
       - TV Arena Nightly Rust Sync
       - TV Arena Weekly TMDb Events Ingestion
       - TV Arena Seed Catalog (TMDb Auto-Discover)
+      - TV Arena Daily Deck Preflight
+      - Refresh Static Movers Feed
     types: [completed]
   workflow_dispatch:
 
