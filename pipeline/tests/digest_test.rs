@@ -51,18 +51,15 @@ fn digest_uses_leaderboard_and_recent_breakouts_then_posts_to_configured_webhook
 fn digest_tolerates_webhook_delivery_failures() {
     let server = MockServer::start();
     let _movers = server.mock(|when, then| {
-        when.method(GET)
-            .path("/rest/v1/series_leaderboard");
+        when.method(GET).path("/rest/v1/series_leaderboard");
         then.status(200).json_body(json!([]));
     });
     let _breakouts = server.mock(|when, then| {
-        when.method(GET)
-            .path("/rest/v1/series_breakouts");
+        when.method(GET).path("/rest/v1/series_breakouts");
         then.status(200).json_body(json!([]));
     });
     let failed_webhook = server.mock(|when, then| {
-        when.method(POST)
-            .path("/webhook");
+        when.method(POST).path("/webhook");
         then.status(500);
     });
 
@@ -81,13 +78,11 @@ fn digest_tolerates_webhook_delivery_failures() {
 fn digest_tolerates_query_fetch_failures() {
     let server = MockServer::start();
     server.mock(|when, then| {
-        when.method(GET)
-            .path("/rest/v1/series_leaderboard");
+        when.method(GET).path("/rest/v1/series_leaderboard");
         then.status(500);
     });
     server.mock(|when, then| {
-        when.method(GET)
-            .path("/rest/v1/series_breakouts");
+        when.method(GET).path("/rest/v1/series_breakouts");
         then.status(500);
     });
 
