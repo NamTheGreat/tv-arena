@@ -46,3 +46,52 @@ fn digest_uses_leaderboard_and_recent_breakouts_then_posts_to_configured_webhook
     breakouts.assert_hits(2);
     webhook.assert_hits(1);
 }
+
+#[test]
+fn digest_tolerates_webhook_delivery_failures() {
+    let server = MockServer::start();
+    let _movers = server.mock(|when, then| {
+        when.method(GET).path("/rest/v1/series_leaderboard");
+        then.status(200).json_body(json!([]));
+    });
+    let _breakouts = server.mock(|when, then| {
+        when.method(GET).path("/rest/v1/series_breakouts");
+        then.status(200).json_body(json!([]));
+    });
+    let failed_webhook = server.mock(|when, then| {
+        when.method(POST).path("/webhook");
+        then.status(500);
+    });
+
+    let config = Config {
+        supabase_url: server.base_url(),
+        supabase_key: "test-key".into(),
+        tmdb_api_key: None,
+        digest_webhook_url: Some(format!("{}/webhook", server.base_url())),
+    };
+
+    assert!(run_digest(&config).is_ok());
+    failed_webhook.assert_hits(1);
+}
+
+#[test]
+fn digest_tolerates_query_fetch_failures() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/rest/v1/series_leaderboard");
+        then.status(500);
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/rest/v1/series_breakouts");
+        then.status(500);
+    });
+
+    let config = Config {
+        supabase_url: server.base_url(),
+        supabase_key: "test-key".into(),
+        tmdb_api_key: None,
+        digest_webhook_url: None,
+    };
+
+    assert!(run_digest(&config).is_ok());
+}
