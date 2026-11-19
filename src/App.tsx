@@ -18,6 +18,7 @@ import { leaderboardScore } from './lib/derivedScore';
 import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
 import type { AuthModalMode } from './components/AuthModal';
 import { fetchArenaSnapshot } from './lib/snapshot';
+import { deriveHistoricalRanks } from './lib/historicalRank';
 import { useWatchlist } from './lib/useWatchlist';
 import { useOnlineStatus } from './lib/useOnlineStatus';
 import { OfflineBanner } from './components/OfflineBanner';
@@ -54,8 +55,11 @@ const NotFoundView = React.lazy(() =>
 const MoversView = React.lazy(() =>
   import('./components/MoversView').then((m) => ({ default: m.MoversView }))
 );
+const DailyHistoryView = React.lazy(() =>
+  import('./components/DailyHistoryView').then((m) => ({ default: m.DailyHistoryView }))
+);
 
-type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist';
+type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist' | 'history';
 
 function RouteLoadingFallback() {
   return (
@@ -396,8 +400,13 @@ export default function App() {
       const snapshot = await fetchArenaSnapshot();
       let hasSnapshot = false;
       if (snapshot) {
+          const derived = deriveHistoricalRanks(snapshot.series);
+          const hydratedSeries = snapshot.series.map((s) => ({
+            ...s,
+            daily_ranks: s.daily_ranks && s.daily_ranks.length > 0 ? s.daily_ranks : derived.get(s.id) || [],
+          }));
         setSnapshotTime(snapshot.generated_at);
-        setSeriesList(snapshot.series);
+          setSeriesList(hydratedSeries);
         setViewWarning(null);
         setIsLoading(false);
         hasSnapshot = true;
@@ -432,16 +441,18 @@ export default function App() {
       if (data && data.length > 0) {
         const telemetryValuesMap = new Map<string, number[]>();
         const telemetryDatesMap = new Map<string, string[]>();
+        const telemetryRanksMap = new Map<string, number[]>();
 
         // 1. Primary: load pre-aggregated 90-day telemetry (1 row per show, bypassing 1,000-row limit)
         const { data: recentAggregated, error: aggError } = await supabase
           .from('series_recent_telemetry')
-          .select('series_id, daily_series, daily_dates');
+          .select('series_id, daily_series, daily_dates, daily_ranks');
 
         if (!aggError && recentAggregated && recentAggregated.length > 0) {
           for (const row of recentAggregated) {
             telemetryValuesMap.set(row.series_id, (row.daily_series || []).map(Number));
             telemetryDatesMap.set(row.series_id, row.daily_dates || []);
+            telemetryRanksMap.set(row.series_id, (row.daily_ranks || []).map(Number));
           }
         } else {
           // 2. Fallback: paged query through raw daily scores using .range() to prevent 1,000-row cutoff
@@ -497,7 +508,7 @@ export default function App() {
             .order('detected_date', { ascending: false }),
           supabase
             .from('series_signal_contributions')
-            .select('series_id, wiki_contribution, reddit_contribution, telemetry_days, reddit_observed_days'),
+            .select('*'),
         ]);
 
         const eventsMap = new Map<string, any[]>();
@@ -519,11 +530,14 @@ export default function App() {
         }
 
         const contributionMap = new Map(
-          (contributionData || []).map((row) => [row.series_id, {
+          (contributionData || []).map((row: any) => [row.series_id, {
             wiki_contribution: Number(row.wiki_contribution),
             reddit_contribution: Number(row.reddit_contribution),
             telemetry_days: row.telemetry_days,
             reddit_observed_days: row.reddit_observed_days,
+            last_wiki_date: row.last_wiki_date || null,
+            last_reddit_date: row.last_reddit_date || null,
+            wiki_observed_days: row.wiki_observed_days,
           }])
         );
 
@@ -533,11 +547,23 @@ export default function App() {
           delta_pct: row.delta_pct !== null && row.delta_pct !== undefined ? Number(row.delta_pct) : null,
           daily_series: telemetryValuesMap.get(row.id) || [leaderboardScore(row)],
           daily_dates: telemetryDatesMap.get(row.id) || [],
+          daily_ranks: telemetryRanksMap.get(row.id) || [],
           events: eventsMap.get(row.id) || [],
           is_breakout: breakoutMap.has(row.id),
           breakout_reason: breakoutMap.get(row.id),
           signal_contributions: contributionMap.get(row.id),
         }));
+
+        // If daily_ranks is empty (e.g. from raw telemetry fallback), derive deterministically
+        const needsDerivedRanks = mapped.some((s) => (!s.daily_ranks || s.daily_ranks.length === 0) && s.daily_series.length > 0);
+        if (needsDerivedRanks) {
+          const derivedMap = deriveHistoricalRanks(mapped);
+          for (const s of mapped) {
+            if (!s.daily_ranks || s.daily_ranks.length === 0) {
+              s.daily_ranks = derivedMap.get(s.id) || [];
+            }
+          }
+        }
 
         setSeriesList(mapped);
       }
@@ -730,6 +756,10 @@ export default function App() {
             element={<ShowDetailView seriesList={seriesList} />}
           />
           <Route path="/movers" element={<MoversView seriesList={seriesList} />} />
+          <Route
+            path="/history"
+            element={<DailyHistoryView user={user} onOpenAuth={() => setIsAuthModalOpen(true)} />}
+          />
           <Route path="*" element={<NotFoundView />} />
         </Routes>
       </Suspense>

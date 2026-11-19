@@ -5,6 +5,7 @@ import {
   getTodayDateString,
   getDailyChallengeNumber,
   isCorrectDailyAnswer,
+  normalizeDailyDeck,
   readStoredDailyResult,
   storeDailyResult,
 } from '../lib/dailyChallenge';
@@ -71,6 +72,23 @@ describe('dailyChallenge helpers', () => {
       date: '2026-11-04',
       score: 6,
       verified: false,
+    });
+  });
+
+  it('normalizes legacy array decks and frozen snapshot decks', () => {
+    expect(normalizeDailyDeck(null)).toBeNull();
+    expect(normalizeDailyDeck([])).toBeNull();
+    expect(normalizeDailyDeck(['only-one'])).toBeNull();
+    expect(normalizeDailyDeck(['show-1', 'show-2'])).toEqual({
+      seriesIds: ['show-1', 'show-2'],
+      seriesScores: null,
+    });
+    expect(normalizeDailyDeck({
+      seriesIds: ['show-1', 'show-2'],
+      seriesScores: { 'show-1': 1500, 'show-2': 2500 },
+    })).toEqual({
+      seriesIds: ['show-1', 'show-2'],
+      seriesScores: { 'show-1': 1500, 'show-2': 2500 },
     });
   });
 

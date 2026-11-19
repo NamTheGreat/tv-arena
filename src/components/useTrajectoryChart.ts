@@ -2,15 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { SeriesItem } from '../lib/supabase';
 import { calculateEventX, calculateNiceMaxScale, formatMetricNumber, sampleDailyValues } from '../lib/svgMath';
-import { ActiveChartShow, ChartEvent, ChartRange, WORKBENCH_PALETTE } from './trajectoryChartTypes';
+import { ActiveChartShow, ChartEvent, ChartMetric, ChartRange, WORKBENCH_PALETTE } from './trajectoryChartTypes';
 import { getCumulativeScore } from './trajectoryChartModel';
+import { calculateNiceRankScale, sampleDailyRanks } from '../lib/historicalRank';
 
-export function useTrajectoryChart({ seriesList, chartRange, focusedSlug }: {
+export function useTrajectoryChart({ seriesList, chartRange, focusedSlug, initialMetric = 'score' }: {
   seriesList: SeriesItem[];
   chartRange: ChartRange;
   focusedSlug?: string;
+  initialMetric?: ChartMetric;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [chartMetric, setChartMetric] = useState<ChartMetric>(initialMetric);
   // Active series selection (max 8, min 1)
   const [selectedSlugs, setSelectedSlugs] = useState<string[]>(() => {
     const urlChart = searchParams.get('chart');
@@ -185,6 +188,19 @@ export function useTrajectoryChart({ seriesList, chartRange, focusedSlug }: {
 
   // Dynamic Chart Scale & Y-Axis Ticks computed from activeShows
   const { maxChartScale, chartYTicks } = useMemo(() => {
+    if (chartMetric === 'rank') {
+      const allRanks: number[] = [];
+      for (const s of activeShows) {
+        const ranks = s.daily_ranks && s.daily_ranks.length > 0 ? s.daily_ranks : [];
+        const sampled = sampleDailyRanks(ranks, chartRange);
+        for (const r of sampled) {
+          if (r > 0) allRanks.push(r);
+        }
+      }
+      const { maxRank, chartYTicks: rankTicks } = calculateNiceRankScale(allRanks);
+      return { maxChartScale: maxRank, chartYTicks: rankTicks };
+    }
+
     let maxVal = 0;
     for (const s of activeShows) {
       const sampled = sampleDailyValues(s.daily_series, chartRange);
@@ -202,7 +218,7 @@ export function useTrajectoryChart({ seriesList, chartRange, focusedSlug }: {
       { pct: 0, val: 0, label: '0' },
     ];
     return { maxChartScale: niceMax, chartYTicks: ticks };
-  }, [activeShows, chartRange]);
+  }, [activeShows, chartRange, chartMetric]);
 
   const breakoutShow = useMemo(
     () => seriesList.find((s) => s.is_breakout) || seriesList.slice().sort((a, b) => (b.delta_pct ?? 0) - (a.delta_pct ?? 0))[0],
@@ -406,6 +422,7 @@ export function useTrajectoryChart({ seriesList, chartRange, focusedSlug }: {
     pickerOpen, setPickerOpen, pickerQuery, setPickerQuery, pickerNetwork, setPickerNetwork,
     genreDropdownOpen, setGenreDropdownOpen, activePreset, catalogDrawerOpen, setCatalogDrawerOpen,
     catalogQuery, setCatalogQuery, pickerRef, genreRef, activeShows, xAxisLabels,
+    chartMetric, setChartMetric,
     maxChartScale, chartYTicks, sortedCumulativeShows, maxCumulativeScore,
     chartStartDate, chartEndDate, activeEvents, breakoutShow, addShow, removeShow,
     toggleIsolate, applyPreset, filteredPickerShows, pickerUnplottedCount, filteredCatalogShows,
