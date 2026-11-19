@@ -592,7 +592,7 @@ BEGIN
     ON CONFLICT (date) DO UPDATE SET series_ids = v_deck, series_scores = v_frozen_scores;
 
     -- User answers 'higher' for first matchup: with frozen scores (999999 > 1), round 1 must be correct
-    v_frozen_res := submit_daily_score(v_today - 1, '["higher","higher","higher","higher","higher","higher","higher","higher","higher","higher"]'::jsonb);
+    v_frozen_res := submit_daily_score(v_today - 1, '["higher","higher","higher"]'::jsonb);
     IF (v_frozen_res->>'success')::BOOLEAN <> TRUE THEN
       RAISE EXCEPTION 'submit_daily_score failed with frozen series_scores';
     END IF;
