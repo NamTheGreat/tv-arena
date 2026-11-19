@@ -565,6 +565,44 @@ BEGIN
     RAISE EXCEPTION 'submit_daily_score allowed duplicate score submission';
   END IF;
 
+  -- 5e. Frozen series_scores takes precedence over live leaderboard values
+  DECLARE
+    v_user_frozen UUID := gen_random_uuid();
+    v_frozen_scores JSONB;
+    v_frozen_res JSONB;
+    v_is_correct BOOLEAN;
+  BEGIN
+    INSERT INTO auth.users (id, email) VALUES (v_user_frozen, 'frozen@test.com');
+    INSERT INTO profiles (id, username, display_name)
+    VALUES (v_user_frozen, 'frozen_test', 'Frozen Test')
+    ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username, display_name = EXCLUDED.display_name;
+    PERFORM set_config('request.jwt.claim.sub', v_user_frozen::text, true);
+
+    -- Build frozen score snapshot where show 2 has score 999999 and show 1 has score 1.
+    v_frozen_scores := jsonb_build_object(
+      (v_deck[1])::text, 1,
+      (v_deck[2])::text, 999999
+    );
+    FOR i IN 3 .. array_length(v_deck, 1) LOOP
+      v_frozen_scores := v_frozen_scores || jsonb_build_object((v_deck[i])::text, i * 10);
+    END LOOP;
+
+    INSERT INTO daily_challenges (date, series_ids, series_scores)
+    VALUES (v_today - 1, v_deck, v_frozen_scores)
+    ON CONFLICT (date) DO UPDATE SET series_ids = v_deck, series_scores = v_frozen_scores;
+
+    -- User answers 'higher' for first matchup: with frozen scores (999999 > 1), round 1 must be correct
+    v_frozen_res := submit_daily_score(v_today - 1, '["higher","higher","higher"]'::jsonb);
+    IF (v_frozen_res->>'success')::BOOLEAN <> TRUE THEN
+      RAISE EXCEPTION 'submit_daily_score failed with frozen series_scores';
+    END IF;
+
+    SELECT correctness[1] INTO v_is_correct FROM user_scores WHERE user_id = v_user_frozen AND date = v_today - 1;
+    IF v_is_correct <> TRUE THEN
+      RAISE EXCEPTION 'Expected first round to be evaluated as TRUE under frozen series_scores';
+    END IF;
+  END;
+
   RAISE NOTICE '✓ submit_daily_score RPC validation & scoring verified.';
 END $$;
 

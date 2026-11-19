@@ -161,15 +161,19 @@ pub fn insert_daily_challenge(
     config: &Config,
     date: &str,
     series_ids: &[String],
+    series_scores: Option<&std::collections::HashMap<String, i64>>,
 ) -> Result<()> {
     let endpoint = format!(
         "{}/rest/v1/daily_challenges?on_conflict=date",
         config.supabase_url
     );
-    let payload = json!({
+    let mut payload = json!({
         "date": date,
         "series_ids": series_ids
     });
+    if let Some(scores) = series_scores {
+        payload["series_scores"] = json!(scores);
+    }
 
     let res = client
         .post(&endpoint)
