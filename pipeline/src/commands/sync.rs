@@ -264,6 +264,13 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         update_sync_run(client, config, id, &update);
     }
 
+    // Run daily-deck generation as part of daily sync, idempotent (ON CONFLICT DO NOTHING).
+    // Attempt deck creation before checking failure threshold so next-day challenges are preserved
+    // even if telemetry fetch failures exceed the alert threshold.
+    if let Err(e) = crate::commands::daily_deck::run_daily_deck(config, None) {
+        eprintln!("⚠️  Failed generating daily deck during sync: {}", e);
+    }
+
     // Fail the run if over 40% of shows failed to sync so GitHub Actions alerts accurately
     if !shows.is_empty() && fetch_failures > (shows.len() * 4 / 10) {
         bail!(
@@ -271,11 +278,6 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
             fetch_failures,
             shows.len()
         );
-    }
-
-    // Run daily-deck generation as part of daily sync, idempotent (ON CONFLICT DO NOTHING)
-    if let Err(e) = crate::commands::daily_deck::run_daily_deck(config, None) {
-        eprintln!("⚠️  Failed generating daily deck during sync: {}", e);
     }
 
     Ok(updated_count)

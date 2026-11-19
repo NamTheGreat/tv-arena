@@ -216,6 +216,12 @@ fn test_sync_telemetry_batch_failure_tracks_errors_and_fails_run() {
             .body(r#"{"code":"42703","message":"column \"test_col\" of relation \"series_daily_telemetry\" does not exist"}"#);
     });
 
+    // 3. Mock deck candidate fetch to verify deck generation is attempted before failure bail
+    let deck_candidates_mock = server.mock(|when, then| {
+        when.method(GET).path("/rest/v1/series_deck_candidates");
+        then.status(200).json_body(json!([]));
+    });
+
     let config = Config {
         supabase_url: server.base_url(),
         supabase_key: "test-anon-key".to_string(),
@@ -235,6 +241,8 @@ fn test_sync_telemetry_batch_failure_tracks_errors_and_fails_run() {
     assert!(result.is_err());
     let err_msg = format!("{:#}", result.unwrap_err());
     assert!(err_msg.contains("too many telemetry fetch errors (1/1 shows failed)"));
+    // Daily deck generation must have been attempted even though the sync run bailed on errors
+    deck_candidates_mock.assert_hits(1);
 }
 
 struct MismatchedDateTelemetry;
