@@ -22,11 +22,21 @@ impl TelemetryFetcher for MockTelemetry {
         _title: &str,
     ) -> Option<Vec<WikiDay>> {
         let daily_views = self.wiki_views / 7;
+        let end_clean = if _end_str.len() >= 8 {
+            &_end_str[0..8]
+        } else {
+            "20261026"
+        };
+        let end_date = chrono::NaiveDate::parse_from_str(end_clean, "%Y%m%d")
+            .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(2026, 10, 26).unwrap());
         Some(
             (0..7)
-                .map(|i| WikiDay {
-                    timestamp: format!("2026102{}", i),
-                    views: daily_views,
+                .map(|i| {
+                    let day = end_date - chrono::Duration::days(6 - i);
+                    WikiDay {
+                        timestamp: day.format("%Y%m%d00").to_string(),
+                        views: daily_views,
+                    }
                 })
                 .collect(),
         )
@@ -225,4 +235,73 @@ fn test_sync_telemetry_batch_failure_tracks_errors_and_fails_run() {
     assert!(result.is_err());
     let err_msg = format!("{:#}", result.unwrap_err());
     assert!(err_msg.contains("too many telemetry fetch errors (1/1 shows failed)"));
+}
+
+struct MismatchedDateTelemetry;
+
+impl TelemetryFetcher for MismatchedDateTelemetry {
+    fn fetch_wiki_days(
+        &self,
+        _wiki_slug: &str,
+        _start_str: &str,
+        _end_str: &str,
+        _title: &str,
+    ) -> Option<Vec<WikiDay>> {
+        // Return telemetry ending at 2026-01-01 when sync expects yesterday
+        Some(vec![WikiDay {
+            timestamp: "2026010100".to_string(),
+            views: 5000,
+        }])
+    }
+
+    fn fetch_reddit_stats(&self, _reddit_query: &str, _title: &str) -> Option<(i64, i64)> {
+        Some((100, 200))
+    }
+}
+
+#[test]
+fn test_sync_skips_and_records_soft_failure_when_wiki_date_mismatches_expected_date() {
+    let server = MockServer::start();
+
+    // 1. Mock series list from Supabase
+    let _series_mock = server.mock(|when, then| {
+        when.method(GET).path("/rest/v1/series");
+        then.status(200).json_body(json!([
+            {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "tmdb_id": 95396,
+                "slug": "severance",
+                "title": "Severance",
+                "network": "Apple TV+",
+                "genre_group": "Drama & Sci-Fi",
+                "release_years": "2024–2025",
+                "chart_color": "#C66A3D",
+                "wiki_slug": "Severance_(TV_series)",
+                "reddit_query": "Severance"
+            }
+        ]));
+    });
+
+    // 2. Ensure telemetry batch insert is never called for mismatched date
+    let telemetry_batch_mock = server.mock(|when, then| {
+        when.method(POST).path("/rest/v1/series_daily_telemetry");
+        then.status(201).json_body(json!({}));
+    });
+
+    let config = Config {
+        supabase_url: server.base_url(),
+        supabase_key: "test-anon-key".to_string(),
+        tmdb_api_key: None,
+        digest_webhook_url: None,
+    };
+
+    let client = create_http_client();
+    let result = run_sync_with_fetcher(&config, &client, &MismatchedDateTelemetry);
+
+    // Show is skipped and counted as soft failure (1/1 shows failed > 40%)
+    assert!(result.is_err());
+    let err_msg = format!("{:#}", result.unwrap_err());
+    assert!(err_msg.contains("too many telemetry fetch errors (1/1 shows failed)"));
+    // Verify no batch was inserted
+    telemetry_batch_mock.assert_hits(0);
 }
