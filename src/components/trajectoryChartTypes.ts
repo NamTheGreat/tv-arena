@@ -1,6 +1,7 @@
 import { SeriesItem } from '../lib/supabase';
 
 export type ChartRange = '7D' | '30D' | '90D' | 'All-Time';
+export type ChartMetric = 'score' | 'rank';
 export type ActiveChartShow = SeriesItem & { assignedColor: string; slotIndex: number };
 export interface ChartEvent {
   id: string;

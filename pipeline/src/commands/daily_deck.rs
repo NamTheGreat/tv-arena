@@ -108,8 +108,21 @@ pub fn run_daily_deck(config: &Config, target_date: Option<String>) -> Result<()
         return Ok(());
     };
 
-    insert_daily_challenge(&client, config, &date_str, &selected_ids)
-        .context("Failed inserting daily challenge deck into Supabase")?;
+    let mut scores_snapshot = std::collections::HashMap::new();
+    for id in &selected_ids {
+        if let Some(cand) = candidates.iter().find(|c| &c.id == id) {
+            scores_snapshot.insert(id.clone(), cand.current_7d_score);
+        }
+    }
+
+    insert_daily_challenge(
+        &client,
+        config,
+        &date_str,
+        &selected_ids,
+        Some(&scores_snapshot),
+    )
+    .context("Failed inserting daily challenge deck into Supabase")?;
     println!(
         "✓ Daily challenge deck created successfully for {}",
         date_str

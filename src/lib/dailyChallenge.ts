@@ -52,20 +52,45 @@ export function generateDailyMatchupIndices(listLength: number, totalRounds: num
   return indices;
 }
 
-export async function fetchDailyDeck(dateStr?: string): Promise<string[] | null> {
+export interface DailyDeckData {
+  seriesIds: string[];
+  seriesScores?: Record<string, number> | null;
+}
+
+export function normalizeDailyDeck(raw: unknown): DailyDeckData | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) {
+    return raw.length >= 2 ? { seriesIds: raw as string[], seriesScores: null } : null;
+  }
+  if (typeof raw === 'object' && raw !== null && 'seriesIds' in raw && Array.isArray((raw as any).seriesIds)) {
+    const ids = (raw as any).seriesIds;
+    return ids.length >= 2
+      ? {
+          seriesIds: ids as string[],
+          seriesScores: (raw as any).seriesScores || null,
+        }
+      : null;
+  }
+  return null;
+}
+
+export async function fetchDailyDeck(dateStr?: string): Promise<DailyDeckData | null> {
   if (!supabase) return null;
   const d = dateStr || getTodayDateString();
   try {
     const { data, error } = await supabase
       .from('daily_challenges')
-      .select('series_ids')
+      .select('series_ids, series_scores')
       .eq('date', d)
       .maybeSingle();
 
     if (error || !data || !Array.isArray(data.series_ids) || data.series_ids.length < 2) {
       return null;
     }
-    return data.series_ids as string[];
+    return {
+      seriesIds: data.series_ids as string[],
+      seriesScores: (data.series_scores as Record<string, number> | null) ?? null,
+    };
   } catch {
     return null;
   }
@@ -75,6 +100,9 @@ export async function submitDailyScore(
   dateStr: string,
   answers: ('higher' | 'lower')[]
 ): Promise<{ success: true; score: number; date: string } | { success: false; error: string }> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return { success: false, error: 'You are offline. Daily challenge scores cannot be submitted while offline.' };
+  }
   if (!supabase) return { success: false, error: 'Supabase is not configured.' };
   try {
     const { data, error } = await supabase.rpc('submit_daily_score', {

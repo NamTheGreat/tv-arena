@@ -87,7 +87,12 @@ SELECT
   COUNT(t.recorded_date)::BIGINT AS telemetry_days,
   COUNT(t.recorded_date) FILTER (
     WHERE t.reddit_observed AND (t.reddit_comments IS NOT NULL OR t.reddit_upvotes IS NOT NULL)
-  )::BIGINT AS reddit_observed_days
+  )::BIGINT AS reddit_observed_days,
+  MAX(t.recorded_date) FILTER (WHERE t.wiki_views IS NOT NULL)::TEXT AS last_wiki_date,
+  MAX(t.recorded_date) FILTER (
+    WHERE t.reddit_observed AND (t.reddit_comments IS NOT NULL OR t.reddit_upvotes IS NOT NULL)
+  )::TEXT AS last_reddit_date,
+  COUNT(t.recorded_date) FILTER (WHERE t.wiki_views IS NOT NULL)::BIGINT AS wiki_observed_days
 FROM series s
 CROSS JOIN anchor a
 CROSS JOIN score_weights w
@@ -187,8 +192,13 @@ recent_scores AS (
   SELECT
     d.series_id,
     d.recorded_date,
-    d.daily_score
+    d.daily_score,
+    ROW_NUMBER() OVER (
+      PARTITION BY d.recorded_date
+      ORDER BY d.daily_score DESC, s.title ASC
+    ) AS daily_rank
   FROM series_daily_scores d
+  JOIN series s ON s.id = d.series_id
   CROSS JOIN anchor a
   WHERE d.recorded_date > a.max_date - INTERVAL '90 days'
     AND d.recorded_date <= a.max_date
@@ -202,7 +212,11 @@ SELECT
   COALESCE(
     array_agg(r.recorded_date::text ORDER BY r.recorded_date ASC) FILTER (WHERE r.recorded_date IS NOT NULL),
     ARRAY[]::TEXT[]
-  ) AS daily_dates
+  ) AS daily_dates,
+  COALESCE(
+    array_agg(r.daily_rank ORDER BY r.recorded_date ASC) FILTER (WHERE r.daily_rank IS NOT NULL),
+    ARRAY[]::BIGINT[]
+  ) AS daily_ranks
 FROM series s
 LEFT JOIN recent_scores r ON s.id = r.series_id
 GROUP BY s.id;
@@ -280,6 +294,7 @@ CREATE POLICY "Allow public read on series_breakouts" ON series_breakouts FOR SE
 CREATE TABLE IF NOT EXISTS daily_challenges (
   date DATE PRIMARY KEY,
   series_ids UUID[] NOT NULL,
+  series_scores JSONB DEFAULT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -409,6 +424,7 @@ AS $$
 DECLARE
   v_uid UUID;
   v_deck UUID[];
+  v_series_scores JSONB;
   v_today DATE := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE;
   v_yesterday DATE := v_today - INTERVAL '1 day';
   v_calculated_score INT := 0;
@@ -426,7 +442,7 @@ BEGIN
   IF p_date < v_yesterday OR p_date > v_today THEN
     RAISE EXCEPTION 'Score submissions are only accepted for today or yesterday UTC';
   END IF;
-  SELECT series_ids INTO v_deck FROM daily_challenges WHERE date = p_date;
+  SELECT series_ids, series_scores INTO v_deck, v_series_scores FROM daily_challenges WHERE date = p_date;
   IF v_deck IS NULL THEN RAISE EXCEPTION 'No challenge deck found for date %', p_date; END IF;
   v_deck_len := array_length(v_deck, 1);
   IF v_deck_len < 2 THEN RAISE EXCEPTION 'Challenge deck is incomplete'; END IF;
@@ -447,8 +463,17 @@ BEGIN
     v_show_a_id := v_deck[i + 1];
     v_show_b_id := v_deck[i + 2];
     v_guess := p_answers->>i;
-    SELECT COALESCE(current_7d_score, 0) INTO v_score_a FROM series_leaderboard WHERE id = v_show_a_id;
-    SELECT COALESCE(current_7d_score, 0) INTO v_score_b FROM series_leaderboard WHERE id = v_show_b_id;
+
+    IF v_series_scores IS NOT NULL
+       AND v_series_scores ? v_show_a_id::text
+       AND v_series_scores ? v_show_b_id::text THEN
+      v_score_a := COALESCE((v_series_scores->>v_show_a_id::text)::BIGINT, 0);
+      v_score_b := COALESCE((v_series_scores->>v_show_b_id::text)::BIGINT, 0);
+    ELSE
+      SELECT COALESCE(current_7d_score, 0) INTO v_score_a FROM series_leaderboard WHERE id = v_show_a_id;
+      SELECT COALESCE(current_7d_score, 0) INTO v_score_b FROM series_leaderboard WHERE id = v_show_b_id;
+    END IF;
+
     v_is_correct := COALESCE((v_guess = 'higher' AND v_score_b > v_score_a)
       OR (v_guess = 'lower' AND v_score_b < v_score_a), FALSE);
     v_correctness := array_append(v_correctness, v_is_correct);
