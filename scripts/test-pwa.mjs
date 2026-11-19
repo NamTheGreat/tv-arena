@@ -53,6 +53,8 @@ const caches = {
     return {
       addAll: async () => {},
       put: async (request, response) => store.set(cachePath(request), response),
+      match: async (request) => store.get(cachePath(request))?.clone(),
+      delete: async (request) => store.delete(cachePath(request)),
     };
   },
   match: async (request) => {
@@ -95,6 +97,11 @@ assert.deepEqual(await preservedSnapshot.json(), validSnapshot, 'invalid data mu
 
 const offlineSnapshot = await requestSnapshot(async () => { throw new Error('offline'); });
 assert.deepEqual(await offlineSnapshot.json(), validSnapshot, 'offline requests must serve the preserved valid cache');
+
+await snapshotCache.put('https://tv-arena.test/snapshot.json', new Response('{cached corruption'));
+const corruptOfflineSnapshot = await requestSnapshot(async () => { throw new Error('offline'); });
+assert.equal(corruptOfflineSnapshot.status, 503, 'malformed older cache entries must not be served offline');
+assert.equal(await snapshotCache.match('https://tv-arena.test/snapshot.json'), undefined, 'malformed cached snapshots must be deleted');
 
 // 5. Headers (public/_headers)
 const headers = readFileSync(resolve(process.cwd(), 'public/_headers'), 'utf-8');

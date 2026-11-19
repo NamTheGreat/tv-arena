@@ -115,8 +115,16 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       }).catch(async () => {
-          const cached = await caches.match(request);
-          if (cached) return cached;
+          const cache = await caches.open(DATA_CACHE_NAME);
+          const cached = await cache.match(request);
+          if (cached) {
+            try {
+              if (isValidSnapshotPayload(await cached.clone().json())) return cached;
+            } catch {
+              // Remove snapshots cached by older service worker versions without validation.
+            }
+            await cache.delete(request);
+          }
           return new Response(JSON.stringify({ error: 'No cached snapshot available offline.' }), {
             status: 503,
             headers: { 'Content-Type': 'application/json' },
