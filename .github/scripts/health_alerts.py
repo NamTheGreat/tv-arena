@@ -15,6 +15,8 @@ WORKFLOWS = {
     "TV Arena Nightly Rust Sync": "nightly-sync.yml",
     "TV Arena Weekly TMDb Events Ingestion": "weekly-events.yml",
     "TV Arena Seed Catalog (TMDb Auto-Discover)": "seed-catalog.yml",
+    "TV Arena Daily Deck Preflight": "daily-deck.yml",
+    "Refresh Static Movers Feed": "update-movers-feed.yml",
 }
 
 

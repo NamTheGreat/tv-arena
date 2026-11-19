@@ -1,12 +1,12 @@
 import React from 'react';
 import { SeriesItem } from '../lib/supabase';
-import { ChartRange } from './trajectoryChartTypes';
+import { ChartMetric, ChartRange } from './trajectoryChartTypes';
 import { useTrajectoryChart } from './useTrajectoryChart';
 import { TrajectoryChartHeader } from './TrajectoryChartHeader';
 import { TrajectoryChartLegend } from './TrajectoryChartLegend';
 import { TrajectoryChartSvg } from './TrajectoryChartSvg';
 
-export type { ChartRange } from './trajectoryChartTypes';
+export type { ChartMetric, ChartRange } from './trajectoryChartTypes';
 
 interface TrajectoryChartProps {
   seriesList: SeriesItem[];
@@ -26,6 +26,7 @@ export function TrajectoryChart({
     pickerOpen, setPickerOpen, pickerQuery, setPickerQuery, pickerNetwork, setPickerNetwork,
     genreDropdownOpen, setGenreDropdownOpen, catalogDrawerOpen, setCatalogDrawerOpen,
     catalogQuery, setCatalogQuery, pickerRef, genreRef, activePreset, activeShows, xAxisLabels,
+    chartMetric, setChartMetric,
     maxChartScale, chartYTicks, sortedCumulativeShows, maxCumulativeScore,
     activeEvents, breakoutShow, addShow, removeShow, toggleIsolate, applyPreset,
     filteredPickerShows, pickerUnplottedCount, filteredCatalogShows,
@@ -42,6 +43,8 @@ export function TrajectoryChart({
         selectedSlugs={selectedSlugs}
         chartRange={chartRange}
         setChartRange={setChartRange}
+        chartMetric={chartMetric}
+        setChartMetric={setChartMetric}
         activePreset={activePreset}
         applyPreset={applyPreset}
         genreDropdownOpen={genreDropdownOpen}
@@ -69,6 +72,7 @@ export function TrajectoryChart({
       />
       <TrajectoryChartSvg
         chartRange={chartRange}
+        chartMetric={chartMetric}
         chartYTicks={chartYTicks}
         xAxisLabels={xAxisLabels}
         activeEvents={activeEvents}

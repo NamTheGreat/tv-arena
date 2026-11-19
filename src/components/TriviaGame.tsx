@@ -12,6 +12,7 @@ import {
   getTodayDateString,
   isCorrectDailyAnswer,
   LeaderboardEntry,
+  normalizeDailyDeck,
   submitDailyScore,
   readStoredDailyResult,
   storeDailyResult,
@@ -49,6 +50,7 @@ export function TriviaGame({
 
   // Daily Challenge state
   const [dailyDeckIds, setDailyDeckIds] = useState<string[] | null>(null);
+  const [dailyDeckScores, setDailyDeckScores] = useState<Record<string, number> | null>(null);
   const [isLoadingDailyDeck, setIsLoadingDailyDeck] = useState(true);
   const [dailyDeckError, setDailyDeckError] = useState(false);
   const [isSubmittingScore, setIsSubmittingScore] = useState(false);
@@ -210,14 +212,18 @@ export function TriviaGame({
       setIsLoadingDailyDeck(true);
       setDailyDeckError(false);
       setDailyDeckIds(null);
+      setDailyDeckScores(null);
       try {
-        const deck = await fetchDailyDeck(todayStr);
+        const rawDeck = await fetchDailyDeck(todayStr);
+        const deck = normalizeDailyDeck(rawDeck);
         if (active) {
-          if (deck && deck.length >= 2) {
+          if (deck && deck.seriesIds.length >= 2) {
             deckDateRef.current = todayStr;
-            setDailyDeckIds(deck);
+            setDailyDeckIds(deck.seriesIds);
+            setDailyDeckScores(deck.seriesScores || null);
           } else {
             setDailyDeckIds(null);
+            setDailyDeckScores(null);
             setDailyDeckError(true);
           }
           setIsLoadingDailyDeck(false);
@@ -225,6 +231,7 @@ export function TriviaGame({
       } catch {
         if (active) {
           setDailyDeckIds(null);
+          setDailyDeckScores(null);
           setDailyDeckError(true);
           setIsLoadingDailyDeck(false);
         }
@@ -271,9 +278,21 @@ export function TriviaGame({
   const dailyDeckShows = useMemo(() => {
     if (!dailyDeckIds || dailyDeckIds.length < 2) return [];
     return dailyDeckIds
-      .map((id) => seriesList.find((s) => s.id === id))
+      .map((id) => {
+        const show = seriesList.find((s) => s.id === id);
+        if (!show) return null;
+        if (dailyDeckScores && typeof dailyDeckScores[id] === 'number') {
+          const frozen = dailyDeckScores[id];
+          return {
+            ...show,
+            buzz_score: frozen,
+            current_7d_score: frozen,
+          };
+        }
+        return show;
+      })
       .filter((s): s is SeriesItem => Boolean(s));
-  }, [dailyDeckIds, seriesList]);
+  }, [dailyDeckIds, dailyDeckScores, seriesList]);
 
   // Active deck based on game mode
   const activeDeck = gameMode === 'daily' ? dailyDeckShows : endlessDeck;
@@ -771,9 +790,11 @@ export function TriviaGame({
               type="button"
               onClick={() => {
                 setIsLoadingDailyDeck(true);
-                fetchDailyDeck(todayStr).then((deck) => {
-                  if (deck && deck.length >= 2) {
-                    setDailyDeckIds(deck);
+                fetchDailyDeck(todayStr).then((rawDeck) => {
+                  const deck = normalizeDailyDeck(rawDeck);
+                  if (deck && deck.seriesIds.length >= 2) {
+                    setDailyDeckIds(deck.seriesIds);
+                    setDailyDeckScores(deck.seriesScores || null);
                     setDailyDeckError(false);
                   }
                   setIsLoadingDailyDeck(false);
