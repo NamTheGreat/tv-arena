@@ -256,16 +256,19 @@ export type Database = {
         Row: {
           date: string
           series_ids: string[]
+          series_scores: Json | null
           created_at: string | null
         }
         Insert: {
           date: string
           series_ids: string[]
+          series_scores?: Json | null
           created_at?: string | null
         }
         Update: {
           date?: string
           series_ids?: string[]
+          series_scores?: Json | null
           created_at?: string | null
         }
         Relationships: []
