@@ -1,5 +1,6 @@
 import React from 'react';
 import { SeriesItem } from '../lib/supabase';
+import { WatchlistPushBanner } from './WatchlistPushBanner';
 import { generateLeaderboardCsv, downloadCsv } from '../lib/csvExport';
 
 interface LeaderboardTableProps {
@@ -18,6 +19,7 @@ interface LeaderboardTableProps {
   setPlatformFilter: (platform: string) => void;
   setGenreFilter: (genre: string) => void;
   onSelectBattle: (slugA: string, slugB: string) => void;
+  userId?: string;
   watchlistIds?: string[];
   pendingWatchlistIds?: string[];
   onToggleWatchlist?: (seriesId: string) => void;
@@ -42,6 +44,7 @@ export function LeaderboardTable({
   setPlatformFilter,
   setGenreFilter,
   onSelectBattle,
+  userId,
   watchlistIds = [],
   pendingWatchlistIds = [],
   onToggleWatchlist,
@@ -139,6 +142,8 @@ export function LeaderboardTable({
           </button>
         </div>
       </div>
+
+      {watchlistOnly && <WatchlistPushBanner userId={userId} />}
 
       <div className="mt-3 sm:mt-4 divide-y divide-[#F7F3ED]/75">
         {watchlistError && <p role="alert" className="py-3 text-sm text-rose-700">{watchlistError}</p>}

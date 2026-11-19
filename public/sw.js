@@ -162,3 +162,36 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 });
+
+// Push notification payload handling.
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+  try {
+    const payload = event.data.json();
+    const targetUrl = new URL(payload.url || '/', self.location.origin);
+    const url = targetUrl.origin === self.location.origin ? targetUrl.pathname + targetUrl.search + targetUrl.hash : '/';
+    event.waitUntil(self.registration.showNotification(payload.title || 'TV Arena Breakout Alert', {
+      body: payload.body || 'A show on your watchlist has broken out!',
+      icon: '/icon.svg',
+      badge: '/icon.svg',
+      data: { url },
+    }));
+  } catch {
+    event.waitUntil(self.registration.showNotification('TV Arena Breakout Alert', {
+      body: event.data.text(),
+      icon: '/icon.svg',
+      data: { url: '/' },
+    }));
+  }
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || '/', self.location.origin);
+  const safeUrl = targetUrl.origin === self.location.origin ? targetUrl.href : self.location.origin;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+    const existing = windowClients.find((client) => client.url === safeUrl);
+    if (existing && 'focus' in existing) return existing.focus();
+    return self.clients.openWindow ? self.clients.openWindow(safeUrl) : undefined;
+  }));
+});

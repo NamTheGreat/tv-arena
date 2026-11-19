@@ -81,6 +81,7 @@ function LeaderboardRouteWrapper({
   availableGenres,
   setPlatformFilter,
   setGenreFilter,
+  userId,
   watchlistIds,
   pendingWatchlistIds,
   onToggleWatchlist,
@@ -95,6 +96,7 @@ function LeaderboardRouteWrapper({
   availableGenres: string[];
   setPlatformFilter: (p: string) => void;
   setGenreFilter: (g: string) => void;
+  userId?: string;
   watchlistIds: string[];
   pendingWatchlistIds: string[];
   onToggleWatchlist?: (seriesId: string) => void;
@@ -164,6 +166,7 @@ function LeaderboardRouteWrapper({
       setPlatformFilter={setPlatformFilter}
       setGenreFilter={setGenreFilter}
       onSelectBattle={(a, b) => navigate(`/arena/${a}/${b}`)}
+      userId={userId}
       watchlistIds={watchlistIds}
       pendingWatchlistIds={pendingWatchlistIds}
       onToggleWatchlist={onToggleWatchlist}
@@ -646,6 +649,7 @@ export default function App() {
     availableGenres,
     setPlatformFilter,
     setGenreFilter,
+    userId: user?.id,
     watchlistIds: watchlist.seriesIds,
     pendingWatchlistIds: watchlist.pendingSeriesIds,
     onToggleWatchlist: user ? watchlist.toggle : undefined,
