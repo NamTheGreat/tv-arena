@@ -82,6 +82,9 @@ describe('formatCsvCell escaping & security', () => {
     expect(formatCsvCell('+12345')).toBe("'+12345");
     expect(formatCsvCell('-cmd|calc')).toBe("'-cmd|calc");
     expect(formatCsvCell('@dangerous')).toBe("'@dangerous");
+    expect(formatCsvCell('  =1+1')).toBe("'  =1+1");
+    expect(formatCsvCell('\t@SUM(A1:A2)')).toBe("'\t@SUM(A1:A2)");
+    expect(formatCsvCell('\r\n-CMD')).toBe("\"'\r\n-CMD\"");
   });
 
   it('escapes cells containing commas, quotes, and newlines', () => {

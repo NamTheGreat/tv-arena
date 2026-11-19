@@ -3,7 +3,8 @@ import type { SeriesItem } from './supabase';
 /**
  * Formats and escapes a single cell for RFC 4180 CSV compatibility.
  * Neutralizes spreadsheet formula injection by prepending a single quote (')
- * to string values that start with '=', '+', '-', or '@'.
+ * to string values that begin with optional whitespace/control characters and
+ * then '=', '+', '-', or '@'.
  */
 export function formatCsvCell(value: unknown): string {
   if (value === null || value === undefined) {
@@ -22,7 +23,7 @@ export function formatCsvCell(value: unknown): string {
   const isPureNumber = typeof value === 'number';
   const isNumericValue = /^-?\d+(\.\d+)?$/.test(str) && !str.startsWith('+');
 
-  if (!isPureNumber && !isNumericValue && /^[=+\-@]/.test(str)) {
+  if (!isPureNumber && !isNumericValue && /^[\s\uFEFF]*[=+\-@]/.test(str)) {
     str = `'${str}`;
   }
 
