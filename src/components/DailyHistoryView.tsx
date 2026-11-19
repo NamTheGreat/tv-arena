@@ -81,7 +81,7 @@ export function DailyHistoryView({ user, onOpenAuth }: DailyHistoryViewProps) {
   const entries = historyData?.entries || [];
   const totalCount = historyData?.totalCount || 0;
   const totalPages = historyData?.totalPages || 1;
-  const bestStreak = entries.reduce((max, entry) => Math.max(max, entry.streak), 0);
+  const bestStreak = historyData?.bestStreak ?? 0;
 
   return (
     <main className="w-full max-w-3xl mx-auto bg-white/95 backdrop-blur-xl rounded-[28px] sm:rounded-[32px] p-6 sm:p-10 shadow-card border border-[#EFEAE2]/90 my-4 text-left">

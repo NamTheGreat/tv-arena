@@ -13,6 +13,7 @@ export interface DailyHistoryEntry {
 export interface DailyHistoryPage {
   entries: DailyHistoryEntry[];
   totalCount: number;
+  bestStreak: number;
   page: number;
   pageSize: number;
   totalPages: number;
@@ -79,6 +80,7 @@ export async function fetchUserDailyHistory(
         data: {
           entries: [],
           totalCount: 0,
+          bestStreak: 0,
           page,
           pageSize,
           totalPages: 0,
@@ -89,6 +91,7 @@ export async function fetchUserDailyHistory(
 
     const allDatesAsc = allRows.map((r) => r.date);
     const streakMap = calculateStreakProgression(allDatesAsc);
+    const bestStreak = Math.max(0, ...streakMap.values());
 
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
@@ -118,6 +121,7 @@ export async function fetchUserDailyHistory(
       data: {
         entries,
         totalCount,
+        bestStreak,
         page,
         pageSize,
         totalPages: Math.ceil(totalCount / pageSize),

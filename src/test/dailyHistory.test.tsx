@@ -21,6 +21,38 @@ describe('calculateStreakProgression', () => {
     expect(streaks.get('2026-11-04')).toBe(4);
   });
 
+  it('reports the best streak from the full history even when the current page ends a streak', async () => {
+    if (!supabase) return;
+
+    const eqSpy = vi.fn().mockReturnThis();
+    const rangeSpy = vi.fn().mockResolvedValue({
+      data: [{
+        date: '2026-11-10',
+        score: 8,
+        correctness: [true, true],
+        completed_at: '2026-11-10T12:00:00Z',
+      }],
+      error: null,
+    });
+    const orderSpy = vi.fn().mockImplementation((col, opts) => {
+      if (opts?.ascending === true) {
+        return Promise.resolve({
+          data: [{ date: '2026-11-01' }, { date: '2026-11-02' }, { date: '2026-11-10' }],
+          error: null,
+        });
+      }
+      return { range: rangeSpy };
+    });
+    vi.spyOn(supabase, 'from').mockReturnValue({
+      select: vi.fn().mockReturnValue({ eq: eqSpy }),
+    } as any);
+    eqSpy.mockReturnValue({ order: orderSpy });
+
+    const result = await fetchUserDailyHistory('test-user-uuid', 1, 1);
+    expect(result.data?.entries[0].streak).toBe(1);
+    expect(result.data?.bestStreak).toBe(2);
+  });
+
   it('resets streak to 1 after a day gap', () => {
     const dates = ['2026-11-01', '2026-11-02', '2026-11-05', '2026-11-06'];
     const streaks = calculateStreakProgression(dates);
