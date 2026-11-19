@@ -570,6 +570,7 @@ BEGIN
     v_user_frozen UUID := gen_random_uuid();
     v_frozen_scores JSONB;
     v_frozen_res JSONB;
+    v_is_correct BOOLEAN;
   BEGIN
     INSERT INTO auth.users (id, email) VALUES (v_user_frozen, 'frozen@test.com');
     INSERT INTO profiles (id, username, display_name) VALUES (v_user_frozen, 'frozen_test', 'Frozen Test');
