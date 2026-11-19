@@ -60,6 +60,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Only handle same-origin GET requests for app shell, assets, and snapshot
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
   // 1. Snapshot fetch: network-first, with fallback to cached snapshot.json
   if (url.pathname === '/snapshot.json') {
     event.respondWith(
@@ -95,7 +100,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // 3. Static assets: cache-first with network fallback
-  if (url.origin === self.location.origin && (url.pathname.startsWith('/assets/') || APP_SHELL_URLS.includes(url.pathname))) {
+  if (url.pathname.startsWith('/assets/') || APP_SHELL_URLS.includes(url.pathname)) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
@@ -110,9 +115,4 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
-
-  // 4. Default: fetch from network
-  event.respondWith(
-    fetch(request).catch(() => caches.match(request))
-  );
 });
