@@ -464,7 +464,15 @@ describe('Core components headless tests', () => {
         events: [{ series_id: mockShows[0].id, event_date: dates[50], kind: 'premiere' as const, label: 'Season premiere' }],
         is_breakout: true,
         breakout_reason: 'Growth exceeded the expected range.',
-        signal_contributions: { wiki_contribution: 1200, reddit_contribution: 350, telemetry_days: 7, reddit_observed_days: 5 },
+        signal_contributions: {
+          wiki_contribution: 1200,
+          reddit_contribution: 350,
+          telemetry_days: 7,
+          wiki_observed_days: 7,
+          reddit_observed_days: 5,
+          last_wiki_date: dates[89],
+          last_reddit_date: dates[89],
+        },
       };
 
       render(

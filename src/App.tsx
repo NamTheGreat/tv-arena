@@ -521,6 +521,7 @@ export default function App() {
             reddit_observed_days: row.reddit_observed_days,
             last_wiki_date: row.last_wiki_date || null,
             last_reddit_date: row.last_reddit_date || null,
+            wiki_observed_days: row.wiki_observed_days,
           }])
         );
 

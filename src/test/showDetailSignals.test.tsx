@@ -45,6 +45,7 @@ describe('getSignalFreshness unit tests', () => {
         wiki_contribution: 6000,
         reddit_contribution: 3500,
         telemetry_days: 7,
+        wiki_observed_days: 7,
         reddit_observed_days: 7,
         last_wiki_date: '2026-11-16',
         last_reddit_date: '2026-11-16',
@@ -74,6 +75,7 @@ describe('getSignalFreshness unit tests', () => {
         wiki_contribution: 5000,
         reddit_contribution: 1200,
         telemetry_days: 7,
+        wiki_observed_days: 7,
         reddit_observed_days: 4,
         last_wiki_date: '2026-11-16',
         last_reddit_date: '2026-11-12', // 4 days prior to referenceDate -> stale
@@ -89,6 +91,46 @@ describe('getSignalFreshness unit tests', () => {
     expect(freshness.reddit.latestDate).toBe('2026-11-12');
   });
 
+  it('uses Wikipedia observation days rather than all telemetry days for coverage', () => {
+    const show: SeriesItem = {
+      ...baseShow,
+      signal_contributions: {
+        wiki_contribution: 1200,
+        reddit_contribution: 300,
+        telemetry_days: 7,
+        wiki_observed_days: 2,
+        reddit_observed_days: 7,
+        last_wiki_date: '2026-11-16',
+        last_reddit_date: '2026-11-16',
+      },
+    };
+
+    const freshness = getSignalFreshness(show, referenceDate);
+    expect(freshness.wiki.coverageLabel).toBe('2 of 7 days');
+    expect(freshness.reddit.coverageLabel).toBe('7 of 7 days');
+  });
+
+  it('does not treat other-source telemetry as a Wikipedia observation', () => {
+    const show: SeriesItem = {
+      ...baseShow,
+      signal_contributions: {
+        wiki_contribution: 0,
+        reddit_contribution: 300,
+        telemetry_days: 7,
+        wiki_observed_days: 0,
+        reddit_observed_days: 7,
+        last_wiki_date: null,
+        last_reddit_date: '2026-11-16',
+      },
+    };
+
+    const freshness = getSignalFreshness(show, referenceDate);
+    expect(freshness.wiki.status).toBe('unobserved');
+    expect(freshness.wiki.scoreDisplay).toBe('No data');
+    expect(freshness.wiki.coverageLabel).toBe('0 of 7 days');
+    expect(freshness.reddit.status).toBe('fresh');
+  });
+
   it('distinguishes measured zero from unobserved / absent observations', () => {
     const showWithZero: SeriesItem = {
       ...baseShow,
@@ -96,6 +138,7 @@ describe('getSignalFreshness unit tests', () => {
         wiki_contribution: 4000,
         reddit_contribution: 0,
         telemetry_days: 7,
+        wiki_observed_days: 7,
         reddit_observed_days: 7,
         last_wiki_date: '2026-11-16',
         last_reddit_date: '2026-11-16',
@@ -115,6 +158,7 @@ describe('getSignalFreshness unit tests', () => {
         wiki_contribution: 4000,
         reddit_contribution: 0,
         telemetry_days: 7,
+        wiki_observed_days: 7,
         reddit_observed_days: 0,
         last_wiki_date: '2026-11-16',
         last_reddit_date: null,
@@ -142,6 +186,7 @@ describe('ShowDetailView dossier signal freshness rendering', () => {
         wiki_contribution: 4800,
         reddit_contribution: 1550,
         telemetry_days: 7,
+        wiki_observed_days: 7,
         reddit_observed_days: 7,
         last_wiki_date: '2026-11-16',
         last_reddit_date: '2026-11-16',
@@ -180,6 +225,7 @@ describe('ShowDetailView dossier signal freshness rendering', () => {
         wiki_contribution: 3200,
         reddit_contribution: 800,
         telemetry_days: 7,
+        wiki_observed_days: 2,
         reddit_observed_days: 3,
         last_wiki_date: '2026-11-16',
         last_reddit_date: '2026-11-11', // 5 days old
@@ -200,6 +246,7 @@ describe('ShowDetailView dossier signal freshness rendering', () => {
     expect(screen.getByText('Fresh')).toBeInTheDocument();
     expect(screen.getByText('Stale')).toBeInTheDocument();
     expect(screen.getByText('3 of 7 days')).toBeInTheDocument();
+    expect(screen.getByText('2 of 7 days')).toBeInTheDocument();
     expect(screen.getByText('2026-11-11')).toBeInTheDocument();
   });
 
@@ -210,6 +257,7 @@ describe('ShowDetailView dossier signal freshness rendering', () => {
         wiki_contribution: 2500,
         reddit_contribution: 0,
         telemetry_days: 7,
+        wiki_observed_days: 7,
         reddit_observed_days: 7,
         last_wiki_date: '2026-11-16',
         last_reddit_date: '2026-11-16',
@@ -238,6 +286,7 @@ describe('ShowDetailView dossier signal freshness rendering', () => {
         wiki_contribution: 0,
         reddit_contribution: 0,
         telemetry_days: 0,
+        wiki_observed_days: 0,
         reddit_observed_days: 0,
         last_wiki_date: null,
         last_reddit_date: null,

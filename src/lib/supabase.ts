@@ -14,6 +14,7 @@ export interface SignalContributions {
   wiki_contribution: number;
   reddit_contribution: number;
   telemetry_days: number;
+  wiki_observed_days?: number;
   reddit_observed_days: number;
   last_wiki_date?: string | null;
   last_reddit_date?: string | null;

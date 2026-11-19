@@ -58,12 +58,13 @@ export function getSignalFreshness(
   }
 
   const telemetryDays = contributions ? Math.max(0, Number(contributions.telemetry_days ?? 0)) : 0;
+  const wikiObservedDays = contributions ? Math.max(0, Number(contributions.wiki_observed_days ?? 0)) : 0;
   const redditObservedDays = contributions ? Math.max(0, Number(contributions.reddit_observed_days ?? 0)) : 0;
   const hasTelemetry = telemetryDays > 0;
 
   // --- Wikipedia Signal ---
-  const wikiLatestDate = contributions?.last_wiki_date || (telemetryDays > 0 ? latestTelemetryDate : null);
-  const wikiUnobserved = telemetryDays === 0 || !wikiLatestDate;
+  const wikiLatestDate = contributions?.last_wiki_date ?? null;
+  const wikiUnobserved = wikiObservedDays === 0 || !wikiLatestDate;
   let wikiStale = false;
   if (!wikiUnobserved && wikiLatestDate) {
     const wikiDateObj = new Date(wikiLatestDate + 'T00:00:00Z');
@@ -81,8 +82,8 @@ export function getSignalFreshness(
     source: 'wikipedia',
     label: 'Wikipedia',
     scoreDisplay: wikiUnobserved ? 'No data' : wikiContribution.toLocaleString(),
-    coverageLabel: `${telemetryDays} of ${SIGNAL_WINDOW_DAYS} days`,
-    observedDays: telemetryDays,
+    coverageLabel: `${wikiObservedDays} of ${SIGNAL_WINDOW_DAYS} days`,
+    observedDays: wikiObservedDays,
     totalDays: SIGNAL_WINDOW_DAYS,
     latestDate: wikiLatestDate,
     status: wikiStatus,
@@ -93,8 +94,7 @@ export function getSignalFreshness(
   };
 
   // --- Reddit Signal ---
-  const redditLatestDate = contributions?.last_reddit_date ||
-    (redditObservedDays > 0 ? (contributions?.last_reddit_date || latestTelemetryDate) : null);
+  const redditLatestDate = contributions?.last_reddit_date ?? null;
   const redditUnobserved = redditObservedDays === 0 || !redditLatestDate;
   let redditStale = false;
   if (!redditUnobserved && redditLatestDate) {

@@ -18,6 +18,7 @@ DECLARE
   v_reddit_days BIGINT;
   v_last_wiki_date TEXT;
   v_last_reddit_date TEXT;
+  v_wiki_days BIGINT;
   v_network_group TEXT;
 BEGIN
   RAISE NOTICE 'Testing View Schema & Column Integrity...';
@@ -65,11 +66,11 @@ BEGIN
   IF v_count <> 1 THEN
     RAISE EXCEPTION 'Expected signal contribution row for Stranger Things';
   END IF;
-  SELECT wiki_contribution, reddit_contribution, reddit_observed_days, last_wiki_date, last_reddit_date
-  INTO v_wiki_contribution, v_reddit_contribution, v_reddit_days, v_last_wiki_date, v_last_reddit_date
+  SELECT wiki_contribution, reddit_contribution, reddit_observed_days, last_wiki_date, last_reddit_date, wiki_observed_days
+  INTO v_wiki_contribution, v_reddit_contribution, v_reddit_days, v_last_wiki_date, v_last_reddit_date, v_wiki_days
   FROM series_signal_contributions
   WHERE series_id = (SELECT id FROM series WHERE slug = 'stranger-things');
-  IF v_wiki_contribution <> 10 OR v_reddit_contribution <> 375 OR v_reddit_days <> 1 OR v_last_wiki_date IS NULL OR v_last_reddit_date IS NULL THEN
+  IF v_wiki_contribution <> 10 OR v_reddit_contribution <> 375 OR v_reddit_days <> 1 OR v_last_wiki_date IS NULL OR v_last_reddit_date IS NULL OR v_wiki_days <> 1 THEN
     RAISE EXCEPTION 'Unexpected signal contributions: wiki %, reddit %, observed days %, wiki_date %, reddit_date %',
       v_wiki_contribution, v_reddit_contribution, v_reddit_days, v_last_wiki_date, v_last_reddit_date;
   END IF;
