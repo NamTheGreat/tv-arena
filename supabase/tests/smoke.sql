@@ -573,7 +573,9 @@ BEGIN
     v_is_correct BOOLEAN;
   BEGIN
     INSERT INTO auth.users (id, email) VALUES (v_user_frozen, 'frozen@test.com');
-    INSERT INTO profiles (id, username, display_name) VALUES (v_user_frozen, 'frozen_test', 'Frozen Test');
+    INSERT INTO profiles (id, username, display_name)
+    VALUES (v_user_frozen, 'frozen_test', 'Frozen Test')
+    ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username, display_name = EXCLUDED.display_name;
     PERFORM set_config('request.jwt.claim.sub', v_user_frozen::text, true);
 
     -- Build frozen score snapshot where show 2 has score 999999 and show 1 has score 1.
