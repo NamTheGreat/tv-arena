@@ -4,9 +4,7 @@
 
 SET LOCAL lock_timeout = '2s';
 
-DROP VIEW IF EXISTS series_recent_telemetry CASCADE;
-
-CREATE VIEW series_recent_telemetry
+CREATE OR REPLACE VIEW series_recent_telemetry
 WITH (security_invoker = on) AS
 WITH anchor AS (
   SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
