@@ -36,7 +36,7 @@ async function main() {
         order: 'detected_date.desc',
         filter: ['detected_date', `gte.${new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10)}`],
       }),
-      fetchPostgrestRows(baseUrl, anonKey, 'series_signal_contributions', 'series_id,wiki_contribution,reddit_contribution,telemetry_days,reddit_observed_days', { order: 'series_id.asc' }),
+      fetchPostgrestRows(baseUrl, anonKey, 'series_signal_contributions', '*', { order: 'series_id.asc' }),
     ]);
 
     const metadataById = new Map(metadata.map((row) => [row.id, row]));

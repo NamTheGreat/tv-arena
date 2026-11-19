@@ -53,8 +53,11 @@ const NotFoundView = React.lazy(() =>
 const MoversView = React.lazy(() =>
   import('./components/MoversView').then((m) => ({ default: m.MoversView }))
 );
+const DailyHistoryView = React.lazy(() =>
+  import('./components/DailyHistoryView').then((m) => ({ default: m.DailyHistoryView }))
+);
 
-type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist';
+type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist' | 'history';
 
 function RouteLoadingFallback() {
   return (
@@ -500,7 +503,7 @@ export default function App() {
             .order('detected_date', { ascending: false }),
           supabase
             .from('series_signal_contributions')
-            .select('series_id, wiki_contribution, reddit_contribution, telemetry_days, reddit_observed_days'),
+            .select('*'),
         ]);
 
         const eventsMap = new Map<string, any[]>();
@@ -522,11 +525,14 @@ export default function App() {
         }
 
         const contributionMap = new Map(
-          (contributionData || []).map((row) => [row.series_id, {
+          (contributionData || []).map((row: any) => [row.series_id, {
             wiki_contribution: Number(row.wiki_contribution),
             reddit_contribution: Number(row.reddit_contribution),
             telemetry_days: row.telemetry_days,
             reddit_observed_days: row.reddit_observed_days,
+            last_wiki_date: row.last_wiki_date || null,
+            last_reddit_date: row.last_reddit_date || null,
+            wiki_observed_days: row.wiki_observed_days,
           }])
         );
 
@@ -743,6 +749,10 @@ export default function App() {
             element={<ShowDetailView seriesList={seriesList} />}
           />
           <Route path="/movers" element={<MoversView seriesList={seriesList} />} />
+          <Route
+            path="/history"
+            element={<DailyHistoryView user={user} onOpenAuth={() => setIsAuthModalOpen(true)} />}
+          />
           <Route path="*" element={<NotFoundView />} />
         </Routes>
       </Suspense>

@@ -4,12 +4,14 @@ import { SeriesItem } from '../lib/supabase';
 import { calculateEventX, sampleDailyValues, buildMobileChartGeometry } from '../lib/svgMath';
 import { sampleDailyRanks, buildMobileRankChartGeometry } from '../lib/historicalRank';
 import { findSimilarShows } from '../lib/showDetail';
+import { getSignalFreshness, SignalStatus } from '../lib/signalFreshness';
 
 interface ShowDetailViewProps {
   seriesList: SeriesItem[];
+  referenceDate?: string | Date;
 }
 
-export function ShowDetailView({ seriesList }: ShowDetailViewProps) {
+export function ShowDetailView({ seriesList, referenceDate }: ShowDetailViewProps) {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
 
@@ -68,6 +70,7 @@ export function ShowDetailView({ seriesList }: ShowDetailViewProps) {
     return x === null ? [] : [{ ...event, x }];
   });
   const contributions = show.signal_contributions;
+  const freshness = getSignalFreshness(show, referenceDate);
   const hasHistory = history.length > 0;
   const isNew = show.delta_pct === null || show.delta_pct === undefined;
   const isSteady = !isNew && Math.abs(show.delta_pct as number) < 0.5;
@@ -135,17 +138,28 @@ export function ShowDetailView({ seriesList }: ShowDetailViewProps) {
       {/* Signal contributions */}
       <section className="mb-6 p-4 rounded-2xl bg-[#FAF6F2] border border-[#EEE4DB]" aria-label="Seven day signal contributions">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs font-semibold text-stone-700">7-Day Score Contributions</h2>
-          <span className="text-[11px] text-stone-500">Weighted score points</span>
+          <div>
+            <h2 className="text-xs font-semibold text-stone-700">7-Day Score Contributions</h2>
+            <span className="text-[11px] text-stone-500">Weighted score points and observation coverage</span>
+          </div>
+          <span className="text-[10.5px] font-medium text-stone-500 bg-white/80 px-2 py-0.5 rounded-md border border-stone-200/60">
+            Window: 7 Days
+          </span>
         </div>
         {!contributions ? (
           <p className="text-xs text-stone-500">Signal contribution data is temporarily unavailable.</p>
         ) : contributions.telemetry_days === 0 ? (
-          <p className="text-xs text-stone-500">No telemetry history is available for this period.</p>
+          <div>
+            <p className="text-xs text-stone-500 mb-3">No telemetry history is available for this period.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <SignalCard signal={freshness.wiki} />
+              <SignalCard signal={freshness.reddit} />
+            </div>
+          </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div><span className="block text-[11px] text-stone-500">Wikipedia</span><strong>{contributions.wiki_contribution.toLocaleString()}</strong></div>
-            <div><span className="block text-[11px] text-stone-500">Reddit</span><strong>{contributions.reddit_observed_days > 0 ? contributions.reddit_contribution.toLocaleString() : 'No data'}</strong></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <SignalCard signal={freshness.wiki} />
+            <SignalCard signal={freshness.reddit} />
           </div>
         )}
       </section>
@@ -238,5 +252,39 @@ export function ShowDetailView({ seriesList }: ShowDetailViewProps) {
         </button>
       </div>
     </main>
+  );
+}
+
+function SignalCard({ signal }: { signal: SignalStatus }) {
+  const badgeColors =
+    signal.status === 'fresh'
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      : signal.status === 'stale'
+      ? 'bg-amber-50 text-amber-700 border-amber-200'
+      : 'bg-stone-100 text-stone-500 border-stone-200';
+
+  return (
+    <div className="p-3.5 bg-white/80 rounded-xl border border-stone-200/80 flex flex-col justify-between text-left">
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-semibold text-stone-800">{signal.label}</span>
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${badgeColors}`}>
+            {signal.statusLabel}
+          </span>
+        </div>
+        <div className="flex items-baseline gap-2 mb-2">
+          <strong className="text-xl font-serif font-semibold text-arena-charcoal">
+            {signal.scoreDisplay}
+          </strong>
+          {signal.isMeasuredZero && (
+            <span className="text-[10.5px] text-stone-500 font-medium">(measured zero)</span>
+          )}
+        </div>
+      </div>
+      <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-500">
+        <span>Coverage: <strong>{signal.coverageLabel}</strong></span>
+        <span>Latest: <strong>{signal.latestDate ? signal.latestDate : 'None'}</strong></span>
+      </div>
+    </div>
   );
 }
