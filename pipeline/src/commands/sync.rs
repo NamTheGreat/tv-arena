@@ -102,8 +102,29 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         let Some(days) = wiki_days.as_ref() else {
             continue;
         };
-        let Some(day) = days.last() else { continue };
+        let Some(day) = days.last() else {
+            let msg = format!("No Wikipedia telemetry days returned for '{}'", show.title);
+            eprintln!("⚠️  {}", msg);
+            if !error_log.is_empty() {
+                error_log.push_str("; ");
+            }
+            error_log.push_str(&msg);
+            wiki_failures += 1;
+            fetch_failures += 1;
+            continue;
+        };
         if day.timestamp.len() < 8 {
+            let msg = format!(
+                "Malformed Wikipedia timestamp '{}' for '{}'",
+                day.timestamp, show.title
+            );
+            eprintln!("⚠️  {}", msg);
+            if !error_log.is_empty() {
+                error_log.push_str("; ");
+            }
+            error_log.push_str(&msg);
+            wiki_failures += 1;
+            fetch_failures += 1;
             continue;
         }
         let date_iso = format!(
@@ -112,12 +133,28 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
             &day.timestamp[4..6],
             &day.timestamp[6..8]
         );
+
+        if date_iso != recorded_date {
+            let msg = format!(
+                "Wikipedia telemetry for '{}' ends at {} instead of expected {}; skipping to prevent misattributed data",
+                show.title, date_iso, recorded_date
+            );
+            eprintln!("⚠️  {}", msg);
+            if !error_log.is_empty() {
+                error_log.push_str("; ");
+            }
+            error_log.push_str(&msg);
+            wiki_failures += 1;
+            fetch_failures += 1;
+            continue;
+        }
+
         let reddit_metrics = reddit_stats.or(previous_reddit);
         let reddit_comments = reddit_metrics.map(|(comments, _)| comments);
         let reddit_upvotes = reddit_metrics.map(|(_, upvotes)| upvotes);
         let telemetry_batch = vec![json!({
             "series_id": show_id,
-            "recorded_date": date_iso,
+            "recorded_date": recorded_date,
             "daily_score": 0,
             "daily_viewers": 0,
             "wiki_views": day.views,
@@ -227,6 +264,13 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         update_sync_run(client, config, id, &update);
     }
 
+    // Run daily-deck generation as part of daily sync, idempotent (ON CONFLICT DO NOTHING).
+    // Attempt deck creation before checking failure threshold so next-day challenges are preserved
+    // even if telemetry fetch failures exceed the alert threshold.
+    if let Err(e) = crate::commands::daily_deck::run_daily_deck(config, None) {
+        eprintln!("⚠️  Failed generating daily deck during sync: {}", e);
+    }
+
     // Fail the run if over 40% of shows failed to sync so GitHub Actions alerts accurately
     if !shows.is_empty() && fetch_failures > (shows.len() * 4 / 10) {
         bail!(
@@ -234,11 +278,6 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
             fetch_failures,
             shows.len()
         );
-    }
-
-    // Run daily-deck generation as part of daily sync, idempotent (ON CONFLICT DO NOTHING)
-    if let Err(e) = crate::commands::daily_deck::run_daily_deck(config, None) {
-        eprintln!("⚠️  Failed generating daily deck during sync: {}", e);
     }
 
     Ok(updated_count)

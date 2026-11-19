@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from health_alerts import GitHub, is_stale, workflow_body
+from health_alerts import GitHub, WORKFLOWS, is_stale, workflow_body
 
 
 class HealthAlertTests(unittest.TestCase):
@@ -17,6 +17,12 @@ class HealthAlertTests(unittest.TestCase):
 
     def test_missing_success_is_stale(self):
         self.assertTrue(is_stale(None))
+
+    def test_monitored_workflows_include_preflight_and_movers_feed(self):
+        self.assertIn("TV Arena Daily Deck Preflight", WORKFLOWS)
+        self.assertEqual(WORKFLOWS["TV Arena Daily Deck Preflight"], "daily-deck.yml")
+        self.assertIn("Refresh Static Movers Feed", WORKFLOWS)
+        self.assertEqual(WORKFLOWS["Refresh Static Movers Feed"], "update-movers-feed.yml")
 
     def test_workflow_failure_body_includes_run_url_and_conclusion(self):
         body = workflow_body("Nightly sync", {
