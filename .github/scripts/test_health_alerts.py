@@ -1,10 +1,12 @@
+import json
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
-from health_alerts import GitHub, WORKFLOWS, is_stale, workflow_body
+from health_alerts import GitHub, WORKFLOWS, is_stale, latest_success, workflow_body
 
 
 class HealthAlertTests(unittest.TestCase):
@@ -61,6 +63,39 @@ class HealthAlertTests(unittest.TestCase):
         self.assertEqual(github.issues[0]["body"], "repeated failure")
         github.alert("Alert: sync failed", "recovered", False)
         self.assertEqual(github.issues[0]["state"], "closed")
+
+    @patch("urllib.request.urlopen")
+    def test_latest_success_includes_partial_sync_with_updated_shows(self, mock_urlopen):
+        recorded_time = "2026-11-16T22:30:00+00:00"
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps([{"completed_at": recorded_time}]).encode()
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        completed = latest_success("https://example.supabase.co", "test-key")
+        self.assertEqual(completed, recorded_time)
+
+        # Inspect request URL and params
+        req = mock_urlopen.call_args[0][0]
+        url = req.full_url
+        self.assertIn("status=in.%28success%2Cpartial%29", url)
+        self.assertIn("shows_updated=gt.0", url)
+        self.assertIn("completed_at=not.is.null", url)
+
+        # Check that partial run with shows_updated > 0 is treated as fresh
+        now = datetime(2026, 11, 17, 10, tzinfo=timezone.utc)
+        self.assertFalse(is_stale(completed, now))
+
+    @patch("urllib.request.urlopen")
+    def test_latest_success_returns_none_when_no_fresh_runs(self, mock_urlopen):
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps([]).encode()
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        completed = latest_success("https://example.supabase.co", "test-key")
+        self.assertIsNone(completed)
+        self.assertTrue(is_stale(completed))
 
 
 if __name__ == "__main__":

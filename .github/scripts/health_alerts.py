@@ -79,7 +79,14 @@ class GitHub:
 
 
 def latest_success(url, key):
-    query = urllib.parse.urlencode({"select": "completed_at", "status": "eq.success", "completed_at": "not.is.null", "order": "completed_at.desc", "limit": "1"})
+    query = urllib.parse.urlencode({
+        "select": "completed_at",
+        "status": "in.(success,partial)",
+        "shows_updated": "gt.0",
+        "completed_at": "not.is.null",
+        "order": "completed_at.desc",
+        "limit": "1",
+    })
     request = urllib.request.Request(
         f"{url.rstrip('/')}/rest/v1/sync_runs?{query}",
         headers={"apikey": key, "Authorization": f"Bearer {key}", "Accept": "application/json"},
@@ -119,12 +126,12 @@ def main():
     stale = is_stale(completed_at)
     if completed_at:
         age_hours = (datetime.now(timezone.utc) - parse_time(completed_at)).total_seconds() / 3600
-        detail = f"Latest successful sync completed at `{completed_at}` ({age_hours:.1f} hours ago)."
+        detail = f"Latest fresh sync completed at `{completed_at}` ({age_hours:.1f} hours ago)."
     else:
-        detail = "No successful sync run is recorded."
+        detail = "No fresh sync run (successful or partial with updated shows) is recorded."
     gh.alert(
         STALE_TITLE,
-        f"The latest successful nightly sync is more than 36 hours old.\n\n{detail}\n\nThis issue is refreshed every six hours and closed when a successful sync is less than 36 hours old.",
+        f"The latest data sync (successful or partial with updated shows) is more than 36 hours old.\n\n{detail}\n\nThis issue is refreshed every six hours and closed when fresh data is less than 36 hours old.",
         stale,
     )
 
