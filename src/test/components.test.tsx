@@ -384,6 +384,41 @@ describe('Core components headless tests', () => {
       expect(screen.getByText('New Show Debut')).toBeInTheDocument();
       expect(screen.getByText('NEW')).toBeInTheDocument();
     });
+
+    it('renders Export CSV button and triggers download on click', () => {
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      const createObjectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test');
+      const revokeObjectUrlSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+      render(
+        <LeaderboardTable
+          rankedShows={mockShows}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={vi.fn()}
+          onSortChange={vi.fn()}
+          onShowMore={vi.fn()}
+          platformFilter="ALL"
+          genreFilter="ALL"
+          availablePlatforms={['ALL', 'Apple TV+']}
+          availableGenres={['ALL', 'Drama & Sci-Fi']}
+          maxLeaderboardViewers={1_200_000}
+          setPlatformFilter={vi.fn()}
+          setGenreFilter={vi.fn()}
+          onSelectBattle={vi.fn()}
+        />
+      );
+
+      const exportBtn = screen.getByRole('button', { name: /export leaderboard to csv/i });
+      expect(exportBtn).toBeInTheDocument();
+      fireEvent.click(exportBtn);
+      expect(clickSpy).toHaveBeenCalled();
+
+      clickSpy.mockRestore();
+      createObjectUrlSpy.mockRestore();
+      revokeObjectUrlSpy.mockRestore();
+    });
   });
 
   describe('ShowDetailView', () => {
