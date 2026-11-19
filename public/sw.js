@@ -11,6 +11,39 @@ const APP_SHELL_URLS = [
   '/icon.svg',
 ];
 
+function isValidSnapshotPayload(value) {
+  if (!value || typeof value !== 'object' || typeof value.generated_at !== 'string' || !Array.isArray(value.series)) {
+    return false;
+  }
+  const generatedAt = Date.parse(value.generated_at);
+  if (!Number.isFinite(generatedAt) || generatedAt > Date.now() + 5 * 60 * 1000) return false;
+
+  return value.series.every((series) => series && typeof series === 'object'
+    && typeof series.id === 'string'
+    && Number.isFinite(series.tmdb_id)
+    && typeof series.slug === 'string'
+    && typeof series.title === 'string'
+    && typeof series.network === 'string'
+    && typeof series.network_group === 'string'
+    && typeof series.genre_group === 'string'
+    && typeof series.release_years === 'string'
+    && (typeof series.chart_color === 'string' || series.chart_color === null)
+    && typeof series.wiki_slug === 'string'
+    && typeof series.reddit_query === 'string'
+    && Number.isFinite(series.buzz_score)
+    && Number.isFinite(series.current_7d_score)
+    && Number.isFinite(series.previous_7d_score)
+    && Number.isFinite(series.rank)
+    && (typeof series.delta_pct === 'number' || series.delta_pct === null)
+    && (typeof series.updated_at === 'string' || series.updated_at === null)
+    && Array.isArray(series.events)
+    && typeof series.is_breakout === 'boolean'
+    && Array.isArray(series.daily_series)
+    && series.daily_series.every(Number.isFinite)
+    && Array.isArray(series.daily_dates)
+    && series.daily_dates.every((date) => typeof date === 'string'));
+}
+
 // Pre-cache core app shell on install
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -68,15 +101,20 @@ self.addEventListener('fetch', (event) => {
   // 1. Snapshot fetch: network-first, with fallback to cached snapshot.json
   if (url.pathname === '/snapshot.json') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(DATA_CACHE_NAME).then((cache) => cache.put(request, clone));
+      fetch(request).then(async (response) => {
+        if (response.ok) {
+          try {
+            const payload = await response.clone().json();
+            if (isValidSnapshotPayload(payload)) {
+              const cache = await caches.open(DATA_CACHE_NAME);
+              await cache.put(request, response.clone());
+            }
+          } catch {
+            // Leave the last valid snapshot intact if the response is malformed.
           }
-          return response;
-        })
-        .catch(async () => {
+        }
+        return response;
+      }).catch(async () => {
           const cached = await caches.match(request);
           if (cached) return cached;
           return new Response(JSON.stringify({ error: 'No cached snapshot available offline.' }), {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import vm from 'node:vm';
 
 // 1. Web App Manifest
 const manifestPath = resolve(process.cwd(), 'public/manifest.webmanifest');
@@ -39,6 +40,61 @@ assert.ok(sw.includes('caches.delete(name)'), 'sw.js must evict stale cache vers
 assert.ok(sw.includes("request.method !== 'GET'"), 'sw.js must intercept non-GET mutations');
 assert.ok(sw.includes('503'), 'sw.js must return 503 for mutations when offline');
 assert.ok(sw.includes('/snapshot.json'), 'sw.js must cache snapshot.json for offline viewing');
+assert.ok(sw.includes('isValidSnapshotPayload'), 'sw.js must validate snapshots before caching');
+
+// Invalid successful responses must not replace the last valid offline snapshot.
+const listeners = new Map();
+const cacheStores = new Map();
+const cachePath = (request) => new URL(typeof request === 'string' ? request : request.url, 'https://tv-arena.test').pathname;
+const caches = {
+  open: async (name) => {
+    if (!cacheStores.has(name)) cacheStores.set(name, new Map());
+    const store = cacheStores.get(name);
+    return {
+      addAll: async () => {},
+      put: async (request, response) => store.set(cachePath(request), response),
+    };
+  },
+  match: async (request) => {
+    for (const store of cacheStores.values()) {
+      const response = store.get(cachePath(request));
+      if (response) return response.clone();
+    }
+    return undefined;
+  },
+  keys: async () => [...cacheStores.keys()],
+  delete: async (name) => cacheStores.delete(name),
+};
+const self = {
+  location: { origin: 'https://tv-arena.test' },
+  clients: { claim: async () => {} },
+  skipWaiting: async () => {},
+  addEventListener: (type, listener) => listeners.set(type, listener),
+};
+const context = vm.createContext({ self, caches, navigator: { onLine: true }, URL, Response, Date, Promise });
+vm.runInContext(sw, context);
+
+const snapshotCache = await caches.open('tv-arena-data-v1');
+const validSnapshot = { generated_at: new Date().toISOString(), series: [] };
+await snapshotCache.put('https://tv-arena.test/snapshot.json', new Response(JSON.stringify(validSnapshot)));
+
+async function requestSnapshot(fetchImpl) {
+  context.fetch = fetchImpl;
+  const event = {
+    request: { url: 'https://tv-arena.test/snapshot.json', method: 'GET', mode: 'cors' },
+    respondWith: (response) => { event.response = response; },
+  };
+  listeners.get('fetch')(event);
+  return event.response;
+}
+
+const invalidResponse = await requestSnapshot(async () => new Response('{bad json', { status: 200 }));
+assert.equal(invalidResponse.status, 200, 'invalid online responses are returned for the app to reject');
+const preservedSnapshot = await caches.match('https://tv-arena.test/snapshot.json');
+assert.deepEqual(await preservedSnapshot.json(), validSnapshot, 'invalid data must not replace the prior valid cache');
+
+const offlineSnapshot = await requestSnapshot(async () => { throw new Error('offline'); });
+assert.deepEqual(await offlineSnapshot.json(), validSnapshot, 'offline requests must serve the preserved valid cache');
 
 // 5. Headers (public/_headers)
 const headers = readFileSync(resolve(process.cwd(), 'public/_headers'), 'utf-8');
