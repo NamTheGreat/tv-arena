@@ -5,14 +5,15 @@ export interface ArenaSnapshot {
   series: SeriesItem[];
 }
 
-const SNAPSHOT_MAX_AGE_MS = 36 * 60 * 60 * 1000;
+export const SNAPSHOT_MAX_AGE_MS = 36 * 60 * 60 * 1000;
 
-function isSnapshot(value: unknown, now = Date.now()): value is ArenaSnapshot {
+export function isSnapshot(value: unknown, now = Date.now(), allowOfflineStale = false): value is ArenaSnapshot {
   if (!value || typeof value !== 'object') return false;
   const snapshot = value as Record<string, unknown>;
   if (typeof snapshot.generated_at !== 'string' || !Array.isArray(snapshot.series)) return false;
   const generatedAt = Date.parse(snapshot.generated_at);
-  if (!Number.isFinite(generatedAt) || generatedAt > now + 5 * 60 * 1000 || now - generatedAt > SNAPSHOT_MAX_AGE_MS) return false;
+  if (!Number.isFinite(generatedAt) || generatedAt > now + 5 * 60 * 1000) return false;
+  if (!allowOfflineStale && now - generatedAt > SNAPSHOT_MAX_AGE_MS) return false;
 
   return snapshot.series.every((item) => {
     if (!item || typeof item !== 'object') return false;
@@ -43,12 +44,16 @@ function isSnapshot(value: unknown, now = Date.now()): value is ArenaSnapshot {
   });
 }
 
-export async function fetchArenaSnapshot(fetcher: typeof fetch = fetch, now = Date.now()): Promise<ArenaSnapshot | null> {
+export async function fetchArenaSnapshot(
+  fetcher: typeof fetch = fetch,
+  now = Date.now(),
+  allowOfflineStale = typeof navigator !== 'undefined' ? !navigator.onLine : false
+): Promise<ArenaSnapshot | null> {
   try {
     const response = await fetcher('/snapshot.json', { cache: 'no-store' });
     if (!response.ok) return null;
     const snapshot: unknown = await response.json();
-    return isSnapshot(snapshot, now) ? snapshot : null;
+    return isSnapshot(snapshot, now, allowOfflineStale) ? snapshot : null;
   } catch {
     return null;
   }

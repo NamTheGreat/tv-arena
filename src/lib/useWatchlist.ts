@@ -49,6 +49,10 @@ export function useWatchlist(userId?: string) {
 
   const toggle = useCallback(async (seriesId: string) => {
     if (!userId || !supabase || pendingSeriesIds.includes(seriesId)) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setError('You are offline. Watchlist changes cannot be saved offline.');
+      return;
+    }
 
     const isSaved = seriesIds.includes(seriesId);
     setPendingSeriesIds((previous) => [...previous, seriesId]);
