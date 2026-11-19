@@ -52,8 +52,11 @@ const NotFoundView = React.lazy(() =>
 const MoversView = React.lazy(() =>
   import('./components/MoversView').then((m) => ({ default: m.MoversView }))
 );
+const DailyHistoryView = React.lazy(() =>
+  import('./components/DailyHistoryView').then((m) => ({ default: m.DailyHistoryView }))
+);
 
-type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist';
+type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist' | 'history';
 
 function RouteLoadingFallback() {
   return (
@@ -726,6 +729,10 @@ export default function App() {
             element={<ShowDetailView seriesList={seriesList} />}
           />
           <Route path="/movers" element={<MoversView seriesList={seriesList} />} />
+          <Route
+            path="/history"
+            element={<DailyHistoryView user={user} onOpenAuth={() => setIsAuthModalOpen(true)} />}
+          />
           <Route path="*" element={<NotFoundView />} />
         </Routes>
       </Suspense>
