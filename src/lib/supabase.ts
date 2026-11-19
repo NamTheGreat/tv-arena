@@ -30,6 +30,7 @@ export interface SeriesItem extends SeriesRow {
   previous_7d_score?: number;
   daily_series: number[];
   daily_dates?: string[];
+  daily_ranks?: number[];
   events?: SeriesEvent[];
   is_breakout?: boolean;
   breakout_reason?: string;

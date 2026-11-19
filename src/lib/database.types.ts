@@ -461,6 +461,7 @@ export type Database = {
           series_id: string
           daily_series: number[]
           daily_dates: string[]
+          daily_ranks: number[]
         }
         Relationships: []
       }

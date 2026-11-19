@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { SeriesItem } from '../lib/supabase';
 import { calculateEventX, sampleDailyValues, buildMobileChartGeometry } from '../lib/svgMath';
+import { sampleDailyRanks, buildMobileRankChartGeometry } from '../lib/historicalRank';
 import { findSimilarShows } from '../lib/showDetail';
 import { getSignalFreshness, SignalStatus } from '../lib/signalFreshness';
 
@@ -42,13 +43,25 @@ export function ShowDetailView({ seriesList, referenceDate }: ShowDetailViewProp
     );
   }
 
+  const [chartMetric, setChartMetric] = useState<'score' | 'rank'>('score');
   const similarShows = findSimilarShows(show, seriesList);
   const rival = similarShows[0] || seriesList.find((s) => s.slug !== show.slug) || show;
   const history = (show.daily_series || []).slice(-90);
   const historyDates = (show.daily_dates || []).slice(-90);
-  const sampled = sampleDailyValues(history, '90D');
-  const maxSampled = Math.max(...sampled, 1);
-  const { pathD, points } = buildMobileChartGeometry(sampled, maxSampled);
+  const historyRanks = (show.daily_ranks || []).slice(-90);
+
+  const sampledScores = sampleDailyValues(history, '90D');
+  const maxSampled = Math.max(...sampledScores, 1);
+  const scoreGeometry = buildMobileChartGeometry(sampledScores, maxSampled);
+
+  const sampledRanks = sampleDailyRanks(historyRanks, '90D');
+  const maxRankObserved = Math.max(...sampledRanks.filter((r) => r > 0), 1);
+  const maxRankScale = Math.max(5, Math.ceil(maxRankObserved / 5) * 5);
+  const rankGeometry = buildMobileRankChartGeometry(sampledRanks, maxRankScale);
+
+  const { pathD, points } = chartMetric === 'rank' ? rankGeometry : scoreGeometry;
+  const validHistoryRanks = historyRanks.filter((r) => r > 0);
+  const peakRank = validHistoryRanks.length > 0 ? Math.min(...validHistoryRanks) : null;
   const chartStartDate = historyDates[0];
   const chartEndDate = historyDates[historyDates.length - 1];
   const eventMarkers = (show.events || []).flatMap((event) => {
@@ -153,19 +166,56 @@ export function ShowDetailView({ seriesList, referenceDate }: ShowDetailViewProp
 
       {/* 90-Day Trajectory and events */}
       <div className="p-4 rounded-2xl bg-stone-50/70 border border-stone-200/60 mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-stone-700">90-Day Engagement Trajectory</span>
-          <span className="text-[11px] text-stone-500">Relative Scale</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-stone-700">90-Day Trajectory</span>
+            <div className="inline-flex items-center bg-[#F3EFE9] p-0.5 rounded-full text-[10px] font-medium border border-[#E7DFD5]">
+              <button
+                type="button"
+                onClick={() => setChartMetric('score')}
+                className={`px-2 py-0.5 rounded-full transition-colors ${
+                  chartMetric === 'score'
+                    ? 'bg-white text-stone-800 shadow-sm font-semibold'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                Score
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartMetric('rank')}
+                className={`px-2 py-0.5 rounded-full transition-colors ${
+                  chartMetric === 'rank'
+                    ? 'bg-white text-stone-800 shadow-sm font-semibold'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                Rank
+              </button>
+            </div>
+          </div>
+          <span className="text-[11px] text-stone-500">
+            {chartMetric === 'rank' ? (
+              peakRank ? `Peak: #${peakRank} · Top = #1` : 'Top = #1'
+            ) : (
+              'Relative Scale'
+            )}
+          </span>
         </div>
         {hasHistory ? (
           <div className="w-full h-24 sm:h-32">
-            <svg role="img" aria-label={`${show.title} 90-day engagement trajectory with ${eventMarkers.length} event markers`} className="w-full h-full" viewBox="0 0 340 185" preserveAspectRatio="none">
+            <svg role="img" aria-label={`${show.title} 90-day ${chartMetric === 'rank' ? 'leaderboard rank' : 'engagement'} trajectory with ${eventMarkers.length} event markers`} className="w-full h-full" viewBox="0 0 340 185" preserveAspectRatio="none">
               {eventMarkers.map((event) => <line key={event.id ?? `${event.kind}-${event.event_date}`} x1={event.x} x2={event.x} y1="8" y2="162" stroke="#8a5a44" strokeDasharray="3 3" />)}
               <path d={pathD} fill="none" stroke={show.chart_color || '#C66A3D'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
               {points.map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} fill={show.chart_color || '#C66A3D'} r={i === points.length - 1 ? 4 : 2.5} />)}
             </svg>
           </div>
         ) : <p className="py-8 text-center text-xs text-stone-500">No viewing history is available yet.</p>}
+        {chartMetric === 'rank' && (
+          <p className="mt-2 text-[10px] text-stone-500 italic">
+            * Historical rank is a relative measure showing daily standing among all tracked series.
+          </p>
+        )}
         {eventMarkers.length > 0 && (
           <ul className="mt-3 space-y-1 text-xs text-stone-600">
             {eventMarkers.map((event) => <li key={event.id ?? `${event.kind}-${event.event_date}`}>{event.event_date}: {event.label}</li>)}

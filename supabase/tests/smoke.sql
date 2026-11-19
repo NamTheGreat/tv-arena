@@ -75,8 +75,8 @@ BEGIN
       v_wiki_contribution, v_reddit_contribution, v_reddit_days, v_last_wiki_date, v_last_reddit_date;
   END IF;
 
-  -- Test series_recent_telemetry array aggregation view
-  SELECT COUNT(*) INTO v_count FROM series_recent_telemetry;
+  -- Test series_recent_telemetry array aggregation view including daily_ranks
+  SELECT COUNT(*) INTO v_count FROM series_recent_telemetry WHERE daily_ranks IS NOT NULL;
   IF v_count < 1 THEN
     RAISE EXCEPTION 'series_recent_telemetry returned 0 rows';
   END IF;
