@@ -1,6 +1,6 @@
 import React from 'react';
 import { SeriesItem } from '../lib/supabase';
-import { ChartRange } from './trajectoryChartTypes';
+import { ChartMetric, ChartRange } from './trajectoryChartTypes';
 
 interface Props {
   breakoutShow?: SeriesItem;
@@ -8,6 +8,8 @@ interface Props {
   selectedSlugs: string[];
   chartRange: ChartRange;
   setChartRange: (range: ChartRange) => void;
+  chartMetric?: ChartMetric;
+  setChartMetric?: (metric: ChartMetric) => void;
   activePreset: string;
   applyPreset: (preset: string) => void;
   genreDropdownOpen: boolean;
@@ -17,7 +19,20 @@ interface Props {
 
 const GENRE_OPTIONS = ['Drama & Sci-Fi', 'Comedy & Drama', 'Crime & Mystery', 'Drama'];
 
-export function TrajectoryChartHeader({ breakoutShow, addShow, selectedSlugs, chartRange, setChartRange, activePreset, applyPreset, genreDropdownOpen, setGenreDropdownOpen, genreRef }: Props) {
+export function TrajectoryChartHeader({
+  breakoutShow,
+  addShow,
+  selectedSlugs,
+  chartRange,
+  setChartRange,
+  chartMetric = 'score',
+  setChartMetric,
+  activePreset,
+  applyPreset,
+  genreDropdownOpen,
+  setGenreDropdownOpen,
+  genreRef,
+}: Props) {
   return (
     <>
       {/* Top Header of Card: Title + Time Range Switcher */}
@@ -27,7 +42,9 @@ export function TrajectoryChartHeader({ breakoutShow, addShow, selectedSlugs, ch
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="inline-block w-2 h-2 rounded-full bg-brand-terracotta ring-4 ring-brand-terracotta/20 animate-pulse" />
               <span className="text-xs font-semibold tracking-widest uppercase text-stone-600">
-                Workbench: Daily Active Household Viewers
+                {chartMetric === 'rank'
+                  ? 'Workbench: Daily Leaderboard Rank'
+                  : 'Workbench: Daily Active Household Viewers'}
               </span>
               {breakoutShow && (
                 <button
@@ -52,28 +69,62 @@ export function TrajectoryChartHeader({ breakoutShow, addShow, selectedSlugs, ch
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start lg:self-auto">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-600 mr-1">
-              Range:
-            </span>
-            <div className="inline-flex items-center bg-[#F3EFE9] p-0.5 rounded-full text-[11px] font-medium border border-[#E7DFD5]">
-              {(['7D', '30D', '90D', 'All-Time'] as const).map((r) => {
-                const label = r === 'All-Time' ? 'All' : r;
-                return (
+          <div className="flex flex-wrap items-center gap-4 self-start lg:self-auto">
+            {setChartMetric && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-600 mr-1">
+                  Metric:
+                </span>
+                <div className="inline-flex items-center bg-[#F3EFE9] p-0.5 rounded-full text-[11px] font-medium border border-[#E7DFD5]">
                   <button
-                    key={r}
                     type="button"
-                    onClick={() => setChartRange(r)}
+                    onClick={() => setChartMetric('score')}
                     className={`px-2.5 py-0.5 rounded-full whitespace-nowrap transition-colors ${
-                      chartRange === r
+                      chartMetric === 'score'
                         ? 'bg-white text-stone-800 shadow-sm font-semibold'
                         : 'text-stone-600 hover:text-stone-900'
                     }`}
                   >
-                    {label}
+                    Score
                   </button>
-                );
-              })}
+                  <button
+                    type="button"
+                    onClick={() => setChartMetric('rank')}
+                    className={`px-2.5 py-0.5 rounded-full whitespace-nowrap transition-colors ${
+                      chartMetric === 'rank'
+                        ? 'bg-white text-stone-800 shadow-sm font-semibold'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    Rank
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-600 mr-1">
+                Range:
+              </span>
+              <div className="inline-flex items-center bg-[#F3EFE9] p-0.5 rounded-full text-[11px] font-medium border border-[#E7DFD5]">
+                {(['7D', '30D', '90D', 'All-Time'] as const).map((r) => {
+                  const label = r === 'All-Time' ? 'All' : r;
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setChartRange(r)}
+                      className={`px-2.5 py-0.5 rounded-full whitespace-nowrap transition-colors ${
+                        chartRange === r
+                          ? 'bg-white text-stone-800 shadow-sm font-semibold'
+                          : 'text-stone-600 hover:text-stone-900'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

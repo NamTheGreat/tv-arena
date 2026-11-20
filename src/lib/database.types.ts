@@ -256,16 +256,19 @@ export type Database = {
         Row: {
           date: string
           series_ids: string[]
+          series_scores: Json | null
           created_at: string | null
         }
         Insert: {
           date: string
           series_ids: string[]
+          series_scores?: Json | null
           created_at?: string | null
         }
         Update: {
           date?: string
           series_ids?: string[]
+          series_scores?: Json | null
           created_at?: string | null
         }
         Relationships: []
@@ -439,6 +442,9 @@ export type Database = {
           reddit_contribution: number
           telemetry_days: number
           reddit_observed_days: number
+          last_wiki_date: string | null
+          last_reddit_date: string | null
+          wiki_observed_days: number
         }
         Relationships: []
       }
@@ -455,6 +461,7 @@ export type Database = {
           series_id: string
           daily_series: number[]
           daily_dates: string[]
+          daily_ranks: number[]
         }
         Relationships: []
       }

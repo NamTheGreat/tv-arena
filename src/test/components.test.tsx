@@ -384,6 +384,41 @@ describe('Core components headless tests', () => {
       expect(screen.getByText('New Show Debut')).toBeInTheDocument();
       expect(screen.getByText('NEW')).toBeInTheDocument();
     });
+
+    it('renders Export CSV button and triggers download on click', () => {
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      const createObjectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test');
+      const revokeObjectUrlSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+      render(
+        <LeaderboardTable
+          rankedShows={mockShows}
+          searchTerm=""
+          sortBy="score"
+          displayCount={20}
+          onSearchTermChange={vi.fn()}
+          onSortChange={vi.fn()}
+          onShowMore={vi.fn()}
+          platformFilter="ALL"
+          genreFilter="ALL"
+          availablePlatforms={['ALL', 'Apple TV+']}
+          availableGenres={['ALL', 'Drama & Sci-Fi']}
+          maxLeaderboardViewers={1_200_000}
+          setPlatformFilter={vi.fn()}
+          setGenreFilter={vi.fn()}
+          onSelectBattle={vi.fn()}
+        />
+      );
+
+      const exportBtn = screen.getByRole('button', { name: /export leaderboard to csv/i });
+      expect(exportBtn).toBeInTheDocument();
+      fireEvent.click(exportBtn);
+      expect(clickSpy).toHaveBeenCalled();
+
+      clickSpy.mockRestore();
+      createObjectUrlSpy.mockRestore();
+      revokeObjectUrlSpy.mockRestore();
+    });
   });
 
   describe('ShowDetailView', () => {
@@ -464,7 +499,15 @@ describe('Core components headless tests', () => {
         events: [{ series_id: mockShows[0].id, event_date: dates[50], kind: 'premiere' as const, label: 'Season premiere' }],
         is_breakout: true,
         breakout_reason: 'Growth exceeded the expected range.',
-        signal_contributions: { wiki_contribution: 1200, reddit_contribution: 350, telemetry_days: 7, reddit_observed_days: 5 },
+        signal_contributions: {
+          wiki_contribution: 1200,
+          reddit_contribution: 350,
+          telemetry_days: 7,
+          wiki_observed_days: 7,
+          reddit_observed_days: 5,
+          last_wiki_date: dates[89],
+          last_reddit_date: dates[89],
+        },
       };
 
       render(

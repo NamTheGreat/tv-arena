@@ -14,7 +14,10 @@ export interface SignalContributions {
   wiki_contribution: number;
   reddit_contribution: number;
   telemetry_days: number;
+  wiki_observed_days?: number;
   reddit_observed_days: number;
+  last_wiki_date?: string | null;
+  last_reddit_date?: string | null;
 }
 
 export type SeriesRow = Tables<'series'>;
@@ -27,6 +30,7 @@ export interface SeriesItem extends SeriesRow {
   previous_7d_score?: number;
   daily_series: number[];
   daily_dates?: string[];
+  daily_ranks?: number[];
   events?: SeriesEvent[];
   is_breakout?: boolean;
   breakout_reason?: string;

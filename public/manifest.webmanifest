@@ -1,0 +1,19 @@
+{
+  "name": "TV Arena",
+  "short_name": "TV Arena",
+  "description": "Global television audience engagement intelligence & head-to-head battles.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FAF6F0",
+  "theme_color": "#C66A3D",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
