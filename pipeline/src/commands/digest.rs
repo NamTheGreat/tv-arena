@@ -32,13 +32,17 @@ pub fn run_digest(config: &Config) -> Result<()> {
         return Ok(());
     };
 
-    if let Err(e) = client.post(webhook_url).send_json(ureq::json!({
-        "content": message,
-        "allowed_mentions": { "parse": [] }
-    })) {
+    if client
+        .post(webhook_url)
+        .send_json(ureq::json!({
+            "content": message,
+            "allowed_mentions": { "parse": [] }
+        }))
+        .is_err()
+    {
         // Webhook URLs commonly contain credentials; keep them out of error output.
         eprintln!(
-            "Warning: digest webhook delivery failed (check configuration or destination status): {e}"
+            "Warning: digest webhook delivery failed (check configuration or destination status)."
         );
         return Ok(());
     }

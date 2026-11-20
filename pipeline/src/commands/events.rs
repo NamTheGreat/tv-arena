@@ -31,7 +31,14 @@ where
     };
 
     for show in shows {
-        let Some(ref show_id) = show.id else { continue };
+        let Some(ref show_id) = show.id else {
+            summary.failed_shows.push((
+                show.title.clone(),
+                show.tmdb_id,
+                "Series row is missing its database ID".to_string(),
+            ));
+            continue;
+        };
 
         println!(
             "Fetching TMDb events for '{}' (ID: {})...",
@@ -253,5 +260,19 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("Write Fail Show"));
         assert!(err_msg.contains("Supabase write error"));
+    }
+
+    #[test]
+    fn test_missing_series_id_fails_the_run() {
+        let mut show = mock_show("show-1", "Missing ID Show", 301);
+        show.id = None;
+
+        let result = ingest_events_for_shows(&[show], |_| Ok(vec![]), |_, _| Ok(()), 0);
+
+        let err_msg = result
+            .expect_err("A show without a database ID must fail the run")
+            .to_string();
+        assert!(err_msg.contains("Missing ID Show"));
+        assert!(err_msg.contains("missing its database ID"));
     }
 }
