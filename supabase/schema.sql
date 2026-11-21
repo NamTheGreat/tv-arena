@@ -32,6 +32,26 @@ CREATE TABLE IF NOT EXISTS series_daily_telemetry (
 CREATE INDEX IF NOT EXISTS idx_telemetry_series_date ON series_daily_telemetry(series_id, recorded_date DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_recorded_date ON series_daily_telemetry(recorded_date DESC);
 
+-- Reject future-dated telemetry insertions and updates
+CREATE OR REPLACE FUNCTION check_telemetry_recorded_date()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.recorded_date > (now() AT TIME ZONE 'UTC')::date THEN
+    RAISE EXCEPTION 'recorded_date cannot be in the future: %', NEW.recorded_date;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_telemetry_recorded_date ON series_daily_telemetry;
+CREATE TRIGGER trg_check_telemetry_recorded_date
+  BEFORE INSERT OR UPDATE OF recorded_date
+  ON series_daily_telemetry
+  FOR EACH ROW
+  EXECUTE FUNCTION check_telemetry_recorded_date();
+
 -- Score Weights Configuration
 CREATE TABLE IF NOT EXISTS score_weights (
   id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -72,7 +92,10 @@ GRANT SELECT ON series_daily_scores TO anon, authenticated;
 CREATE OR REPLACE VIEW series_signal_contributions
 WITH (security_invoker = on) AS
 WITH anchor AS (
-  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  SELECT COALESCE(
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
+  ) AS max_date
   FROM series_daily_telemetry
 )
 SELECT
@@ -110,7 +133,10 @@ DROP VIEW IF EXISTS series_leaderboard CASCADE;
 CREATE VIEW series_leaderboard 
 WITH (security_invoker = on) AS
 WITH anchor AS (
-  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  SELECT COALESCE(
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
+  ) AS max_date
   FROM series_daily_telemetry
 ),
 daily_buckets AS (
@@ -157,7 +183,10 @@ GRANT SELECT ON series_leaderboard TO anon, authenticated;
 CREATE OR REPLACE VIEW series_deck_candidates
 WITH (security_invoker = on) AS
 WITH anchor AS (
-  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  SELECT COALESCE(
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
+  ) AS max_date
   FROM series_daily_telemetry
 )
 SELECT
@@ -185,7 +214,10 @@ DROP VIEW IF EXISTS series_recent_telemetry CASCADE;
 CREATE VIEW series_recent_telemetry 
 WITH (security_invoker = on) AS
 WITH anchor AS (
-  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  SELECT COALESCE(
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
+  ) AS max_date
   FROM series_daily_telemetry
 ),
 recent_scores AS (
@@ -777,7 +809,9 @@ BEGIN
   IF NEW.status NOT IN ('success', 'partial') THEN
     RETURN NEW;
   END IF;
-  SELECT MAX(recorded_date) INTO v_max_date FROM series_daily_telemetry;
+  SELECT MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date)
+  INTO v_max_date
+  FROM series_daily_telemetry;
   IF v_max_date IS NULL THEN RETURN NEW; END IF;
 
   WITH pending_weeks AS (

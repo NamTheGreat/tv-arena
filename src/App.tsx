@@ -384,6 +384,8 @@ export default function App() {
     clearPasswordRecovery();
     if (location.search.includes('password-reset=1') || location.search.includes('mode=update-password')) {
       navigate('/', { replace: true });
+    } else if (!user && location.pathname.startsWith('/watchlist')) {
+      navigate('/', { replace: true });
     }
   };
 
@@ -396,7 +398,7 @@ export default function App() {
 
   // Determine active tab from URL pathname
   const activeTab: TabKey = useMemo(() => {
-    if (location.pathname.startsWith('/arena') || location.pathname.startsWith('/contenders')) return 'arena';
+    if (location.pathname.startsWith('/arena')) return 'arena';
     if (location.pathname.startsWith('/charts')) return 'charts';
     if (location.pathname.startsWith('/guess')) return 'guess';
     if (location.pathname.startsWith('/movers')) return 'movers';
@@ -699,13 +701,13 @@ export default function App() {
       </header>
 
       {/* Shared Navigation Pill */}
-      <nav aria-label="Main Navigation" className="mb-6 sm:mb-12 max-w-full overflow-x-auto scrollbar-none px-2">
+      <nav aria-label="Main Navigation" className="mb-6 sm:mb-12 max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-2 py-2">
         <div className="inline-flex items-center bg-white/85 backdrop-blur-md p-1 sm:p-1.5 rounded-full border border-arena-border shadow-nav-pill whitespace-nowrap">
           {navItems.map((item) => (
             <button
               key={item.tabKey}
               onClick={() => navigate(item.path)}
-              className={`px-2.5 sm:px-6 py-1.5 sm:py-2 text-[10px] sm:text-xs font-semibold tracking-wider uppercase rounded-full transition-all duration-200 cursor-pointer ${
+              className={`px-3 sm:px-6 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold tracking-wider uppercase rounded-full transition-all duration-200 cursor-pointer ${
                 activeTab === item.tabKey
                   ? 'text-white bg-arena-terracotta shadow-pill'
                   : 'text-arena-muted hover:text-arena-charcoal'
@@ -775,6 +777,7 @@ export default function App() {
                 watchlistIds={watchlist.seriesIds}
                 pendingWatchlistIds={watchlist.pendingSeriesIds}
                 onToggleWatchlist={user ? watchlist.toggle : () => setIsAuthModalOpen(true)}
+                watchlistError={watchlist.error}
               />
             }
           />

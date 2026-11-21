@@ -12,6 +12,7 @@ interface ShowDetailViewProps {
   watchlistIds?: string[];
   pendingWatchlistIds?: string[];
   onToggleWatchlist?: (seriesId: string) => void;
+  watchlistError?: string | null;
 }
 
 export function ShowDetailView({
@@ -20,6 +21,7 @@ export function ShowDetailView({
   watchlistIds = [],
   pendingWatchlistIds = [],
   onToggleWatchlist,
+  watchlistError,
 }: ShowDetailViewProps) {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -136,6 +138,11 @@ export function ShowDetailView({
             )}
           </div>
           <p className="text-xs text-arena-faint mt-1">{show.release_years}</p>
+          {watchlistError && (
+            <p role="alert" className="text-xs text-rose-600 font-medium mt-1">
+              {watchlistError}
+            </p>
+          )}
         </div>
 
         {/* Score Card */}

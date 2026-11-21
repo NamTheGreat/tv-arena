@@ -1,5 +1,5 @@
 -- Migration: 20261122010000_defensive_anchor_guard.sql
--- Defend all rolling-window SQL views against future-dated telemetry rows.
+-- Defend all rolling-window SQL views and grading functions against future-dated telemetry rows.
 --
 -- Root cause: a single row with recorded_date = '2099-01-01' in
 -- series_daily_telemetry pushed MAX(recorded_date) forward by ~73 years,
@@ -7,15 +7,37 @@
 -- excluding all legitimate telemetry. This poisoned the leaderboard scores,
 -- recent telemetry arrays, signal contributions, and deck candidates.
 --
--- Fix: cap the anchor at CURRENT_DATE using a FILTER clause so that any
--- accidental or test future-dated row is ignored by the rolling windows.
+-- Fix:
+-- 1. Reject future-dated rows at the write boundary with a trigger on series_daily_telemetry.
+-- 2. Cap the anchor at (now() AT TIME ZONE 'UTC')::date across all views and grading functions.
 
 BEGIN;
 
 SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '10s';
 
--- 1. series_leaderboard
+-- 1. Trigger to reject future-dated telemetry insertions and updates
+-- squawk-ignore ban-replace-view-function
+CREATE OR REPLACE FUNCTION check_telemetry_recorded_date()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.recorded_date > (now() AT TIME ZONE 'UTC')::date THEN
+    RAISE EXCEPTION 'recorded_date cannot be in the future: %', NEW.recorded_date;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_telemetry_recorded_date ON series_daily_telemetry;
+CREATE TRIGGER trg_check_telemetry_recorded_date
+  BEFORE INSERT OR UPDATE OF recorded_date
+  ON series_daily_telemetry
+  FOR EACH ROW
+  EXECUTE FUNCTION check_telemetry_recorded_date();
+
+-- 2. series_leaderboard
 -- Preserve the existing column order and the dynamic legacy alias handling.
 -- squawk-ignore ban-replace-view-function
 DO $$
@@ -41,8 +63,8 @@ BEGIN
     WITH (security_invoker = on) AS
     WITH anchor AS (
       SELECT COALESCE(
-        MAX(recorded_date) FILTER (WHERE recorded_date <= CURRENT_DATE),
-        CURRENT_DATE
+        MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+        (now() AT TIME ZONE 'UTC')::date
       ) AS max_date
       FROM series_daily_telemetry
     ),
@@ -86,13 +108,14 @@ BEGIN
   $view$, score_columns);
 END $$;
 
--- 2. series_recent_telemetry
+-- 3. series_recent_telemetry
+-- squawk-ignore ban-replace-view-function
 CREATE OR REPLACE VIEW series_recent_telemetry
 WITH (security_invoker = on) AS
 WITH anchor AS (
   SELECT COALESCE(
-    MAX(recorded_date) FILTER (WHERE recorded_date <= CURRENT_DATE),
-    CURRENT_DATE
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
   ) AS max_date
   FROM series_daily_telemetry
 ),
@@ -129,13 +152,14 @@ FROM series s
 LEFT JOIN recent_scores r ON s.id = r.series_id
 GROUP BY s.id;
 
--- 3. series_signal_contributions
+-- 4. series_signal_contributions
+-- squawk-ignore ban-replace-view-function
 CREATE OR REPLACE VIEW series_signal_contributions
 WITH (security_invoker = on) AS
 WITH anchor AS (
   SELECT COALESCE(
-    MAX(recorded_date) FILTER (WHERE recorded_date <= CURRENT_DATE),
-    CURRENT_DATE
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
   ) AS max_date
   FROM series_daily_telemetry
 )
@@ -167,16 +191,14 @@ LEFT JOIN series_daily_telemetry t
 WHERE w.id = 1
 GROUP BY s.id, w.wiki_weight, w.comment_weight, w.upvote_weight;
 
--- 4. series_deck_candidates
--- Cannot use CREATE OR REPLACE on a view that was originally CREATE VIEW
--- without OR REPLACE if the column list differs. Same columns here, so
--- CREATE OR REPLACE is safe.
+-- 5. series_deck_candidates
+-- squawk-ignore ban-replace-view-function
 CREATE OR REPLACE VIEW series_deck_candidates
 WITH (security_invoker = on) AS
 WITH anchor AS (
   SELECT COALESCE(
-    MAX(recorded_date) FILTER (WHERE recorded_date <= CURRENT_DATE),
-    CURRENT_DATE
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
   ) AS max_date
   FROM series_daily_telemetry
 )
@@ -196,5 +218,51 @@ HAVING l.current_7d_score > 0
      WHERE t.recorded_date > a.max_date - INTERVAL '7 days'
        AND t.recorded_date <= a.max_date
    ) >= 7;
+
+-- 6. Guard grade_mover_predictions_after_sync() against future dates
+-- squawk-ignore ban-replace-view-function
+CREATE OR REPLACE FUNCTION grade_mover_predictions_after_sync()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_max_date DATE;
+BEGIN
+  IF NEW.status NOT IN ('success', 'partial') THEN
+    RETURN NEW;
+  END IF;
+  SELECT MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date)
+  INTO v_max_date
+  FROM series_daily_telemetry;
+  IF v_max_date IS NULL THEN RETURN NEW; END IF;
+
+  WITH pending_weeks AS (
+    SELECT DISTINCT p.week_start
+    FROM mover_predictions p
+    WHERE p.graded_at IS NULL AND p.week_start + 6 <= v_max_date
+  ), ranked AS (
+    SELECT m.period_start AS week_start, m.series_id, m.mover_rank AS actual_rank
+    FROM series_weekly_movers m
+    JOIN pending_weeks w ON w.week_start = m.period_start
+  ), graded AS (
+    SELECT p.week_start, p.user_id, r.actual_rank,
+      CASE WHEN r.actual_rank = 1 THEN 3
+           WHEN r.actual_rank <= 3 THEN 1
+           ELSE 0 END::BIGINT AS points
+    FROM mover_predictions p
+    LEFT JOIN ranked r ON r.week_start = p.week_start AND r.series_id = p.series_id
+    WHERE p.graded_at IS NULL
+      AND p.week_start + 6 <= v_max_date
+      AND EXISTS (SELECT 1 FROM ranked any_rank WHERE any_rank.week_start = p.week_start)
+  )
+  UPDATE mover_predictions p
+  SET points = g.points, actual_rank = g.actual_rank, graded_at = now()
+  FROM graded g
+  WHERE p.week_start = g.week_start AND p.user_id = g.user_id;
+  RETURN NEW;
+END;
+$$;
 
 COMMIT;
