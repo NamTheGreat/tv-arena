@@ -19,7 +19,6 @@ interface LeaderboardTableProps {
   setPlatformFilter: (platform: string) => void;
   setGenreFilter: (genre: string) => void;
   onSelectBattle: (slugA: string, slugB: string) => void;
-  onNavigateToShow?: (slug: string) => void;
   watchlistIds?: string[];
   pendingWatchlistIds?: string[];
   onToggleWatchlist?: (seriesId: string) => void;
@@ -44,7 +43,6 @@ export function LeaderboardTable({
   setPlatformFilter,
   setGenreFilter,
   onSelectBattle,
-  onNavigateToShow,
   watchlistIds = [],
   pendingWatchlistIds = [],
   onToggleWatchlist,

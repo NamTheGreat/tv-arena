@@ -265,4 +265,8 @@ BEGIN
 END;
 $$;
 
+-- 7. Clean up any existing future-dated telemetry row in the database
+DELETE FROM series_daily_telemetry
+WHERE recorded_date > (now() AT TIME ZONE 'UTC')::date;
+
 COMMIT;

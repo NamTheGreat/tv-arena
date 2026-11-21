@@ -165,7 +165,6 @@ function LeaderboardRouteWrapper({
       setPlatformFilter={setPlatformFilter}
       setGenreFilter={setGenreFilter}
       onSelectBattle={(a, b) => navigate(`/arena/${a}/${b}`)}
-      onNavigateToShow={(slug) => navigate(`/show/${slug}`)}
       watchlistIds={watchlistIds}
       pendingWatchlistIds={pendingWatchlistIds}
       onToggleWatchlist={onToggleWatchlist}
@@ -378,13 +377,13 @@ export default function App() {
     }
   }, [user, passwordRecovery]);
 
-  const closeAuthModal = () => {
+  const closeAuthModal = (reason: 'dismiss' | 'success' = 'dismiss') => {
     setIsAuthModalOpen(false);
     setAuthModalMode('signin');
     clearPasswordRecovery();
     if (location.search.includes('password-reset=1') || location.search.includes('mode=update-password')) {
       navigate('/', { replace: true });
-    } else if (!user && location.pathname.startsWith('/watchlist')) {
+    } else if (reason === 'dismiss' && !user && location.pathname.startsWith('/watchlist')) {
       navigate('/', { replace: true });
     }
   };
