@@ -136,7 +136,7 @@ export function TrajectoryChart({
               onClick={() => setCatalogDrawerOpen((prev) => !prev)}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600 hover:text-brand-terracotta transition-colors"
             >
-              <span>{catalogDrawerOpen ? '▲ Hide Catalog Browser' : '▼ Browse All 200+ Series Trajectories'}</span>
+              <span>{catalogDrawerOpen ? '▲ Hide Catalog Browser' : '▼ Browse All Series Trajectories'}</span>
               <span className="text-[10px] text-stone-600 font-normal">
                 ({seriesList.length} total series)
               </span>

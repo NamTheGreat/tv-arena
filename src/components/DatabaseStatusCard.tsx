@@ -150,17 +150,20 @@ export function DatabaseStatusCard({ type, errorMessage, viewWarning, onClose }:
   };
 
   const badge = getStatusBadge(latestRun?.status);
+  const isModal = Boolean(onClose);
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal">
-      <header className="w-full text-center mb-5 sm:mb-8">
-        <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
-          TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
-        </h1>
-        <p className="text-[10px] sm:text-xs uppercase tracking-[0.22em] sm:tracking-[0.24em] text-arena-muted font-semibold mt-1 sm:mt-1.5">
-          Global TV Engagement Intelligence
-        </p>
-      </header>
+    <div className={isModal ? 'w-full' : 'w-full max-w-5xl mx-auto flex flex-col items-center pt-6 sm:pt-10 pb-16 px-4 font-sans text-arena-charcoal'}>
+      {!isModal && (
+        <header className="w-full text-center mb-5 sm:mb-8">
+          <h1 className="text-3xl sm:text-5xl font-serif tracking-tight font-medium text-arena-charcoal">
+            TV <span className="italic text-arena-terracotta font-semibold">Arena</span>
+          </h1>
+          <p className="text-[10px] sm:text-xs uppercase tracking-[0.22em] sm:tracking-[0.24em] text-arena-muted font-semibold mt-1 sm:mt-1.5">
+            Global TV Engagement Intelligence
+          </p>
+        </header>
+      )}
 
       {/* OPERATIONAL HEALTH CARD */}
       <main className="w-full max-w-xl bg-white border border-[#E9E1D3] rounded-[28px] p-6 sm:p-8 shadow-soft-card flex flex-col text-left mb-6 relative">

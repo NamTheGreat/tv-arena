@@ -9,9 +9,20 @@ import { getSignalFreshness, SignalStatus } from '../lib/signalFreshness';
 interface ShowDetailViewProps {
   seriesList: SeriesItem[];
   referenceDate?: string | Date;
+  watchlistIds?: string[];
+  pendingWatchlistIds?: string[];
+  onToggleWatchlist?: (seriesId: string) => void;
+  watchlistError?: string | null;
 }
 
-export function ShowDetailView({ seriesList, referenceDate }: ShowDetailViewProps) {
+export function ShowDetailView({
+  seriesList,
+  referenceDate,
+  watchlistIds = [],
+  pendingWatchlistIds = [],
+  onToggleWatchlist,
+  watchlistError,
+}: ShowDetailViewProps) {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
 
@@ -107,10 +118,31 @@ export function ShowDetailView({ seriesList, referenceDate }: ShowDetailViewProp
             <span className="text-stone-300">·</span>
             <span className="text-xs text-arena-muted">{show.genre_group}</span>
           </div>
-          <h1 className="font-serif text-3xl sm:text-4xl font-medium text-arena-charcoal">
-            {show.title}
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="font-serif text-3xl sm:text-4xl font-medium text-arena-charcoal">
+              {show.title}
+            </h1>
+            {onToggleWatchlist && (
+              <button
+                type="button"
+                aria-label={`${watchlistIds.includes(show.id) ? 'Remove' : 'Add'} ${show.title} ${watchlistIds.includes(show.id) ? 'from' : 'to'} watchlist`}
+                aria-pressed={watchlistIds.includes(show.id)}
+                disabled={pendingWatchlistIds.includes(show.id)}
+                onClick={() => onToggleWatchlist(show.id)}
+                className="rounded-full p-2 text-[#665D53] hover:text-brand-terracotta hover:bg-stone-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-terracotta disabled:opacity-50"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill={watchlistIds.includes(show.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m12 3 2.7 5.47 6.03.88-4.36 4.25 1.03 6.01L12 16.77l-5.4 2.84 1.03-6.01L3.27 9.35l6.03-.88L12 3Z" />
+                </svg>
+              </button>
+            )}
+          </div>
           <p className="text-xs text-arena-faint mt-1">{show.release_years}</p>
+          {watchlistError && (
+            <p role="alert" className="text-xs text-rose-600 font-medium mt-1">
+              {watchlistError}
+            </p>
+          )}
         </div>
 
         {/* Score Card */}

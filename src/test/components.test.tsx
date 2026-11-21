@@ -194,11 +194,13 @@ describe('Core components headless tests', () => {
   });
 
   describe('LeaderboardTable', () => {
+    const renderWithRouter = (ui: React.ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
+
     it('toggles a saved show without activating the row battle link', () => {
       const onSelectBattle = vi.fn();
       const onToggleWatchlist = vi.fn();
 
-      render(
+      renderWithRouter(
         <LeaderboardTable
           rankedShows={mockShows}
           searchTerm=""
@@ -231,7 +233,7 @@ describe('Core components headless tests', () => {
       const staleStoredScoreRow = { current_7d_score: 1_200_000, buzz_score: 0 };
       expect(leaderboardScore(staleStoredScoreRow)).toBe(1_200_000);
 
-      render(
+      renderWithRouter(
         <LeaderboardTable
           rankedShows={[viewOnlyShow]}
           searchTerm=""
@@ -265,7 +267,7 @@ describe('Core components headless tests', () => {
       const onSortChange = vi.fn();
       const onShowMore = vi.fn();
 
-      render(
+      renderWithRouter(
         <LeaderboardTable
           rankedShows={shows}
           searchTerm=""
@@ -301,7 +303,7 @@ describe('Core components headless tests', () => {
       const setGenreFilter = vi.fn();
       const onSelectBattle = vi.fn();
 
-      render(
+      renderWithRouter(
         <LeaderboardTable
           rankedShows={mockShows}
           searchTerm=""
@@ -361,7 +363,7 @@ describe('Core components headless tests', () => {
         delta_pct: null,
       };
 
-      render(
+      renderWithRouter(
         <LeaderboardTable
           rankedShows={[showWithNullDelta]}
           searchTerm=""
@@ -390,7 +392,7 @@ describe('Core components headless tests', () => {
       const createObjectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test');
       const revokeObjectUrlSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
 
-      render(
+      renderWithRouter(
         <LeaderboardTable
           rankedShows={mockShows}
           searchTerm=""

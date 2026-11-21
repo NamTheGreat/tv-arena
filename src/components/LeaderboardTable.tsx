@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { SeriesItem } from '../lib/supabase';
 import { generateLeaderboardCsv, downloadCsv } from '../lib/csvExport';
 
@@ -191,7 +192,13 @@ export function LeaderboardTable({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h2 className="font-serif text-base sm:text-xl text-[#1E1A17] font-medium tracking-tight truncate">
-                        {show.title}
+                        <Link
+                          to={`/show/${show.slug}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:text-brand-terracotta transition-colors focus-visible:outline-none focus-visible:underline"
+                        >
+                          {show.title}
+                        </Link>
                       </h2>
                       {show.is_breakout && (
                         <span

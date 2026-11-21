@@ -361,8 +361,8 @@ BEGIN
   INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   VALUES (v_prediction_show, 999960, 'mover-prediction-eligibility-test', 'Mover Prediction Eligibility Test', 'TestNet', 'Drama', '2026', '#111', 'Mover_Test', 'test', 0);
   INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
-  SELECT v_prediction_show, v_next_week - day_offset, 0, 100, 0, 0
-  FROM generate_series(1, 14) AS days(day_offset);
+  SELECT v_prediction_show, (now() AT TIME ZONE 'UTC')::DATE - day_offset, 0, 100, 0, 0
+  FROM generate_series(0, 13) AS days(day_offset);
 
   SET LOCAL ROLE authenticated;
   PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
@@ -389,7 +389,7 @@ BEGIN
   INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   VALUES (v_zero_prior_show, 999961, 'mover-prediction-zero-prior-test', 'Mover Prediction Zero Prior Test', 'TestNet', 'Drama', '2026', '#111', 'Mover_Zero_Prior_Test', 'test', 0);
   INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
-  SELECT v_zero_prior_show, v_next_week - 7 - day_offset, 0, 0, 0, 0
+  SELECT v_zero_prior_show, (now() AT TIME ZONE 'UTC')::DATE - 7 - day_offset, 0, 0, 0, 0
   FROM generate_series(1, 7) AS days(day_offset);
 
   SET LOCAL ROLE authenticated;
@@ -627,6 +627,67 @@ BEGIN
   END IF;
 
   RAISE NOTICE '✓ Legacy telemetry column resilience verified.';
+END $$;
+
+-- 7. Defensive Anchor Guard & Future-Date Guard
+DO $$
+DECLARE
+  v_score_before BIGINT;
+  v_score_after BIGINT;
+  v_candidates_before BIGINT;
+  v_candidates_after BIGINT;
+  v_future_rejected BOOLEAN := FALSE;
+  v_test_series_id UUID;
+BEGIN
+  RAISE NOTICE 'Testing Defensive Anchor Guard & Future-Date Guard...';
+
+  SELECT id INTO v_test_series_id FROM series LIMIT 1;
+
+  -- Verify trigger blocks future telemetry insertions
+  BEGIN
+    INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score)
+    VALUES (v_test_series_id, (now() AT TIME ZONE 'UTC')::date + INTERVAL '30 days', 9999);
+  EXCEPTION WHEN OTHERS THEN
+    v_future_rejected := TRUE;
+  END;
+
+  IF NOT v_future_rejected THEN
+    RAISE EXCEPTION 'Trigger failed to block future-dated telemetry row';
+  END IF;
+
+  -- Verify views ignore future rows if trigger was disabled / bypassed
+  ALTER TABLE series_daily_telemetry DISABLE TRIGGER trg_check_telemetry_recorded_date;
+
+  SELECT COALESCE(current_7d_score, 0) INTO v_score_before
+  FROM series_leaderboard WHERE id = v_test_series_id;
+  SELECT COUNT(*) INTO v_candidates_before FROM series_deck_candidates;
+
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score)
+  VALUES (v_test_series_id, (now() AT TIME ZONE 'UTC')::date + INTERVAL '365 days', 9999)
+  ON CONFLICT (series_id, recorded_date) DO NOTHING;
+
+  SELECT COALESCE(current_7d_score, 0) INTO v_score_after
+  FROM series_leaderboard WHERE id = v_test_series_id;
+  SELECT COUNT(*) INTO v_candidates_after FROM series_deck_candidates;
+
+  IF v_score_before IS DISTINCT FROM v_score_after THEN
+    RAISE EXCEPTION 'Leaderboard current_7d_score shifted when future row was present: before %, after %',
+      v_score_before, v_score_after;
+  END IF;
+
+  IF v_candidates_before IS DISTINCT FROM v_candidates_after THEN
+    RAISE EXCEPTION 'Deck candidates count shifted when future row was present: before %, after %',
+      v_candidates_before, v_candidates_after;
+  END IF;
+
+  -- Clean up test row and re-enable trigger
+  DELETE FROM series_daily_telemetry
+  WHERE series_id = v_test_series_id
+    AND recorded_date > (now() AT TIME ZONE 'UTC')::date;
+
+  ALTER TABLE series_daily_telemetry ENABLE TRIGGER trg_check_telemetry_recorded_date;
+
+  RAISE NOTICE '✓ Future telemetry rejected by trigger and ignored by rolling views.';
 END $$;
 
 ROLLBACK;
