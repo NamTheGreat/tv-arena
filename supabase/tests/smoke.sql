@@ -361,8 +361,8 @@ BEGIN
   INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   VALUES (v_prediction_show, 999960, 'mover-prediction-eligibility-test', 'Mover Prediction Eligibility Test', 'TestNet', 'Drama', '2026', '#111', 'Mover_Test', 'test', 0);
   INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
-  SELECT v_prediction_show, v_next_week - day_offset, 0, 100, 0, 0
-  FROM generate_series(1, 14) AS days(day_offset);
+  SELECT v_prediction_show, (now() AT TIME ZONE 'UTC')::DATE - day_offset, 0, 100, 0, 0
+  FROM generate_series(0, 13) AS days(day_offset);
 
   SET LOCAL ROLE authenticated;
   PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
@@ -389,7 +389,7 @@ BEGIN
   INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   VALUES (v_zero_prior_show, 999961, 'mover-prediction-zero-prior-test', 'Mover Prediction Zero Prior Test', 'TestNet', 'Drama', '2026', '#111', 'Mover_Zero_Prior_Test', 'test', 0);
   INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
-  SELECT v_zero_prior_show, v_next_week - 7 - day_offset, 0, 0, 0, 0
+  SELECT v_zero_prior_show, (now() AT TIME ZONE 'UTC')::DATE - 7 - day_offset, 0, 0, 0, 0
   FROM generate_series(1, 7) AS days(day_offset);
 
   SET LOCAL ROLE authenticated;
