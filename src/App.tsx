@@ -16,6 +16,7 @@ import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { DailySharePage } from './components/DailySharePage';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
 import { leaderboardScore } from './lib/derivedScore';
+import { isEmbedPath } from './lib/embed';
 import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
 import type { AuthModalMode } from './components/AuthModal';
 import { fetchArenaSnapshot } from './lib/snapshot';
@@ -49,6 +50,9 @@ const TriviaGame = React.lazy(() =>
 );
 const ShowDetailView = React.lazy(() =>
   import('./components/ShowDetailView').then((m) => ({ default: m.ShowDetailView }))
+);
+const EmbedLeaderboard = React.lazy(() =>
+  import('./components/EmbedLeaderboard').then((m) => ({ default: m.EmbedLeaderboard }))
 );
 const NotFoundView = React.lazy(() =>
   import('./components/NotFoundView').then((m) => ({ default: m.NotFoundView }))
@@ -608,6 +612,19 @@ export default function App() {
       <Routes>
         <Route path="/daily/:n" element={<DailySharePage />} />
       </Routes>
+    );
+  }
+
+  // Chrome-less widget for iframes (no header, nav, modals or auth).
+  if (isEmbedPath(location.pathname)) {
+    return (
+      <Suspense fallback={null}>
+        <EmbedLeaderboard
+          seriesList={seriesList}
+          isLoading={isLoading}
+          error={dbError ?? (!isSupabaseConfigured && seriesList.length === 0 ? 'unavailable' : null)}
+        />
+      </Suspense>
     );
   }
 
