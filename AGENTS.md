@@ -15,6 +15,8 @@
 - **Commit Preservation Invariant (No Squash):**
   - **Preserve Full Commit History:** NEVER use squash merging (`--squash` or GitHub "Squash and merge"). All individual commits must be preserved across all branches (`dev`, `main`).
   - **Permitted Merge Strategies:** Always merge using standard merge commits (`gh pr merge <PR> --merge` or `git merge --no-ff`) or rebase merges (`gh pr merge <PR> --rebase`).
+- **Branch Preservation Invariant (Never Delete Branches):**
+  - **NEVER Delete Branches:** NEVER delete branches upon merge (`--delete-branch` is strictly prohibited). All branch heads must remain intact and preserved in the repository after merging.
 - **Push Invariants:**
   - **NEVER** push directly to `main` (production). Pushing directly to `dev` is allowed when the user explicitly requests to commit/push on dev.
   - **NEVER** execute force pushes (`--force` or `-f`).
@@ -31,7 +33,7 @@ Whenever the user instructs "Do the PRs", "do the prs", or requests PR review/me
 
 2. **Happy Path (CI Green & Clean Diff):**
    - Submit pending review with `APPROVE` via `gh api repos/:owner/:repo/pulls/<PR>/reviews` (or `COMMENT` if self-review restriction applies).
-   - Merge into `dev` preserving individual commits using `gh pr merge <PR> --merge --delete-branch`.
+   - Merge into `dev` preserving all individual commits and branch heads using `gh pr merge <PR> --merge` (NEVER include `--delete-branch`).
    - Pull latest `dev` locally to stay synchronized: `git pull origin dev`.
 
 3. **Failure Path (Failing Checks, Compilation Errors, or Red Flags):**
