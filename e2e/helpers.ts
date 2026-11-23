@@ -32,8 +32,10 @@ export async function mockSupabase(page: Page, dailyDeckLength = shows.length) {
       body = [{
         id: '00000000-0000-0000-0000-0000000000c1', user_id: '00000000-0000-0000-0000-0000000000u1',
         body: 'Absolutely deserves the top spot.', created_at: '2026-11-23T10:00:00Z', updated_at: '2026-11-23T10:00:00Z',
-        profiles: { username: 'test_pilot', display_name: 'Test Pilot', best_streak: 5 },
+        profiles: { username: 'test_pilot', display_name: 'Test Pilot' },
       }];
+    } else if (path.endsWith('/rpc/get_profile_stats')) {
+      body = [{ user_id: '00000000-0000-0000-0000-0000000000u1', current_streak: 2, best_streak: 5 }];
     } else if (path.endsWith('/daily_challenges')) {
       body = [{ series_ids: shows.slice(0, dailyDeckLength).map((show) => show.id) }];
     } else if (path.endsWith('/rpc/get_daily_score_share')) {

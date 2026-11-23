@@ -546,6 +546,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      get_profile_stats: {
+        Args: { p_user_ids: string[] }
+        Returns: Json
+      }
       submit_mover_prediction: {
         Args: {
           p_week_start: string

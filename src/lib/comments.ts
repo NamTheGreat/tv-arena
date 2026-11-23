@@ -67,10 +67,10 @@ interface CommentRow {
   body: string;
   created_at: string;
   updated_at: string;
-  profiles: { username: string; display_name: string | null; best_streak: number } | null;
+  profiles: { username: string; display_name: string | null } | null;
 }
 
-export function toShowComment(row: CommentRow): ShowComment {
+export function toShowComment(row: CommentRow, bestStreaks: Map<string, number> = new Map()): ShowComment {
   return {
     id: row.id,
     user_id: row.user_id,
@@ -79,11 +79,31 @@ export function toShowComment(row: CommentRow): ShowComment {
     updated_at: row.updated_at,
     username: row.profiles?.username ?? 'unknown',
     display_name: row.profiles?.display_name ?? null,
-    best_streak: row.profiles?.best_streak ?? 0,
+    best_streak: bestStreaks.get(row.user_id) ?? 0,
   };
 }
 
-const SELECT = 'id, user_id, body, created_at, updated_at, profiles!inner(username, display_name, best_streak)';
+const SELECT = 'id, user_id, body, created_at, updated_at, profiles!inner(username, display_name)';
+
+/**
+ * Streaks are private to profiles that chose followers-only stats, so badges come from the
+ * privacy-aware get_profile_stats RPC. Any failure just means no badges.
+ */
+async function loadBestStreaks(userIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const ids = [...new Set(userIds)].slice(0, 100);
+  if (!ids.length || !supabase) return map;
+  try {
+    const { data, error } = await supabase.rpc('get_profile_stats', { p_user_ids: ids });
+    if (error || !Array.isArray(data)) return map;
+    for (const row of data as unknown as { user_id: string; best_streak: number }[]) {
+      map.set(row.user_id, Number(row.best_streak) || 0);
+    }
+  } catch {
+    // badges are optional
+  }
+  return map;
+}
 
 function requireClient() {
   if (!isSupabaseConfigured || !supabase) throw new Error('Comments need a live database connection.');
@@ -101,7 +121,9 @@ export async function fetchComments(seriesId: string, offset = 0): Promise<{ com
     .range(offset, offset + COMMENTS_PAGE_SIZE); // one extra row tells us whether another page exists
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as unknown as CommentRow[];
-  return { comments: rows.slice(0, COMMENTS_PAGE_SIZE).map(toShowComment), hasMore: rows.length > COMMENTS_PAGE_SIZE };
+  const page = rows.slice(0, COMMENTS_PAGE_SIZE);
+  const streaks = await loadBestStreaks(page.map((r) => r.user_id));
+  return { comments: page.map((r) => toShowComment(r, streaks)), hasMore: rows.length > COMMENTS_PAGE_SIZE };
 }
 
 export async function postComment(seriesId: string, userId: string, body: string): Promise<ShowComment> {
@@ -112,7 +134,8 @@ export async function postComment(seriesId: string, userId: string, body: string
     .select(SELECT)
     .single();
   if (error) throw new Error(friendlyError(error.message));
-  return toShowComment(data as unknown as CommentRow);
+  const row = data as unknown as CommentRow;
+  return toShowComment(row, await loadBestStreaks([row.user_id]));
 }
 
 export async function updateComment(id: string, body: string): Promise<ShowComment> {
@@ -124,7 +147,8 @@ export async function updateComment(id: string, body: string): Promise<ShowComme
     .select(SELECT)
     .single();
   if (error) throw new Error(friendlyError(error.message));
-  return toShowComment(data as unknown as CommentRow);
+  const row = data as unknown as CommentRow;
+  return toShowComment(row, await loadBestStreaks([row.user_id]));
 }
 
 export async function deleteComment(id: string): Promise<void> {
