@@ -777,6 +777,7 @@ export default function App() {
                 pendingWatchlistIds={watchlist.pendingSeriesIds}
                 onToggleWatchlist={user ? watchlist.toggle : () => setIsAuthModalOpen(true)}
                 watchlistError={watchlist.error}
+                onOpenAuth={() => setIsAuthModalOpen(true)}
               />
             }
           />
