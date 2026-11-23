@@ -944,6 +944,230 @@ BEGIN
   RAISE NOTICE '✓ Hall of Fame records verified (math, ties, streaks, limited history, RLS).';
 END $$;
 
+-- 10. Follows, privacy and friends leaderboard (#192)
+DO $$
+DECLARE
+  a UUID := gen_random_uuid(); b UUID := gen_random_uuid(); c UUID := gen_random_uuid();
+  d UUID := gen_random_uuid(); e UUID := gen_random_uuid(); f UUID := gen_random_uuid();
+  g UUID := gen_random_uuid();
+  v_n INT; v_ok BOOLEAN; v_row RECORD; v_status TEXT;
+  v_updated_before TIMESTAMPTZ; v_updated_after TIMESTAMPTZ;
+  v_day DATE := '2019-05-01';
+BEGIN
+  RAISE NOTICE 'Testing follows and privacy...';
+  INSERT INTO auth.users (id, email) VALUES
+    (a, 'fa@example.com'), (b, 'fb@example.com'), (c, 'fc@example.com'), (d, 'fd@example.com'),
+    (e, 'fe@example.com'), (f, 'ff@example.com'), (g, 'fg@example.com');
+  UPDATE profiles SET username = 'fx_a', current_streak = 3, best_streak = 905 WHERE id = a;
+  UPDATE profiles SET username = 'fx_b', current_streak = 8, best_streak = 908 WHERE id = b;
+  UPDATE profiles SET username = 'fx_c', current_streak = 2, best_streak = 910, stats_visibility = 'followers' WHERE id = c;
+  UPDATE profiles SET username = 'fx_d', current_streak = 4, best_streak = 904 WHERE id = d;
+  UPDATE profiles SET username = 'fx_e', current_streak = 1, best_streak = 901 WHERE id = e;
+  UPDATE profiles SET username = 'fx_f', current_streak = 1, best_streak = 1 WHERE id = f;
+  UPDATE profiles SET username = 'fx_g', current_streak = 1, best_streak = 1, stats_visibility = 'followers' WHERE id = g;
+
+  INSERT INTO user_scores (user_id, date, score, completed_at) VALUES
+    (a, v_day, 7, '2019-05-01 12:00Z'), (a, v_day + 1, 5, '2019-05-02 12:00Z'), (a, v_day + 2, 8, '2019-05-03 12:00Z'),
+    (b, v_day, 9, '2019-05-01 10:00Z'), (b, v_day + 1, 5, '2019-05-02 10:00Z'), (b, v_day + 2, 6, '2019-05-03 10:00Z'),
+    (c, v_day, 9, '2019-05-01 09:00Z');
+
+  -- anon cannot touch follows
+  SET LOCAL ROLE anon;
+  v_ok := FALSE;
+  BEGIN PERFORM 1 FROM user_follows; EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  RESET ROLE;
+  IF NOT v_ok THEN RAISE EXCEPTION 'anon must not read user_follows'; END IF;
+  IF has_function_privilege('anon', 'public.profiles_accept_pending_on_public()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'trigger function must not be directly executable by anon';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.profiles_set_updated_at()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'timestamp trigger function must not be directly executable';
+  END IF;
+  IF has_table_privilege('anon', 'public.profiles', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.profiles', 'UPDATE')
+     OR has_table_privilege('anon', 'public.profiles', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.profiles', 'INSERT')
+     OR has_column_privilege('authenticated', 'public.profiles', 'current_streak', 'UPDATE')
+     OR has_column_privilege('authenticated', 'public.profiles', 'best_streak', 'UPDATE') THEN
+    RAISE EXCEPTION 'profile table writes must be limited to explicitly granted columns';
+  END IF;
+
+  -- Username edits must work without granting direct updated_at writes; the trigger owns that column.
+  SELECT updated_at INTO v_updated_before FROM profiles WHERE id = a;
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
+  SET LOCAL ROLE authenticated;
+  UPDATE profiles SET username = 'fx_a' WHERE id = a;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RESET ROLE;
+  SELECT updated_at INTO v_updated_after FROM profiles WHERE id = a;
+  IF v_n <> 1 OR v_updated_after <= v_updated_before THEN
+    RAISE EXCEPTION 'authorized profile update must succeed and advance updated_at';
+  END IF;
+  SET LOCAL ROLE authenticated;
+  v_ok := FALSE;
+  BEGIN
+    UPDATE profiles SET updated_at = clock_timestamp() WHERE id = a;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  RESET ROLE;
+  IF NOT v_ok THEN RAISE EXCEPTION 'clients must not write profile updated_at directly'; END IF;
+
+  -- A follows B (public -> accepted) and C (followers-only -> pending)
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
+  SET LOCAL ROLE authenticated;
+  INSERT INTO user_follows (follower_id, followee_id) VALUES (a, b), (a, c), (a, d), (a, f), (a, g);
+  SELECT status INTO v_status FROM user_follows WHERE follower_id = a AND followee_id = b;
+  IF v_status <> 'accepted' THEN RESET ROLE; RAISE EXCEPTION 'follow of a public profile must be accepted, got %', v_status; END IF;
+  SELECT status INTO v_status FROM user_follows WHERE follower_id = a AND followee_id = c;
+  IF v_status <> 'pending' THEN RESET ROLE; RAISE EXCEPTION 'follow of a followers-only profile must be pending, got %', v_status; END IF;
+
+  -- no self follow, no forged follower, no self-approval, no status on insert
+  v_ok := FALSE;
+  BEGIN INSERT INTO user_follows (follower_id, followee_id) VALUES (a, a);
+  EXCEPTION WHEN check_violation OR insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'self follow must be rejected'; END IF;
+  v_ok := FALSE;
+  BEGIN INSERT INTO user_follows (follower_id, followee_id) VALUES (b, e);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'forged follower_id must be rejected'; END IF;
+  UPDATE user_follows SET status = 'accepted' WHERE follower_id = a AND followee_id = c;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 0 THEN RESET ROLE; RAISE EXCEPTION 'follower must not approve own request'; END IF;
+  v_ok := FALSE;
+  BEGIN EXECUTE 'INSERT INTO user_follows (follower_id, followee_id, status) VALUES ($1, $2, ''accepted'')' USING a, e;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'status must not be insertable'; END IF;
+
+  -- stats columns are hidden from direct reads; usernames are not
+  v_ok := FALSE;
+  BEGIN EXECUTE 'SELECT current_streak FROM profiles LIMIT 1'; EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'streak columns must not be directly readable'; END IF;
+  PERFORM username FROM profiles LIMIT 1;
+
+  -- visibility matrix from A's view: self, public, pending followers-only, accepted
+  IF NOT (EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[a])) AND EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[b])) AND EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[d]))) THEN RESET ROLE; RAISE EXCEPTION 'public and own stats must be visible'; END IF;
+  IF EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[c])) THEN RESET ROLE; RAISE EXCEPTION 'pending request must not unlock followers-only stats'; END IF;
+
+  -- head to head: hidden while pending, visible stats for public opponent with correct aggregates
+  SELECT * INTO v_row FROM head_to_head('fx_c', v_day);
+  IF v_row.visible OR v_row.their_best_streak IS NOT NULL THEN RESET ROLE; RAISE EXCEPTION 'head_to_head must hide followers-only stats'; END IF;
+  SELECT * INTO v_row FROM head_to_head('FX_B ', v_day);
+  IF NOT v_row.visible OR v_row.shared_days <> 3 OR v_row.my_wins <> 1 OR v_row.their_wins <> 1 OR v_row.ties <> 1
+     OR v_row.my_score_today <> 7 OR v_row.their_score_today <> 9
+     OR v_row.my_current_streak <> 3 OR v_row.their_current_streak <> 8 OR v_row.their_best_streak <> 908 THEN
+    RESET ROLE; RAISE EXCEPTION 'head_to_head aggregates wrong: %', v_row;
+  END IF;
+  SELECT * INTO v_row FROM head_to_head('fx_d', v_day);
+  IF NOT v_row.visible OR v_row.shared_days <> 0 OR v_row.my_wins <> 0 THEN RESET ROLE; RAISE EXCEPTION 'no shared days must give zero counts'; END IF;
+  IF EXISTS (SELECT 1 FROM head_to_head('fx_a', v_day)) OR EXISTS (SELECT 1 FROM head_to_head('nobody_here', v_day)) THEN
+    RESET ROLE; RAISE EXCEPTION 'head_to_head must return nothing for self or unknown users';
+  END IF;
+
+  -- public leaderboard hides C (followers-only, not accepted) from A
+  IF EXISTS (SELECT 1 FROM daily_leaderboard(v_day) WHERE username = 'fx_c') THEN RESET ROLE; RAISE EXCEPTION 'followers-only player leaked into daily leaderboard'; END IF;
+  IF EXISTS (SELECT 1 FROM streak_leaderboard() WHERE username = 'fx_c') THEN RESET ROLE; RAISE EXCEPTION 'followers-only player leaked into streak leaderboard'; END IF;
+  RESET ROLE;
+  SET LOCAL ROLE anon;
+  IF EXISTS (SELECT 1 FROM daily_leaderboard(v_day) WHERE username = 'fx_c') THEN RESET ROLE; RAISE EXCEPTION 'followers-only player leaked to anon'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM daily_leaderboard(v_day) WHERE username = 'fx_b') THEN RESET ROLE; RAISE EXCEPTION 'public players must stay on the leaderboard'; END IF;
+  IF EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[c, g])) OR NOT EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[b])) THEN RESET ROLE; RAISE EXCEPTION 'get_profile_stats must respect privacy for anon'; END IF;
+  v_ok := FALSE;
+  BEGIN PERFORM friends_leaderboard(v_day); EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'anon must not call friends_leaderboard'; END IF;
+  RESET ROLE;
+
+  -- C sees the request, accepts it; A cannot see unrelated follows
+  PERFORM set_config('request.jwt.claim.sub', c::text, true);
+  SET LOCAL ROLE authenticated;
+  SELECT COUNT(*) INTO v_n FROM user_follows;
+  IF v_n <> 1 THEN RESET ROLE; RAISE EXCEPTION 'C should only see the one request addressed to them, saw %', v_n; END IF;
+  UPDATE user_follows SET status = 'accepted' WHERE followee_id = c AND follower_id = a AND status = 'pending';
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 1 THEN RESET ROLE; RAISE EXCEPTION 'followee could not accept request'; END IF;
+  -- followee cannot set arbitrary statuses back or edit other columns
+  v_ok := FALSE;
+  BEGIN EXECUTE 'UPDATE user_follows SET follower_id = $1 WHERE followee_id = $2' USING e, c;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'follower_id must not be updatable'; END IF;
+  -- cannot edit someone else's privacy; own value validated
+  UPDATE profiles SET stats_visibility = 'public' WHERE id = a;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 0 THEN RESET ROLE; RAISE EXCEPTION 'users must not change other profiles'; END IF;
+  v_ok := FALSE;
+  BEGIN UPDATE profiles SET stats_visibility = 'friends' WHERE id = c; EXCEPTION WHEN check_violation THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'invalid stats_visibility accepted'; END IF;
+  RESET ROLE;
+
+  -- B and E follow A back (mutual with B; E is a follower A does not follow)
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
+  SET LOCAL ROLE authenticated; INSERT INTO user_follows (follower_id, followee_id) VALUES (b, a); RESET ROLE;
+  PERFORM set_config('request.jwt.claim.sub', e::text, true);
+  SET LOCAL ROLE authenticated; INSERT INTO user_follows (follower_id, followee_id) VALUES (e, a); RESET ROLE;
+
+  -- friends leaderboard for A: A, B, C (accepted), D, F, but not E or the pending G
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
+  SET LOCAL ROLE authenticated;
+  IF NOT EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[c])) THEN RESET ROLE; RAISE EXCEPTION 'accepted follower must see followers-only stats'; END IF;
+  SELECT COUNT(*) INTO v_n FROM friends_leaderboard(v_day);
+  IF v_n <> 5 THEN RESET ROLE; RAISE EXCEPTION 'friends circle should have 5 members, got %', v_n; END IF;
+  IF EXISTS (SELECT 1 FROM friends_leaderboard(v_day) WHERE username IN ('fx_e', 'fx_g')) THEN RESET ROLE; RAISE EXCEPTION 'followers and pending requests are not friends'; END IF;
+  -- C and B tie on 9; C completed earlier so ranks 1; A (7) ranks 3; D and F have no score
+  IF (SELECT daily_rank FROM friends_leaderboard(v_day) WHERE username = 'fx_c') <> 1
+     OR (SELECT daily_rank FROM friends_leaderboard(v_day) WHERE username = 'fx_b') <> 2
+     OR (SELECT daily_rank FROM friends_leaderboard(v_day) WHERE username = 'fx_a') <> 3
+     OR EXISTS (SELECT 1 FROM friends_leaderboard(v_day) WHERE username IN ('fx_d', 'fx_f') AND (daily_rank IS NOT NULL OR score IS NOT NULL)) THEN
+    RESET ROLE; RAISE EXCEPTION 'daily friend ranks wrong';
+  END IF;
+  -- streak ranks: B 8, D 4, A 3, C 2, F 1
+  IF (SELECT array_agg(username ORDER BY streak_rank) FROM friends_leaderboard(v_day)) IS DISTINCT FROM ARRAY['fx_b','fx_d','fx_a','fx_c','fx_f'] THEN
+    RESET ROLE; RAISE EXCEPTION 'streak ranks wrong';
+  END IF;
+  IF NOT (SELECT is_self FROM friends_leaderboard(v_day) WHERE username = 'fx_a')
+     OR NOT (SELECT is_mutual FROM friends_leaderboard(v_day) WHERE username = 'fx_b')
+     OR (SELECT is_mutual FROM friends_leaderboard(v_day) WHERE username = 'fx_c')
+     OR (SELECT is_mutual FROM friends_leaderboard(v_day) WHERE username = 'fx_a') THEN
+    RESET ROLE; RAISE EXCEPTION 'is_self / is_mutual flags wrong';
+  END IF;
+  -- now that C is accepted, head to head works and C shows on the public board for A
+  IF NOT (SELECT visible FROM head_to_head('fx_c', v_day)) THEN RESET ROLE; RAISE EXCEPTION 'accepted follow must unlock head_to_head'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM daily_leaderboard(v_day) WHERE username = 'fx_c') THEN RESET ROLE; RAISE EXCEPTION 'accepted follower should see C on leaderboard'; END IF;
+  RESET ROLE;
+
+  -- switching G to public resolves its pending request
+  PERFORM set_config('request.jwt.claim.sub', g::text, true);
+  SET LOCAL ROLE authenticated;
+  UPDATE profiles SET stats_visibility = 'public' WHERE id = g;
+  RESET ROLE;
+  IF (SELECT status FROM user_follows WHERE follower_id = a AND followee_id = g) <> 'accepted' THEN
+    RAISE EXCEPTION 'going public must accept pending requests';
+  END IF;
+
+  -- either side can end a follow: E removes follower... A removes own follow of D, B removes A's follow of B
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
+  SET LOCAL ROLE authenticated;
+  DELETE FROM user_follows WHERE follower_id = a AND followee_id = b;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RESET ROLE;
+  IF v_n <> 1 THEN RAISE EXCEPTION 'followee must be able to remove a follower'; END IF;
+  PERFORM set_config('request.jwt.claim.sub', d::text, true);
+  SET LOCAL ROLE authenticated;
+  DELETE FROM user_follows WHERE follower_id = a AND followee_id = f;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RESET ROLE;
+  IF v_n <> 0 THEN RAISE EXCEPTION 'unrelated users must not delete follows'; END IF;
+
+  -- follow limit: 200 per follower
+  INSERT INTO auth.users (id, email) SELECT gen_random_uuid(), 'lim' || n || '@example.com' FROM generate_series(1, 200) n;
+  INSERT INTO user_follows (follower_id, followee_id)
+    SELECT e, p.id FROM profiles p WHERE p.id NOT IN (e, a) AND p.username <> 'fx_c' ORDER BY p.id LIMIT 199;
+  v_ok := FALSE;
+  BEGIN INSERT INTO user_follows (follower_id, followee_id) SELECT e, p.id FROM profiles p
+    WHERE p.id NOT IN (e) AND NOT EXISTS (SELECT 1 FROM user_follows u WHERE u.follower_id = e AND u.followee_id = p.id) LIMIT 2;
+  EXCEPTION WHEN raise_exception THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RAISE EXCEPTION 'follow limit did not trigger'; END IF;
+
+  RAISE NOTICE '✓ Follows, privacy and friends leaderboard verified.';
+END $$;
+
 ROLLBACK;
 
 \echo '===================================='

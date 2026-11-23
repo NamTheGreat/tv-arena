@@ -283,6 +283,7 @@ export type Database = {
           last_played_date: string | null
           created_at: string | null
           updated_at: string | null
+          stats_visibility: 'public' | 'followers'
         }
         Insert: {
           id: string
@@ -303,8 +304,40 @@ export type Database = {
           last_played_date?: string | null
           created_at?: string | null
           updated_at?: string | null
+          stats_visibility?: 'public' | 'followers'
         }
         Relationships: []
+      }
+      user_follows: {
+        Row: {
+          follower_id: string
+          followee_id: string
+          status: 'pending' | 'accepted'
+          created_at: string
+        }
+        Insert: {
+          follower_id: string
+          followee_id: string
+        }
+        Update: {
+          status?: 'pending' | 'accepted'
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_follows_follower_id_fkey"
+            columns: ["follower_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_follows_followee_id_fkey"
+            columns: ["followee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       series_comments: {
         Row: {
@@ -559,6 +592,14 @@ export type Database = {
       }
       streak_leaderboard: {
         Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      friends_leaderboard: {
+        Args: { p_date: string }
+        Returns: Json
+      }
+      head_to_head: {
+        Args: { p_username: string; p_date: string }
         Returns: Json
       }
       get_profile_stats: {
