@@ -807,6 +807,8 @@ BEGIN
   IF v_n <> 1 THEN RAISE EXCEPTION 'author could not delete own comment'; END IF;
 
   RAISE NOTICE '✓ Show comments verified (RLS, validation, spam brake).';
+END $$;
+
 -- 9. Hall of Fame records: score math, ties, streaks, limited history, RLS
 DO $$
 DECLARE
