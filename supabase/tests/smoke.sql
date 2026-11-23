@@ -697,6 +697,7 @@ DECLARE
   d UUID := gen_random_uuid(); e UUID := gen_random_uuid(); f UUID := gen_random_uuid();
   g UUID := gen_random_uuid();
   v_n INT; v_ok BOOLEAN; v_row RECORD; v_status TEXT;
+  v_updated_before TIMESTAMPTZ; v_updated_after TIMESTAMPTZ;
   v_day DATE := '2019-05-01';
 BEGIN
   RAISE NOTICE 'Testing follows and privacy...';
@@ -722,6 +723,28 @@ BEGIN
   BEGIN PERFORM 1 FROM user_follows; EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
   RESET ROLE;
   IF NOT v_ok THEN RAISE EXCEPTION 'anon must not read user_follows'; END IF;
+  IF has_function_privilege('anon', 'public.profiles_accept_pending_on_public()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'trigger function must not be directly executable by anon';
+  END IF;
+
+  -- Username edits must work without granting direct updated_at writes; the trigger owns that column.
+  SELECT updated_at INTO v_updated_before FROM profiles WHERE id = a;
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
+  SET LOCAL ROLE authenticated;
+  UPDATE profiles SET username = 'fx_a' WHERE id = a;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RESET ROLE;
+  SELECT updated_at INTO v_updated_after FROM profiles WHERE id = a;
+  IF v_n <> 1 OR v_updated_after <= v_updated_before THEN
+    RAISE EXCEPTION 'authorized profile update must succeed and advance updated_at';
+  END IF;
+  SET LOCAL ROLE authenticated;
+  v_ok := FALSE;
+  BEGIN
+    UPDATE profiles SET updated_at = clock_timestamp() WHERE id = a;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  RESET ROLE;
+  IF NOT v_ok THEN RAISE EXCEPTION 'clients must not write profile updated_at directly'; END IF;
 
   -- A follows B (public -> accepted) and C (followers-only -> pending)
   PERFORM set_config('request.jwt.claim.sub', a::text, true);

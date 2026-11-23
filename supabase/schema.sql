@@ -860,6 +860,22 @@ GRANT SELECT (id, username, display_name, created_at, updated_at, stats_visibili
   ON public.profiles TO anon, authenticated;
 GRANT UPDATE (username, display_name, stats_visibility) ON public.profiles TO authenticated;
 
+CREATE OR REPLACE FUNCTION public.profiles_set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  NEW.updated_at := clock_timestamp();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS profiles_set_updated_at_trg ON public.profiles;
+CREATE TRIGGER profiles_set_updated_at_trg
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.profiles_set_updated_at();
+
 -- 2. Follows ----------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.user_follows (
   follower_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -915,6 +931,8 @@ DROP TRIGGER IF EXISTS profiles_accept_pending_trg ON public.profiles;
 CREATE TRIGGER profiles_accept_pending_trg
   AFTER UPDATE OF stats_visibility ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.profiles_accept_pending_on_public();
+
+REVOKE ALL ON FUNCTION public.profiles_accept_pending_on_public() FROM PUBLIC, anon, authenticated;
 
 ALTER TABLE public.user_follows ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.user_follows FROM anon, authenticated;
