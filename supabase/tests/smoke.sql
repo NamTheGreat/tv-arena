@@ -806,6 +806,11 @@ BEGIN
   END IF;
 
   -- RLS: public read works for anon, writes through the view do not.
+  IF has_table_privilege('anon', 'public.series_hall_of_fame', 'INSERT')
+     OR has_table_privilege('anon', 'public.series_hall_of_fame', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.series_hall_of_fame', 'DELETE') THEN
+    RAISE EXCEPTION 'Hall of Fame view must not grant write privileges';
+  END IF;
   SET LOCAL ROLE anon;
   SELECT COUNT(*) INTO v_n FROM series_hall_of_fame WHERE series_id = v_a;
   IF v_n < 1 THEN RAISE EXCEPTION 'anon must be able to read the hall of fame'; END IF;

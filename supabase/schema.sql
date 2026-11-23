@@ -964,4 +964,5 @@ SELECT category, place, record_rank, series_id, slug, title, chart_color, value,
 FROM ordered
 WHERE place <= 10;
 
+REVOKE ALL ON series_hall_of_fame FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT ON series_hall_of_fame TO anon, authenticated;
