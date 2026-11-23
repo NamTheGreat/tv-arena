@@ -130,9 +130,12 @@ jobs:
               IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN
                 CREATE ROLE authenticated NOLOGIN;
               END IF;
+              IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'service_role') THEN
+                CREATE ROLE service_role NOLOGIN;
+              END IF;
             END $$;
             CREATE SCHEMA IF NOT EXISTS auth;
-            GRANT USAGE ON SCHEMA public, auth TO anon, authenticated;
+            GRANT USAGE ON SCHEMA public, auth TO anon, authenticated, service_role;
             ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
             ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated;
             ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;
