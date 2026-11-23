@@ -67,10 +67,10 @@ jobs:
           echo "Timed out waiting for required checks to pass."
           exit 1
 
-      - name: Enable squash auto-merge
+      - name: Enable auto-merge (merge commit)
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr merge "$PR_URL" --auto --squash --delete-branch
+          gh pr merge "$PR_URL" --auto --merge --delete-branch
