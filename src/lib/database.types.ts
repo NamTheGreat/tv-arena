@@ -306,6 +306,45 @@ export type Database = {
         }
         Relationships: []
       }
+      series_comments: {
+        Row: {
+          id: string
+          series_id: string
+          user_id: string
+          body: string
+          status: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          series_id: string
+          user_id: string
+          body: string
+          status?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "series_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_comments_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       user_watchlist: {
         Row: {
           user_id: string
@@ -520,6 +559,10 @@ export type Database = {
       }
       streak_leaderboard: {
         Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      get_profile_stats: {
+        Args: { p_user_ids: string[] }
         Returns: Json
       }
       submit_mover_prediction: {
