@@ -855,8 +855,7 @@ WITH scores AS (
   -- Derived daily scores only (never the stored column); future dates are ignored defensively.
   SELECT d.series_id, d.recorded_date, d.daily_score
   FROM series_daily_scores d
-  WHERE d.daily_score > 0
-    AND d.recorded_date <= (now() AT TIME ZONE 'UTC')::date
+  WHERE d.recorded_date <= (now() AT TIME ZONE 'UTC')::date
 ), daily_ranked AS (
   -- Same tie-break as series_recent_telemetry: score DESC, then title ASC.
   SELECT
@@ -871,6 +870,7 @@ WITH scores AS (
   SELECT DISTINCT ON (series_id)
     series_id, daily_score AS value, recorded_date AS start_date, recorded_date AS end_date
   FROM scores
+  WHERE daily_score > 0
   ORDER BY series_id, daily_score DESC, recorded_date ASC
 ), top3_days AS (
   -- Rank credits need at least 4 contending shows that day, otherwise "top 3" is meaningless.

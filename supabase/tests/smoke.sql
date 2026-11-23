@@ -723,6 +723,7 @@ BEGIN
       WHEN s.id = v_b AND d::DATE = '2019-03-08' THEN 2000
       WHEN s.id = v_c AND d::DATE = '2019-03-12' THEN 4000
       WHEN s.id = v_d AND d::DATE = '2019-03-13' THEN 4000
+      WHEN s.id = v_d AND d::DATE = '2019-03-04' THEN 0
       WHEN s.id = v_a THEN 1000
       WHEN s.id = v_b THEN 900
       WHEN s.id = v_c THEN 800

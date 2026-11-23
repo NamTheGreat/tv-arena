@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import {
@@ -10,6 +10,8 @@ import {
   HALL_OF_FAME_CATEGORIES,
 } from '../lib/hallOfFame';
 import { HallOfFameView } from '../components/HallOfFameView';
+
+vi.mock('../lib/supabase', () => ({ isSupabaseConfigured: false, supabase: null }));
 
 const row = (over: Partial<HallOfFameRow>): HallOfFameRow => ({
   category: 'record_day', place: 1, record_rank: 1, series_id: 'a', slug: 'a', title: 'A',
