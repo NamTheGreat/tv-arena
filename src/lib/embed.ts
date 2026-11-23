@@ -77,5 +77,7 @@ export function buildSparklinePoints(values: number[], width: number, height: nu
 
 /** Only accept plain hex colours from data before putting them in an SVG attribute. */
 export function safeChartColor(color: string | null | undefined, fallback = '#C66A3D'): string {
-  return color && /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : fallback;
+  return color && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(color)
+    ? color
+    : fallback;
 }

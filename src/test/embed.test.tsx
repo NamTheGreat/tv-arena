@@ -108,7 +108,11 @@ describe('sparkline helpers', () => {
   });
 
   it('only allows hex colours into SVG attributes', () => {
-    expect(safeChartColor('#aabbcc')).toBe('#aabbcc');
+    for (const color of ['#abc', '#abcd', '#aabbcc', '#aabbccdd']) {
+      expect(safeChartColor(color)).toBe(color);
+    }
+    expect(safeChartColor('#abcde')).toBe('#C66A3D');
+    expect(safeChartColor('#abcdefg')).toBe('#C66A3D');
     expect(safeChartColor('red" onload="x')).toBe('#C66A3D');
     expect(safeChartColor(null)).toBe('#C66A3D');
   });
