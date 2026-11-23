@@ -20,3 +20,18 @@ assert.match(headers, /script-src 'self' https:\/\/challenges\.cloudflare\.com/)
 assert.match(headers, /frame-src https:\/\/challenges\.cloudflare\.com/);
 assert.ok(headers.includes('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()'));
 console.log('Report-Only CSP and Permissions-Policy verified.');
+
+// Embed widget (#189): only /embed paths may be framed by other sites.
+const blocks = headers.split(/\n(?=\S)/).map((block) => block.trim()).filter(Boolean);
+const globalBlock = blocks.find((block) => block.startsWith('/*'));
+assert.ok(globalBlock && /^\s*X-Frame-Options: DENY/m.test(globalBlock), 'expected global X-Frame-Options: DENY');
+assert.match(globalBlock, /frame-ancestors 'none'/);
+for (const path of ['/embed', '/embed/*']) {
+  const block = blocks.find((candidate) => candidate.split('\n')[0].trim() === path);
+  assert.ok(block, `expected a header rule for ${path}`);
+  assert.match(block, /^\s*! X-Frame-Options\s*$/m, `expected ${path} to detach X-Frame-Options`);
+  assert.match(block, /^\s*! Content-Security-Policy-Report-Only\s*$/m, `expected ${path} to detach the frame-ancestors CSP`);
+  assert.doesNotMatch(block, /^\s*X-Frame-Options:/m);
+}
+assert.equal((headers.match(/^\s*! X-Frame-Options\s*$/gm) || []).length, 2, 'only the two embed rules may detach X-Frame-Options');
+console.log('Embed iframe header exceptions verified.');
