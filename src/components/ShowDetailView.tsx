@@ -5,6 +5,7 @@ import { calculateEventX, sampleDailyValues, buildMobileChartGeometry } from '..
 import { sampleDailyRanks, buildMobileRankChartGeometry } from '../lib/historicalRank';
 import { findSimilarShows } from '../lib/showDetail';
 import { getSignalFreshness, SignalStatus } from '../lib/signalFreshness';
+import { ShowComments } from './ShowComments';
 
 interface ShowDetailViewProps {
   seriesList: SeriesItem[];
@@ -13,6 +14,7 @@ interface ShowDetailViewProps {
   pendingWatchlistIds?: string[];
   onToggleWatchlist?: (seriesId: string) => void;
   watchlistError?: string | null;
+  onOpenAuth?: () => void;
 }
 
 export function ShowDetailView({
@@ -22,6 +24,7 @@ export function ShowDetailView({
   pendingWatchlistIds = [],
   onToggleWatchlist,
   watchlistError,
+  onOpenAuth,
 }: ShowDetailViewProps) {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -265,6 +268,8 @@ export function ShowDetailView({
           </ul>
         ) : <p className="text-xs text-stone-500">No shows share this platform or genre yet.</p>}
       </section>
+
+      <ShowComments seriesId={show.id} onOpenAuth={onOpenAuth} />
 
       {/* Action Buttons */}
       <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-stone-100">

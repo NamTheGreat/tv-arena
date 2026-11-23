@@ -690,6 +690,260 @@ BEGIN
   RAISE NOTICE '✓ Future telemetry rejected by trigger and ignored by rolling views.';
 END $$;
 
+-- 8. Show comments: RLS, validation, spam brake (#191)
+DO $$
+DECLARE
+  v_series UUID := gen_random_uuid();
+  v_u1 UUID := gen_random_uuid();
+  v_u2 UUID := gen_random_uuid();
+  v_c1 UUID;
+  v_n INT;
+  v_body TEXT;
+  v_ok BOOLEAN;
+BEGIN
+  RAISE NOTICE 'Testing show comments...';
+  INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES (v_series, 999951, 'cmt-show', 'Comment Show', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'Cmt_Show', 'test', 0);
+  INSERT INTO auth.users (id, email) VALUES (v_u1, 'c1@example.com'), (v_u2, 'c2@example.com');
+  INSERT INTO profiles (id, username) VALUES (v_u1, 'commenter_one'), (v_u2, 'commenter_two')
+  ON CONFLICT (id) DO NOTHING;
+
+  -- anon can read but cannot post
+  SET LOCAL ROLE anon;
+  PERFORM 1 FROM series_comments;
+  v_ok := FALSE;
+  BEGIN
+    INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, 'anon post');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  RESET ROLE;
+  IF NOT v_ok THEN RAISE EXCEPTION 'anon must not be able to post comments'; END IF;
+
+  -- user 1 posts; body is trimmed
+  PERFORM set_config('request.jwt.claim.sub', v_u1::text, true);
+  SET LOCAL ROLE authenticated;
+  INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, '  Deserves #1  ') RETURNING id INTO v_c1;
+  IF (SELECT body FROM series_comments WHERE id = v_c1) <> 'Deserves #1' THEN
+    RAISE EXCEPTION 'comment body must be trimmed';
+  END IF;
+
+  -- cannot post as someone else
+  v_ok := FALSE;
+  BEGIN
+    INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u2, 'impersonation');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'users must not post as other users'; END IF;
+
+  -- cannot self-approve / set status or timestamps on insert
+  v_ok := FALSE;
+  BEGIN
+    EXECUTE 'INSERT INTO series_comments (series_id, user_id, body, status) VALUES ($1, $2, ''x'', ''hidden'')' USING v_series, v_u1;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'status must not be writable by users'; END IF;
+
+  -- validation: empty, whitespace-only, 281 chars, markup, script URLs, control chars
+  FOREACH v_body IN ARRAY ARRAY['', '   ', repeat('a', 281), '<script>alert(1)</script>', 'hi <img src=x onerror=1>', 'JavaScript:alert(1)', 'bad' || chr(7) || 'char']
+  LOOP
+    v_ok := FALSE;
+    BEGIN
+      INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, v_body);
+    EXCEPTION WHEN check_violation THEN v_ok := TRUE; END;
+    IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'invalid comment accepted: %', left(v_body, 30); END IF;
+  END LOOP;
+  -- boundary and harmless symbols are fine
+  INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, repeat('a', 280));
+  INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, 'I <3 this show & 2 > 1');
+
+  -- user 2 cannot edit or delete user 1's comment (silently affects 0 rows)
+  PERFORM set_config('request.jwt.claim.sub', v_u2::text, true);
+  UPDATE series_comments SET body = 'hijacked' WHERE id = v_c1;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 0 THEN RESET ROLE; RAISE EXCEPTION 'user 2 edited user 1 comment'; END IF;
+  DELETE FROM series_comments WHERE id = v_c1;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 0 THEN RESET ROLE; RAISE EXCEPTION 'user 2 deleted user 1 comment'; END IF;
+
+  -- author can edit (updated_at moves) but cannot reassign ownership or edit other columns
+  PERFORM set_config('request.jwt.claim.sub', v_u1::text, true);
+  UPDATE series_comments SET body = 'Edited take' WHERE id = v_c1;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 1 THEN RESET ROLE; RAISE EXCEPTION 'author could not edit own comment'; END IF;
+  v_ok := FALSE;
+  BEGIN
+    EXECUTE 'UPDATE series_comments SET user_id = $1 WHERE id = $2' USING v_u2, v_c1;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'user_id must not be updatable'; END IF;
+  v_ok := FALSE;
+  BEGIN
+    UPDATE series_comments SET body = '<b>x</b>' WHERE id = v_c1;
+  EXCEPTION WHEN check_violation THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'edits must pass the same validation'; END IF;
+
+  -- hidden comments disappear from public reads
+  RESET ROLE;
+  UPDATE series_comments SET status = 'hidden' WHERE id = v_c1;
+  SET LOCAL ROLE anon;
+  SELECT COUNT(*) INTO v_n FROM series_comments WHERE id = v_c1;
+  RESET ROLE;
+  IF v_n <> 0 THEN RAISE EXCEPTION 'hidden comments must not be publicly readable'; END IF;
+
+  -- spam brake: user 1 already has 4 rows this minute (c1 + 280 chars + <3 ... plus edits), fill to 5 then 6th fails
+  SELECT COUNT(*) INTO v_n FROM series_comments WHERE user_id = v_u1;
+  WHILE v_n < 5 LOOP
+    INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, 'filler ' || v_n);
+    v_n := v_n + 1;
+  END LOOP;
+  v_ok := FALSE;
+  BEGIN
+    INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, 'one too many');
+  EXCEPTION WHEN raise_exception THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RAISE EXCEPTION 'spam brake did not trigger'; END IF;
+
+  -- author can delete own
+  PERFORM set_config('request.jwt.claim.sub', v_u1::text, true);
+  SET LOCAL ROLE authenticated;
+  DELETE FROM series_comments WHERE user_id = v_u1 AND body = 'I <3 this show & 2 > 1';
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RESET ROLE;
+  IF v_n <> 1 THEN RAISE EXCEPTION 'author could not delete own comment'; END IF;
+
+  RAISE NOTICE '✓ Show comments verified (RLS, validation, spam brake).';
+END $$;
+
+-- 9. Hall of Fame records: score math, ties, streaks, limited history, RLS
+DO $$
+DECLARE
+  v_a UUID := gen_random_uuid();
+  v_b UUID := gen_random_uuid();
+  v_c UUID := gen_random_uuid();
+  v_d UUID := gen_random_uuid();
+  v_e UUID := gen_random_uuid();
+  v_wiki NUMERIC;
+  v_row RECORD;
+  v_n INT;
+BEGIN
+  RAISE NOTICE 'Testing Hall of Fame records...';
+  SELECT wiki_weight INTO v_wiki FROM score_weights WHERE id = 1;
+
+  INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES
+    (v_a, 999981, 'hof-a', 'HoF A', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_A', 'test', 0),
+    (v_b, 999982, 'hof-b', 'HoF B', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_B', 'test', 0),
+    (v_c, 999983, 'hof-c', 'HoF C', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_C', 'test', 0),
+    (v_d, 999984, 'hof-d', 'HoF D', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_D', 'test', 0),
+    (v_e, 999985, 'hof-e', 'HoF E', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_E', 'test', 0);
+
+  -- Two full Monday-start weeks (2019-03-04 .. 2019-03-17) in the far past so no other data competes.
+  -- Base order every day: A 1000 > B 900 > C 800 > D 700 wiki views.
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views)
+  SELECT s.id, d::DATE,
+    CASE
+      WHEN s.id = v_a AND d::DATE IN ('2019-03-05', '2019-03-14') THEN 6000
+      WHEN s.id = v_a AND d::DATE = '2019-03-08' THEN 100
+      WHEN s.id = v_b AND d::DATE = '2019-03-08' THEN 2000
+      WHEN s.id = v_c AND d::DATE = '2019-03-12' THEN 4000
+      WHEN s.id = v_d AND d::DATE = '2019-03-13' THEN 4000
+      WHEN s.id = v_d AND d::DATE = '2019-03-04' THEN 0
+      WHEN s.id = v_a THEN 1000
+      WHEN s.id = v_b THEN 900
+      WHEN s.id = v_c THEN 800
+      ELSE 700
+    END
+  FROM (VALUES (v_a), (v_b), (v_c), (v_d)) AS s(id),
+       generate_series('2019-03-04'::DATE, '2019-03-17'::DATE, INTERVAL '1 day') AS d;
+
+  -- E has only two days of history and never ranks near the top.
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views)
+  VALUES (v_e, '2019-03-04', 10), (v_e, '2019-03-05', 10);
+
+  -- A has three distinct breakout dates (two signals on one date); B has one.
+  INSERT INTO series_breakouts (series_id, detected_date, signal, value, baseline_mean, baseline_std, pct_over_baseline, reason)
+  VALUES
+    (v_a, '2019-03-05', 'wiki', 1, 1, 1, 1, 't'), (v_a, '2019-03-05', 'reddit', 1, 1, 1, 1, 't'),
+    (v_a, '2019-03-08', 'wiki', 1, 1, 1, 1, 't'), (v_a, '2019-03-14', 'wiki', 1, 1, 1, 1, 't'),
+    (v_b, '2019-03-08', 'wiki', 1, 1, 1, 1, 't');
+
+  -- record_day: score math uses derived weights; A's tie between 03-05 and 03-14 cites the earlier date.
+  SELECT * INTO v_row FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_a;
+  IF v_row.value <> ROUND(6000 * v_wiki) OR v_row.start_date <> '2019-03-05' OR v_row.end_date <> '2019-03-05' THEN
+    RAISE EXCEPTION 'record_day for A wrong: value %, % - %', v_row.value, v_row.start_date, v_row.end_date;
+  END IF;
+
+  -- Ties: C and D both peak at 4000 views -> same record_rank, C placed first (earlier date).
+  IF (SELECT record_rank FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_c)
+     IS DISTINCT FROM (SELECT record_rank FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_d) THEN
+    RAISE EXCEPTION 'tied record days must share a record_rank';
+  END IF;
+  IF (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_c)
+     >= (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_d) THEN
+    RAISE EXCEPTION 'earlier achievement must be placed first on a tie';
+  END IF;
+  IF (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_a)
+     >= (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_c) THEN
+    RAISE EXCEPTION 'higher record must be placed first';
+  END IF;
+
+  -- Limited history: E has two days of data and ranks last, so it must not hold rank-based records
+  -- (it may fall outside the top-10 record_day list when other fixtures exist).
+  IF EXISTS (SELECT 1 FROM series_hall_of_fame WHERE series_id = v_e AND category <> 'record_day') THEN
+    RAISE EXCEPTION 'a show with two days of data must not get rank-based records';
+  END IF;
+
+  -- top3_days: A 13, B 14, C 13, D 2 (days with at least 4 contending shows).
+  SELECT COUNT(*) INTO v_n FROM series_hall_of_fame
+  WHERE category = 'top3_days' AND (
+    (series_id = v_a AND value = 13) OR (series_id = v_b AND value = 14) OR
+    (series_id = v_c AND value = 13) OR (series_id = v_d AND value = 2));
+  IF v_n <> 4 THEN RAISE EXCEPTION 'top3_days counts wrong (% of 4 matched)', v_n; END IF;
+
+  -- number_one_streak: A is #1 on 03-04..07, 09..11, 14..17 -> longest 4, earliest run is cited.
+  SELECT * INTO v_row FROM series_hall_of_fame WHERE category = 'number_one_streak' AND series_id = v_a;
+  IF v_row.value <> 4 OR v_row.start_date <> '2019-03-04' OR v_row.end_date <> '2019-03-07' THEN
+    RAISE EXCEPTION 'number_one_streak for A wrong: %, % - %', v_row.value, v_row.start_date, v_row.end_date;
+  END IF;
+  IF (SELECT value FROM series_hall_of_fame WHERE category = 'number_one_streak' AND series_id = v_b) <> 1 THEN
+    RAISE EXCEPTION 'B should have a one day #1 streak';
+  END IF;
+
+  -- number_one_weeks: A wins both complete weeks; nobody else wins any.
+  SELECT * INTO v_row FROM series_hall_of_fame WHERE category = 'number_one_weeks' AND series_id = v_a;
+  IF v_row.value <> 2 OR v_row.start_date <> '2019-03-04' OR v_row.end_date <> '2019-03-17' THEN
+    RAISE EXCEPTION 'number_one_weeks for A wrong: %, % - %', v_row.value, v_row.start_date, v_row.end_date;
+  END IF;
+  IF EXISTS (SELECT 1 FROM series_hall_of_fame WHERE category = 'number_one_weeks' AND series_id IN (v_b, v_c, v_d, v_e)) THEN
+    RAISE EXCEPTION 'only A should hold weekly #1 records';
+  END IF;
+
+  -- breakout_events counts distinct dates, not signals.
+  IF (SELECT value FROM series_hall_of_fame WHERE category = 'breakout_events' AND series_id = v_a) <> 3
+     OR (SELECT value FROM series_hall_of_fame WHERE category = 'breakout_events' AND series_id = v_b) <> 1 THEN
+    RAISE EXCEPTION 'breakout_events must count distinct dates';
+  END IF;
+
+  -- Each category is capped at 10 places.
+  IF EXISTS (SELECT 1 FROM series_hall_of_fame WHERE place > 10) THEN
+    RAISE EXCEPTION 'places beyond 10 must not be returned';
+  END IF;
+
+  -- RLS: public read works for anon, writes through the view do not.
+  IF has_table_privilege('anon', 'public.series_hall_of_fame', 'INSERT')
+     OR has_table_privilege('anon', 'public.series_hall_of_fame', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.series_hall_of_fame', 'DELETE') THEN
+    RAISE EXCEPTION 'Hall of Fame view must not grant write privileges';
+  END IF;
+  SET LOCAL ROLE anon;
+  SELECT COUNT(*) INTO v_n FROM series_hall_of_fame WHERE series_id = v_a;
+  IF v_n < 1 THEN RAISE EXCEPTION 'anon must be able to read the hall of fame'; END IF;
+  BEGIN
+    UPDATE series_hall_of_fame SET value = 0;
+    RAISE EXCEPTION 'anon must not be able to update the hall of fame view';
+  EXCEPTION WHEN insufficient_privilege OR feature_not_supported OR object_not_in_prerequisite_state THEN
+    NULL;
+  END;
+  RESET ROLE;
+
+  RAISE NOTICE '✓ Hall of Fame records verified (math, ties, streaks, limited history, RLS).';
+END $$;
+
 -- 10. Follows, privacy and friends leaderboard (#192)
 DO $$
 DECLARE
@@ -725,6 +979,9 @@ BEGIN
   IF NOT v_ok THEN RAISE EXCEPTION 'anon must not read user_follows'; END IF;
   IF has_function_privilege('anon', 'public.profiles_accept_pending_on_public()', 'EXECUTE') THEN
     RAISE EXCEPTION 'trigger function must not be directly executable by anon';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.profiles_set_updated_at()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'timestamp trigger function must not be directly executable';
   END IF;
 
   -- Username edits must work without granting direct updated_at writes; the trigger owns that column.

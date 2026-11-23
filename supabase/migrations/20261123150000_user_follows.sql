@@ -34,6 +34,7 @@ $$;
 CREATE TRIGGER profiles_set_updated_at_trg
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.profiles_set_updated_at();
+REVOKE ALL ON FUNCTION public.profiles_set_updated_at() FROM PUBLIC, anon, authenticated;
 
 -- 2. Follows ----------------------------------------------------------------------------------
 CREATE TABLE public.user_follows (

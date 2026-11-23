@@ -848,6 +848,205 @@ CREATE OR REPLACE TRIGGER grade_mover_predictions_after_successful_sync
   WHEN (NEW.status IN ('success', 'partial') AND OLD.status IS DISTINCT FROM NEW.status)
   EXECUTE FUNCTION grade_mover_predictions_after_sync();
 
+-- Show-level comment threads (#191)
+CREATE TABLE IF NOT EXISTS public.series_comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  series_id UUID NOT NULL REFERENCES public.series(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'approved',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT series_comments_status_check CHECK (status IN ('approved', 'hidden')),
+  CONSTRAINT series_comments_body_length CHECK (char_length(btrim(body)) BETWEEN 1 AND 280),
+  -- No control characters, no tag-like markup, no script URL schemes.
+  CONSTRAINT series_comments_body_no_control_chars CHECK (body !~ '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'),
+  CONSTRAINT series_comments_body_no_markup CHECK (body !~ '<\s*[/!?a-zA-Z]'),
+  CONSTRAINT series_comments_body_no_script_urls CHECK (body !~* '(javascript|vbscript|data)\s*:')
+);
+
+CREATE INDEX IF NOT EXISTS series_comments_series_created_idx
+  ON public.series_comments (series_id, created_at DESC)
+  WHERE status = 'approved';
+CREATE INDEX IF NOT EXISTS series_comments_user_created_idx
+  ON public.series_comments (user_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION public.series_comments_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    -- Simple spam brake: at most 5 comments per user per minute.
+    IF (SELECT COUNT(*) FROM public.series_comments
+        WHERE user_id = NEW.user_id AND created_at > now() - INTERVAL '1 minute') >= 5 THEN
+      RAISE EXCEPTION 'Too many comments, please wait a minute' USING ERRCODE = 'P0001';
+    END IF;
+    NEW.body := btrim(NEW.body);
+  ELSE
+    NEW.body := btrim(NEW.body);
+    NEW.updated_at := now();
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS series_comments_guard_trg ON public.series_comments;
+CREATE TRIGGER series_comments_guard_trg
+  BEFORE INSERT OR UPDATE OF body ON public.series_comments
+  FOR EACH ROW EXECUTE FUNCTION public.series_comments_guard();
+
+ALTER TABLE public.series_comments ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.series_comments FROM anon, authenticated;
+GRANT SELECT ON public.series_comments TO anon, authenticated;
+GRANT INSERT (series_id, user_id, body) ON public.series_comments TO authenticated;
+GRANT UPDATE (body) ON public.series_comments TO authenticated;
+GRANT DELETE ON public.series_comments TO authenticated;
+
+DROP POLICY IF EXISTS "Anyone can read approved comments" ON public.series_comments;
+CREATE POLICY "Anyone can read approved comments"
+  ON public.series_comments
+  FOR SELECT TO anon, authenticated
+  USING (status = 'approved');
+
+DROP POLICY IF EXISTS "Users can post own comments" ON public.series_comments;
+CREATE POLICY "Users can post own comments"
+  ON public.series_comments
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT auth.uid()) = user_id);
+
+DROP POLICY IF EXISTS "Users can edit own comments" ON public.series_comments;
+CREATE POLICY "Users can edit own comments"
+  ON public.series_comments
+  FOR UPDATE TO authenticated
+  USING ((SELECT auth.uid()) = user_id AND status = 'approved')
+  WITH CHECK ((SELECT auth.uid()) = user_id AND status = 'approved');
+
+DROP POLICY IF EXISTS "Users can delete own comments" ON public.series_comments;
+CREATE POLICY "Users can delete own comments"
+  ON public.series_comments
+  FOR DELETE TO authenticated
+  USING ((SELECT auth.uid()) = user_id);
+-- All-time records and hall of fame (#190)
+CREATE VIEW series_hall_of_fame
+WITH (security_invoker = on) AS
+WITH scores AS (
+  -- Derived daily scores only (never the stored column); future dates are ignored defensively.
+  SELECT d.series_id, d.recorded_date, d.daily_score
+  FROM series_daily_scores d
+  WHERE d.recorded_date <= (now() AT TIME ZONE 'UTC')::date
+), daily_ranked AS (
+  -- Same tie-break as series_recent_telemetry: score DESC, then title ASC.
+  SELECT
+    sc.series_id,
+    sc.recorded_date,
+    ROW_NUMBER() OVER (PARTITION BY sc.recorded_date ORDER BY sc.daily_score DESC, s.title ASC) AS day_rank,
+    COUNT(*) OVER (PARTITION BY sc.recorded_date) AS shows_that_day
+  FROM scores sc
+  JOIN series s ON s.id = sc.series_id
+), best_day AS (
+  -- Highest single day per show (earliest date wins a tie within a show).
+  SELECT DISTINCT ON (series_id)
+    series_id, daily_score AS value, recorded_date AS start_date, recorded_date AS end_date
+  FROM scores
+  WHERE daily_score > 0
+  ORDER BY series_id, daily_score DESC, recorded_date ASC
+), top3_days AS (
+  -- Rank credits need at least 4 contending shows that day, otherwise "top 3" is meaningless.
+  SELECT series_id, COUNT(*) AS value, MIN(recorded_date) AS start_date, MAX(recorded_date) AS end_date
+  FROM daily_ranked
+  WHERE day_rank <= 3 AND shows_that_day >= 4
+  GROUP BY series_id
+), number_one_days AS (
+  SELECT
+    series_id,
+    recorded_date,
+    recorded_date - (ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY recorded_date))::INT AS island
+  FROM daily_ranked
+  WHERE day_rank = 1 AND shows_that_day >= 4
+), number_one_streaks AS (
+  -- Consecutive calendar days; a missing telemetry day or a day at another rank breaks the streak.
+  SELECT series_id, COUNT(*) AS value, MIN(recorded_date) AS start_date, MAX(recorded_date) AS end_date
+  FROM number_one_days
+  GROUP BY series_id, island
+), best_number_one_streak AS (
+  SELECT DISTINCT ON (series_id) series_id, value, start_date, end_date
+  FROM number_one_streaks
+  ORDER BY series_id, value DESC, start_date ASC
+), weekly AS (
+  -- Monday-start ISO weeks; only weeks with all 7 days of data compete.
+  SELECT
+    date_trunc('week', sc.recorded_date::TIMESTAMP)::DATE AS week_start,
+    sc.series_id,
+    SUM(sc.daily_score) AS week_score
+  FROM scores sc
+  GROUP BY 1, 2
+  HAVING COUNT(DISTINCT sc.recorded_date) = 7
+), weekly_ranked AS (
+  SELECT
+    w.week_start,
+    w.series_id,
+    ROW_NUMBER() OVER (PARTITION BY w.week_start ORDER BY w.week_score DESC, s.title ASC) AS week_rank,
+    COUNT(*) OVER (PARTITION BY w.week_start) AS shows_that_week
+  FROM weekly w
+  JOIN series s ON s.id = w.series_id
+), number_one_weeks AS (
+  SELECT
+    series_id,
+    week_start,
+    week_start - ((ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY week_start)) * 7)::INT AS island
+  FROM weekly_ranked
+  WHERE week_rank = 1 AND shows_that_week >= 4
+), number_one_week_streaks AS (
+  SELECT series_id, COUNT(*) AS value, MIN(week_start) AS start_date, (MAX(week_start) + 6) AS end_date
+  FROM number_one_weeks
+  GROUP BY series_id, island
+), best_number_one_week_streak AS (
+  SELECT DISTINCT ON (series_id) series_id, value, start_date, end_date
+  FROM number_one_week_streaks
+  ORDER BY series_id, value DESC, start_date ASC
+), breakout_counts AS (
+  SELECT
+    series_id,
+    COUNT(DISTINCT detected_date) AS value,
+    MIN(detected_date) AS start_date,
+    MAX(detected_date) AS end_date
+  FROM series_breakouts
+  WHERE detected_date <= (now() AT TIME ZONE 'UTC')::date
+  GROUP BY series_id
+), records AS (
+  SELECT 'record_day'::TEXT AS category, series_id, value, start_date, end_date FROM best_day
+  UNION ALL SELECT 'top3_days', series_id, value, start_date, end_date FROM top3_days
+  UNION ALL SELECT 'number_one_streak', series_id, value, start_date, end_date FROM best_number_one_streak
+  UNION ALL SELECT 'number_one_weeks', series_id, value, start_date, end_date FROM best_number_one_week_streak
+  UNION ALL SELECT 'breakout_events', series_id, value, start_date, end_date FROM breakout_counts
+), ordered AS (
+  SELECT
+    r.category,
+    r.series_id,
+    s.slug,
+    s.title,
+    s.chart_color,
+    r.value::BIGINT AS value,
+    r.start_date,
+    r.end_date,
+    -- Equal values share a rank; place is a strict order: earlier achievement, then title, then id.
+    RANK() OVER (PARTITION BY r.category ORDER BY r.value DESC) AS record_rank,
+    ROW_NUMBER() OVER (
+      PARTITION BY r.category
+      ORDER BY r.value DESC, r.end_date ASC, s.title ASC, r.series_id ASC
+    ) AS place
+  FROM records r
+  JOIN series s ON s.id = r.series_id
+)
+SELECT category, place, record_rank, series_id, slug, title, chart_color, value, start_date, end_date
+FROM ordered
+WHERE place <= 10;
+
+REVOKE ALL ON series_hall_of_fame FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON series_hall_of_fame TO anon, authenticated;
+
 -- Social follows, privacy-aware game stats and friends leaderboard (#192)
 -- 1. Privacy setting + column-level protection of game stats ------------------------------
 ALTER TABLE public.profiles
@@ -875,6 +1074,7 @@ DROP TRIGGER IF EXISTS profiles_set_updated_at_trg ON public.profiles;
 CREATE TRIGGER profiles_set_updated_at_trg
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.profiles_set_updated_at();
+REVOKE ALL ON FUNCTION public.profiles_set_updated_at() FROM PUBLIC, anon, authenticated;
 
 -- 2. Follows ----------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.user_follows (

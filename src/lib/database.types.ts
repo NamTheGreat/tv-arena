@@ -339,6 +339,45 @@ export type Database = {
           }
         ]
       }
+      series_comments: {
+        Row: {
+          id: string
+          series_id: string
+          user_id: string
+          body: string
+          status: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          series_id: string
+          user_id: string
+          body: string
+          status?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "series_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_comments_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       user_watchlist: {
         Row: {
           user_id: string
@@ -495,6 +534,21 @@ export type Database = {
           daily_series: number[]
           daily_dates: string[]
           daily_ranks: number[]
+        }
+        Relationships: []
+      }
+      series_hall_of_fame: {
+        Row: {
+          category: string
+          place: number
+          record_rank: number
+          series_id: string
+          slug: string
+          title: string
+          chart_color: string | null
+          value: number
+          start_date: string
+          end_date: string
         }
         Relationships: []
       }
