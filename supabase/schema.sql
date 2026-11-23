@@ -415,8 +415,12 @@ BEGIN
   IF LENGTH(clean_name) < 3 THEN
     clean_name := 'player';
   END IF;
-  clean_name := SUBSTRING(clean_name FROM 1 FOR 14);
-  candidate := clean_name || '_' || SUBSTRING(REPLACE(new.id::text, '-', '') FROM 1 FOR 4);
+  clean_name := SUBSTRING(clean_name FROM 1 FOR 11);
+  candidate := clean_name || '_' || SUBSTRING(REPLACE(new.id::text, '-', '') FROM 1 FOR 8);
+
+  WHILE EXISTS (SELECT 1 FROM public.profiles WHERE username = candidate) LOOP
+    candidate := SUBSTRING(clean_name FROM 1 FOR 11) || '_' || SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 8);
+  END LOOP;
 
   INSERT INTO public.profiles (id, username, display_name)
   VALUES (new.id, candidate, candidate)

@@ -704,7 +704,7 @@ BEGIN
   RAISE NOTICE 'Testing show comments...';
   INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   VALUES (v_series, 999951, 'cmt-show', 'Comment Show', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'Cmt_Show', 'test', 0);
-  INSERT INTO auth.users (id, email) VALUES (v_u1, 'c1@example.com'), (v_u2, 'c2@example.com');
+  INSERT INTO auth.users (id, email) VALUES (v_u1, 'commenter_one@example.com'), (v_u2, 'commenter_two@example.com');
   INSERT INTO profiles (id, username) VALUES (v_u1, 'commenter_one'), (v_u2, 'commenter_two')
   ON CONFLICT (id) DO NOTHING;
 
@@ -956,8 +956,8 @@ DECLARE
 BEGIN
   RAISE NOTICE 'Testing follows and privacy...';
   INSERT INTO auth.users (id, email) VALUES
-    (a, 'fa@example.com'), (b, 'fb@example.com'), (c, 'fc@example.com'), (d, 'fd@example.com'),
-    (e, 'fe@example.com'), (f, 'ff@example.com'), (g, 'fg@example.com');
+    (a, 'friend_a@example.com'), (b, 'friend_b@example.com'), (c, 'friend_c@example.com'), (d, 'friend_d@example.com'),
+    (e, 'friend_e@example.com'), (f, 'friend_f@example.com'), (g, 'friend_g@example.com');
   UPDATE profiles SET username = 'fx_a', current_streak = 3, best_streak = 905 WHERE id = a;
   UPDATE profiles SET username = 'fx_b', current_streak = 8, best_streak = 908 WHERE id = b;
   UPDATE profiles SET username = 'fx_c', current_streak = 2, best_streak = 910, stats_visibility = 'followers' WHERE id = c;
