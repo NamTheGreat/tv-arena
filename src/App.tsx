@@ -56,11 +56,14 @@ const NotFoundView = React.lazy(() =>
 const MoversView = React.lazy(() =>
   import('./components/MoversView').then((m) => ({ default: m.MoversView }))
 );
+const FriendsView = React.lazy(() =>
+  import('./components/FriendsView').then((m) => ({ default: m.FriendsView }))
+);
 const DailyHistoryView = React.lazy(() =>
   import('./components/DailyHistoryView').then((m) => ({ default: m.DailyHistoryView }))
 );
 
-type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist' | 'history';
+type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist' | 'history' | 'friends';
 
 function RouteLoadingFallback() {
   return (
@@ -402,6 +405,7 @@ export default function App() {
     if (location.pathname.startsWith('/guess')) return 'guess';
     if (location.pathname.startsWith('/movers')) return 'movers';
     if (location.pathname.startsWith('/watchlist')) return 'watchlist';
+    if (location.pathname.startsWith('/friends')) return 'friends';
     return 'leaderboard';
   }, [location.pathname]);
 
@@ -649,6 +653,7 @@ export default function App() {
     { label: 'Guess', tabKey: 'guess' as TabKey, path: '/guess' },
     { label: 'Movers', tabKey: 'movers' as TabKey, path: '/movers' },
     ...(user ? [{ label: 'Watchlist', tabKey: 'watchlist' as TabKey, path: '/watchlist' }] : []),
+    ...(user ? [{ label: 'Friends', tabKey: 'friends' as TabKey, path: '/friends' }] : []),
   ];
 
   const leaderboardProps = {
@@ -781,6 +786,7 @@ export default function App() {
             }
           />
           <Route path="/movers" element={<MoversView seriesList={seriesList} />} />
+          <Route path="/friends" element={<FriendsView onOpenAuth={() => setIsAuthModalOpen(true)} />} />
           <Route
             path="/history"
             element={<DailyHistoryView user={user} onOpenAuth={() => setIsAuthModalOpen(true)} />}
