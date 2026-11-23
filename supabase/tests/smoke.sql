@@ -690,7 +690,7 @@ BEGIN
   RAISE NOTICE '✓ Future telemetry rejected by trigger and ignored by rolling views.';
 END $$;
 
--- 9. Show comments: RLS, validation, spam brake (#191)
+-- 8. Show comments: RLS, validation, spam brake (#191)
 DO $$
 DECLARE
   v_series UUID := gen_random_uuid();
@@ -807,6 +807,139 @@ BEGIN
   IF v_n <> 1 THEN RAISE EXCEPTION 'author could not delete own comment'; END IF;
 
   RAISE NOTICE '✓ Show comments verified (RLS, validation, spam brake).';
+-- 9. Hall of Fame records: score math, ties, streaks, limited history, RLS
+DO $$
+DECLARE
+  v_a UUID := gen_random_uuid();
+  v_b UUID := gen_random_uuid();
+  v_c UUID := gen_random_uuid();
+  v_d UUID := gen_random_uuid();
+  v_e UUID := gen_random_uuid();
+  v_wiki NUMERIC;
+  v_row RECORD;
+  v_n INT;
+BEGIN
+  RAISE NOTICE 'Testing Hall of Fame records...';
+  SELECT wiki_weight INTO v_wiki FROM score_weights WHERE id = 1;
+
+  INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES
+    (v_a, 999981, 'hof-a', 'HoF A', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_A', 'test', 0),
+    (v_b, 999982, 'hof-b', 'HoF B', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_B', 'test', 0),
+    (v_c, 999983, 'hof-c', 'HoF C', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_C', 'test', 0),
+    (v_d, 999984, 'hof-d', 'HoF D', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_D', 'test', 0),
+    (v_e, 999985, 'hof-e', 'HoF E', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_E', 'test', 0);
+
+  -- Two full Monday-start weeks (2019-03-04 .. 2019-03-17) in the far past so no other data competes.
+  -- Base order every day: A 1000 > B 900 > C 800 > D 700 wiki views.
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views)
+  SELECT s.id, d::DATE,
+    CASE
+      WHEN s.id = v_a AND d::DATE IN ('2019-03-05', '2019-03-14') THEN 6000
+      WHEN s.id = v_a AND d::DATE = '2019-03-08' THEN 100
+      WHEN s.id = v_b AND d::DATE = '2019-03-08' THEN 2000
+      WHEN s.id = v_c AND d::DATE = '2019-03-12' THEN 4000
+      WHEN s.id = v_d AND d::DATE = '2019-03-13' THEN 4000
+      WHEN s.id = v_d AND d::DATE = '2019-03-04' THEN 0
+      WHEN s.id = v_a THEN 1000
+      WHEN s.id = v_b THEN 900
+      WHEN s.id = v_c THEN 800
+      ELSE 700
+    END
+  FROM (VALUES (v_a), (v_b), (v_c), (v_d)) AS s(id),
+       generate_series('2019-03-04'::DATE, '2019-03-17'::DATE, INTERVAL '1 day') AS d;
+
+  -- E has only two days of history and never ranks near the top.
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views)
+  VALUES (v_e, '2019-03-04', 10), (v_e, '2019-03-05', 10);
+
+  -- A has three distinct breakout dates (two signals on one date); B has one.
+  INSERT INTO series_breakouts (series_id, detected_date, signal, value, baseline_mean, baseline_std, pct_over_baseline, reason)
+  VALUES
+    (v_a, '2019-03-05', 'wiki', 1, 1, 1, 1, 't'), (v_a, '2019-03-05', 'reddit', 1, 1, 1, 1, 't'),
+    (v_a, '2019-03-08', 'wiki', 1, 1, 1, 1, 't'), (v_a, '2019-03-14', 'wiki', 1, 1, 1, 1, 't'),
+    (v_b, '2019-03-08', 'wiki', 1, 1, 1, 1, 't');
+
+  -- record_day: score math uses derived weights; A's tie between 03-05 and 03-14 cites the earlier date.
+  SELECT * INTO v_row FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_a;
+  IF v_row.value <> ROUND(6000 * v_wiki) OR v_row.start_date <> '2019-03-05' OR v_row.end_date <> '2019-03-05' THEN
+    RAISE EXCEPTION 'record_day for A wrong: value %, % - %', v_row.value, v_row.start_date, v_row.end_date;
+  END IF;
+
+  -- Ties: C and D both peak at 4000 views -> same record_rank, C placed first (earlier date).
+  IF (SELECT record_rank FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_c)
+     IS DISTINCT FROM (SELECT record_rank FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_d) THEN
+    RAISE EXCEPTION 'tied record days must share a record_rank';
+  END IF;
+  IF (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_c)
+     >= (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_d) THEN
+    RAISE EXCEPTION 'earlier achievement must be placed first on a tie';
+  END IF;
+  IF (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_a)
+     >= (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_c) THEN
+    RAISE EXCEPTION 'higher record must be placed first';
+  END IF;
+
+  -- Limited history: E has two days of data and ranks last, so it must not hold rank-based records
+  -- (it may fall outside the top-10 record_day list when other fixtures exist).
+  IF EXISTS (SELECT 1 FROM series_hall_of_fame WHERE series_id = v_e AND category <> 'record_day') THEN
+    RAISE EXCEPTION 'a show with two days of data must not get rank-based records';
+  END IF;
+
+  -- top3_days: A 13, B 14, C 13, D 2 (days with at least 4 contending shows).
+  SELECT COUNT(*) INTO v_n FROM series_hall_of_fame
+  WHERE category = 'top3_days' AND (
+    (series_id = v_a AND value = 13) OR (series_id = v_b AND value = 14) OR
+    (series_id = v_c AND value = 13) OR (series_id = v_d AND value = 2));
+  IF v_n <> 4 THEN RAISE EXCEPTION 'top3_days counts wrong (% of 4 matched)', v_n; END IF;
+
+  -- number_one_streak: A is #1 on 03-04..07, 09..11, 14..17 -> longest 4, earliest run is cited.
+  SELECT * INTO v_row FROM series_hall_of_fame WHERE category = 'number_one_streak' AND series_id = v_a;
+  IF v_row.value <> 4 OR v_row.start_date <> '2019-03-04' OR v_row.end_date <> '2019-03-07' THEN
+    RAISE EXCEPTION 'number_one_streak for A wrong: %, % - %', v_row.value, v_row.start_date, v_row.end_date;
+  END IF;
+  IF (SELECT value FROM series_hall_of_fame WHERE category = 'number_one_streak' AND series_id = v_b) <> 1 THEN
+    RAISE EXCEPTION 'B should have a one day #1 streak';
+  END IF;
+
+  -- number_one_weeks: A wins both complete weeks; nobody else wins any.
+  SELECT * INTO v_row FROM series_hall_of_fame WHERE category = 'number_one_weeks' AND series_id = v_a;
+  IF v_row.value <> 2 OR v_row.start_date <> '2019-03-04' OR v_row.end_date <> '2019-03-17' THEN
+    RAISE EXCEPTION 'number_one_weeks for A wrong: %, % - %', v_row.value, v_row.start_date, v_row.end_date;
+  END IF;
+  IF EXISTS (SELECT 1 FROM series_hall_of_fame WHERE category = 'number_one_weeks' AND series_id IN (v_b, v_c, v_d, v_e)) THEN
+    RAISE EXCEPTION 'only A should hold weekly #1 records';
+  END IF;
+
+  -- breakout_events counts distinct dates, not signals.
+  IF (SELECT value FROM series_hall_of_fame WHERE category = 'breakout_events' AND series_id = v_a) <> 3
+     OR (SELECT value FROM series_hall_of_fame WHERE category = 'breakout_events' AND series_id = v_b) <> 1 THEN
+    RAISE EXCEPTION 'breakout_events must count distinct dates';
+  END IF;
+
+  -- Each category is capped at 10 places.
+  IF EXISTS (SELECT 1 FROM series_hall_of_fame WHERE place > 10) THEN
+    RAISE EXCEPTION 'places beyond 10 must not be returned';
+  END IF;
+
+  -- RLS: public read works for anon, writes through the view do not.
+  IF has_table_privilege('anon', 'public.series_hall_of_fame', 'INSERT')
+     OR has_table_privilege('anon', 'public.series_hall_of_fame', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.series_hall_of_fame', 'DELETE') THEN
+    RAISE EXCEPTION 'Hall of Fame view must not grant write privileges';
+  END IF;
+  SET LOCAL ROLE anon;
+  SELECT COUNT(*) INTO v_n FROM series_hall_of_fame WHERE series_id = v_a;
+  IF v_n < 1 THEN RAISE EXCEPTION 'anon must be able to read the hall of fame'; END IF;
+  BEGIN
+    UPDATE series_hall_of_fame SET value = 0;
+    RAISE EXCEPTION 'anon must not be able to update the hall of fame view';
+  EXCEPTION WHEN insufficient_privilege OR feature_not_supported OR object_not_in_prerequisite_state THEN
+    NULL;
+  END;
+  RESET ROLE;
+
+  RAISE NOTICE '✓ Hall of Fame records verified (math, ties, streaks, limited history, RLS).';
 END $$;
 
 ROLLBACK;

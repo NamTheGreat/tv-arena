@@ -504,6 +504,21 @@ export type Database = {
         }
         Relationships: []
       }
+      series_hall_of_fame: {
+        Row: {
+          category: string
+          place: number
+          record_rank: number
+          series_id: string
+          slug: string
+          title: string
+          chart_color: string | null
+          value: number
+          start_date: string
+          end_date: string
+        }
+        Relationships: []
+      }
       series_weekly_movers: {
         Row: {
           period_start: string

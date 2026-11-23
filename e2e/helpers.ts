@@ -34,6 +34,13 @@ export async function mockSupabase(page: Page, dailyDeckLength = shows.length) {
         body: 'Absolutely deserves the top spot.', created_at: '2026-11-23T10:00:00Z', updated_at: '2026-11-23T10:00:00Z',
         profiles: { username: 'test_pilot', display_name: 'Test Pilot', best_streak: 5 },
       }];
+    } else if (path.endsWith('/series_hall_of_fame')) {
+      body = [
+        { category: 'record_day', place: 1, record_rank: 1, series_id: shows[0].id, slug: shows[0].slug, title: shows[0].title, chart_color: null, value: 9000, start_date: '2026-03-05', end_date: '2026-03-05' },
+        { category: 'record_day', place: 2, record_rank: 2, series_id: shows[1].id, slug: shows[1].slug, title: shows[1].title, chart_color: null, value: 4000, start_date: '2026-03-12', end_date: '2026-03-12' },
+        { category: 'record_day', place: 3, record_rank: 2, series_id: shows[2].id, slug: shows[2].slug, title: shows[2].title, chart_color: null, value: 4000, start_date: '2026-03-13', end_date: '2026-03-13' },
+        { category: 'number_one_streak', place: 1, record_rank: 1, series_id: shows[0].id, slug: shows[0].slug, title: shows[0].title, chart_color: null, value: 4, start_date: '2026-03-04', end_date: '2026-03-07' },
+      ];
     } else if (path.endsWith('/daily_challenges')) {
       body = [{ series_ids: shows.slice(0, dailyDeckLength).map((show) => show.id) }];
     } else if (path.endsWith('/rpc/get_daily_score_share')) {
