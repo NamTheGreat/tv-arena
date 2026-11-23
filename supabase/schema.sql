@@ -1053,8 +1053,8 @@ ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS stats_visibility TEXT NOT NULL DEFAULT 'public'
   CONSTRAINT profiles_stats_visibility_check CHECK (stats_visibility IN ('public', 'followers'));
 
--- Streak columns are no longer directly readable; they are served by privacy-aware functions below.
-REVOKE SELECT ON public.profiles FROM anon, authenticated;
+-- Remove inherited table-level rights; restore only the columns clients may use.
+REVOKE ALL ON TABLE public.profiles FROM PUBLIC, anon, authenticated;
 GRANT SELECT (id, username, display_name, created_at, updated_at, stats_visibility)
   ON public.profiles TO anon, authenticated;
 GRANT UPDATE (username, display_name, stats_visibility) ON public.profiles TO authenticated;

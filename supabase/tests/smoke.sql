@@ -983,6 +983,14 @@ BEGIN
   IF has_function_privilege('authenticated', 'public.profiles_set_updated_at()', 'EXECUTE') THEN
     RAISE EXCEPTION 'timestamp trigger function must not be directly executable';
   END IF;
+  IF has_table_privilege('anon', 'public.profiles', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.profiles', 'UPDATE')
+     OR has_table_privilege('anon', 'public.profiles', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.profiles', 'INSERT')
+     OR has_column_privilege('authenticated', 'public.profiles', 'current_streak', 'UPDATE')
+     OR has_column_privilege('authenticated', 'public.profiles', 'best_streak', 'UPDATE') THEN
+    RAISE EXCEPTION 'profile table writes must be limited to explicitly granted columns';
+  END IF;
 
   -- Username edits must work without granting direct updated_at writes; the trigger owns that column.
   SELECT updated_at INTO v_updated_before FROM profiles WHERE id = a;
