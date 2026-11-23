@@ -6,7 +6,7 @@ export type AuthModalMode = 'signin' | 'signup' | 'reset' | 'update-password';
 
 interface AuthModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (reason?: 'dismiss' | 'success') => void;
   initialMode?: AuthModalMode;
 }
 
@@ -243,7 +243,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'signin' }: AuthModal
       if (mode === 'signin') {
         const { error } = await signIn(email, password, token);
         if (error) setErrorMsg(error.message);
-        else onClose();
+        else onClose('success');
       } else if (mode === 'signup') {
         const { error, needsEmailConfirmation } = await signUp(email, password, token);
         if (error) {
@@ -252,7 +252,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'signin' }: AuthModal
           setSuccessMsg('Check your email to confirm your account before signing in.');
         } else {
           setSuccessMsg('Account created! You are now signed in.');
-          window.setTimeout(onClose, 1200);
+          window.setTimeout(() => onClose('success'), 1200);
         }
       } else if (mode === 'reset') {
         const { error } = await resetPassword(email, token);
@@ -265,7 +265,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'signin' }: AuthModal
         } else {
           setSuccessMsg('Password updated.');
           clearPasswordRecovery();
-          window.setTimeout(onClose, 900);
+          window.setTimeout(() => onClose('success'), 900);
         }
       }
     } catch {
@@ -292,7 +292,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'signin' }: AuthModal
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm"
-      onClick={onClose}
+      onClick={() => onClose('dismiss')}
     >
       <div
         className="w-full max-w-sm bg-arena-surface border border-arena-border rounded-3xl p-6 sm:p-7 shadow-soft-card flex flex-col relative"
@@ -300,7 +300,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'signin' }: AuthModal
       >
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => onClose('dismiss')}
           className="absolute top-5 right-5 text-arena-muted hover:text-arena-charcoal text-lg leading-none"
           aria-label="Close modal"
         >
@@ -415,7 +415,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'signin' }: AuthModal
         </form>
 
         <div className="mt-4 pt-3 border-t border-arena-border/50 text-center">
-          <button type="button" onClick={onClose} className="text-xs text-arena-muted hover:text-arena-charcoal underline">
+          <button type="button" onClick={() => onClose('dismiss')} className="text-xs text-arena-muted hover:text-arena-charcoal underline">
             Continue as Guest
           </button>
         </div>

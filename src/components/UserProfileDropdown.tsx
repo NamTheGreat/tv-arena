@@ -97,7 +97,7 @@ export function UserProfileDropdown({
       }
       const { error } = await supabase
         .from('profiles')
-        .update({ username: trimmed, updated_at: new Date().toISOString() })
+        .update({ username: trimmed })
         .eq('id', user.id);
 
       if (error) {

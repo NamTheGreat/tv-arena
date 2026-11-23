@@ -283,6 +283,7 @@ export type Database = {
           last_played_date: string | null
           created_at: string | null
           updated_at: string | null
+          stats_visibility: 'public' | 'followers'
         }
         Insert: {
           id: string
@@ -303,8 +304,79 @@ export type Database = {
           last_played_date?: string | null
           created_at?: string | null
           updated_at?: string | null
+          stats_visibility?: 'public' | 'followers'
         }
         Relationships: []
+      }
+      user_follows: {
+        Row: {
+          follower_id: string
+          followee_id: string
+          status: 'pending' | 'accepted'
+          created_at: string
+        }
+        Insert: {
+          follower_id: string
+          followee_id: string
+        }
+        Update: {
+          status?: 'pending' | 'accepted'
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_follows_follower_id_fkey"
+            columns: ["follower_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_follows_followee_id_fkey"
+            columns: ["followee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      series_comments: {
+        Row: {
+          id: string
+          series_id: string
+          user_id: string
+          body: string
+          status: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          series_id: string
+          user_id: string
+          body: string
+          status?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "series_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "series_comments_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       user_watchlist: {
         Row: {
@@ -465,6 +537,21 @@ export type Database = {
         }
         Relationships: []
       }
+      series_hall_of_fame: {
+        Row: {
+          category: string
+          place: number
+          record_rank: number
+          series_id: string
+          slug: string
+          title: string
+          chart_color: string | null
+          value: number
+          start_date: string
+          end_date: string
+        }
+        Relationships: []
+      }
       series_weekly_movers: {
         Row: {
           period_start: string
@@ -505,6 +592,18 @@ export type Database = {
       }
       streak_leaderboard: {
         Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      friends_leaderboard: {
+        Args: { p_date: string }
+        Returns: Json
+      }
+      head_to_head: {
+        Args: { p_username: string; p_date: string }
+        Returns: Json
+      }
+      get_profile_stats: {
+        Args: { p_user_ids: string[] }
         Returns: Json
       }
       submit_mover_prediction: {

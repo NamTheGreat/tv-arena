@@ -32,6 +32,26 @@ CREATE TABLE IF NOT EXISTS series_daily_telemetry (
 CREATE INDEX IF NOT EXISTS idx_telemetry_series_date ON series_daily_telemetry(series_id, recorded_date DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_recorded_date ON series_daily_telemetry(recorded_date DESC);
 
+-- Reject future-dated telemetry insertions and updates
+CREATE OR REPLACE FUNCTION check_telemetry_recorded_date()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.recorded_date > (now() AT TIME ZONE 'UTC')::date THEN
+    RAISE EXCEPTION 'recorded_date cannot be in the future: %', NEW.recorded_date;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_telemetry_recorded_date ON series_daily_telemetry;
+CREATE TRIGGER trg_check_telemetry_recorded_date
+  BEFORE INSERT OR UPDATE OF recorded_date
+  ON series_daily_telemetry
+  FOR EACH ROW
+  EXECUTE FUNCTION check_telemetry_recorded_date();
+
 -- Score Weights Configuration
 CREATE TABLE IF NOT EXISTS score_weights (
   id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -72,7 +92,10 @@ GRANT SELECT ON series_daily_scores TO anon, authenticated;
 CREATE OR REPLACE VIEW series_signal_contributions
 WITH (security_invoker = on) AS
 WITH anchor AS (
-  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  SELECT COALESCE(
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
+  ) AS max_date
   FROM series_daily_telemetry
 )
 SELECT
@@ -110,7 +133,10 @@ DROP VIEW IF EXISTS series_leaderboard CASCADE;
 CREATE VIEW series_leaderboard 
 WITH (security_invoker = on) AS
 WITH anchor AS (
-  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  SELECT COALESCE(
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
+  ) AS max_date
   FROM series_daily_telemetry
 ),
 daily_buckets AS (
@@ -157,7 +183,10 @@ GRANT SELECT ON series_leaderboard TO anon, authenticated;
 CREATE OR REPLACE VIEW series_deck_candidates
 WITH (security_invoker = on) AS
 WITH anchor AS (
-  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  SELECT COALESCE(
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
+  ) AS max_date
   FROM series_daily_telemetry
 )
 SELECT
@@ -185,7 +214,10 @@ DROP VIEW IF EXISTS series_recent_telemetry CASCADE;
 CREATE VIEW series_recent_telemetry 
 WITH (security_invoker = on) AS
 WITH anchor AS (
-  SELECT COALESCE(MAX(recorded_date), CURRENT_DATE) AS max_date
+  SELECT COALESCE(
+    MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date),
+    (now() AT TIME ZONE 'UTC')::date
+  ) AS max_date
   FROM series_daily_telemetry
 ),
 recent_scores AS (
@@ -383,8 +415,12 @@ BEGIN
   IF LENGTH(clean_name) < 3 THEN
     clean_name := 'player';
   END IF;
-  clean_name := SUBSTRING(clean_name FROM 1 FOR 14);
-  candidate := clean_name || '_' || SUBSTRING(REPLACE(new.id::text, '-', '') FROM 1 FOR 4);
+  clean_name := SUBSTRING(clean_name FROM 1 FOR 11);
+  candidate := clean_name || '_' || SUBSTRING(REPLACE(new.id::text, '-', '') FROM 1 FOR 8);
+
+  WHILE EXISTS (SELECT 1 FROM public.profiles WHERE username = candidate) LOOP
+    candidate := SUBSTRING(clean_name FROM 1 FOR 11) || '_' || SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 8);
+  END LOOP;
 
   INSERT INTO public.profiles (id, username, display_name)
   VALUES (new.id, candidate, candidate)
@@ -777,7 +813,9 @@ BEGIN
   IF NEW.status NOT IN ('success', 'partial') THEN
     RETURN NEW;
   END IF;
-  SELECT MAX(recorded_date) INTO v_max_date FROM series_daily_telemetry;
+  SELECT MAX(recorded_date) FILTER (WHERE recorded_date <= (now() AT TIME ZONE 'UTC')::date)
+  INTO v_max_date
+  FROM series_daily_telemetry;
   IF v_max_date IS NULL THEN RETURN NEW; END IF;
 
   WITH pending_weeks AS (
@@ -813,3 +851,485 @@ CREATE OR REPLACE TRIGGER grade_mover_predictions_after_successful_sync
   FOR EACH ROW
   WHEN (NEW.status IN ('success', 'partial') AND OLD.status IS DISTINCT FROM NEW.status)
   EXECUTE FUNCTION grade_mover_predictions_after_sync();
+
+-- Show-level comment threads (#191)
+CREATE TABLE IF NOT EXISTS public.series_comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  series_id UUID NOT NULL REFERENCES public.series(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'approved',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT series_comments_status_check CHECK (status IN ('approved', 'hidden')),
+  CONSTRAINT series_comments_body_length CHECK (char_length(btrim(body)) BETWEEN 1 AND 280),
+  -- No control characters, no tag-like markup, no script URL schemes.
+  CONSTRAINT series_comments_body_no_control_chars CHECK (body !~ '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'),
+  CONSTRAINT series_comments_body_no_markup CHECK (body !~ '<\s*[/!?a-zA-Z]'),
+  CONSTRAINT series_comments_body_no_script_urls CHECK (body !~* '(javascript|vbscript|data)\s*:')
+);
+
+CREATE INDEX IF NOT EXISTS series_comments_series_created_idx
+  ON public.series_comments (series_id, created_at DESC)
+  WHERE status = 'approved';
+CREATE INDEX IF NOT EXISTS series_comments_user_created_idx
+  ON public.series_comments (user_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION public.series_comments_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    -- Simple spam brake: at most 5 comments per user per minute.
+    IF (SELECT COUNT(*) FROM public.series_comments
+        WHERE user_id = NEW.user_id AND created_at > now() - INTERVAL '1 minute') >= 5 THEN
+      RAISE EXCEPTION 'Too many comments, please wait a minute' USING ERRCODE = 'P0001';
+    END IF;
+    NEW.body := btrim(NEW.body);
+  ELSE
+    NEW.body := btrim(NEW.body);
+    NEW.updated_at := now();
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS series_comments_guard_trg ON public.series_comments;
+CREATE TRIGGER series_comments_guard_trg
+  BEFORE INSERT OR UPDATE OF body ON public.series_comments
+  FOR EACH ROW EXECUTE FUNCTION public.series_comments_guard();
+
+ALTER TABLE public.series_comments ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.series_comments FROM anon, authenticated;
+GRANT SELECT ON public.series_comments TO anon, authenticated;
+GRANT INSERT (series_id, user_id, body) ON public.series_comments TO authenticated;
+GRANT UPDATE (body) ON public.series_comments TO authenticated;
+GRANT DELETE ON public.series_comments TO authenticated;
+
+DROP POLICY IF EXISTS "Anyone can read approved comments" ON public.series_comments;
+CREATE POLICY "Anyone can read approved comments"
+  ON public.series_comments
+  FOR SELECT TO anon, authenticated
+  USING (status = 'approved');
+
+DROP POLICY IF EXISTS "Users can post own comments" ON public.series_comments;
+CREATE POLICY "Users can post own comments"
+  ON public.series_comments
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT auth.uid()) = user_id);
+
+DROP POLICY IF EXISTS "Users can edit own comments" ON public.series_comments;
+CREATE POLICY "Users can edit own comments"
+  ON public.series_comments
+  FOR UPDATE TO authenticated
+  USING ((SELECT auth.uid()) = user_id AND status = 'approved')
+  WITH CHECK ((SELECT auth.uid()) = user_id AND status = 'approved');
+
+DROP POLICY IF EXISTS "Users can delete own comments" ON public.series_comments;
+CREATE POLICY "Users can delete own comments"
+  ON public.series_comments
+  FOR DELETE TO authenticated
+  USING ((SELECT auth.uid()) = user_id);
+-- All-time records and hall of fame (#190)
+CREATE VIEW series_hall_of_fame
+WITH (security_invoker = on) AS
+WITH scores AS (
+  -- Derived daily scores only (never the stored column); future dates are ignored defensively.
+  SELECT d.series_id, d.recorded_date, d.daily_score
+  FROM series_daily_scores d
+  WHERE d.recorded_date <= (now() AT TIME ZONE 'UTC')::date
+), daily_ranked AS (
+  -- Same tie-break as series_recent_telemetry: score DESC, then title ASC.
+  SELECT
+    sc.series_id,
+    sc.recorded_date,
+    ROW_NUMBER() OVER (PARTITION BY sc.recorded_date ORDER BY sc.daily_score DESC, s.title ASC) AS day_rank,
+    COUNT(*) OVER (PARTITION BY sc.recorded_date) AS shows_that_day
+  FROM scores sc
+  JOIN series s ON s.id = sc.series_id
+), best_day AS (
+  -- Highest single day per show (earliest date wins a tie within a show).
+  SELECT DISTINCT ON (series_id)
+    series_id, daily_score AS value, recorded_date AS start_date, recorded_date AS end_date
+  FROM scores
+  WHERE daily_score > 0
+  ORDER BY series_id, daily_score DESC, recorded_date ASC
+), top3_days AS (
+  -- Rank credits need at least 4 contending shows that day, otherwise "top 3" is meaningless.
+  SELECT series_id, COUNT(*) AS value, MIN(recorded_date) AS start_date, MAX(recorded_date) AS end_date
+  FROM daily_ranked
+  WHERE day_rank <= 3 AND shows_that_day >= 4
+  GROUP BY series_id
+), number_one_days AS (
+  SELECT
+    series_id,
+    recorded_date,
+    recorded_date - (ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY recorded_date))::INT AS island
+  FROM daily_ranked
+  WHERE day_rank = 1 AND shows_that_day >= 4
+), number_one_streaks AS (
+  -- Consecutive calendar days; a missing telemetry day or a day at another rank breaks the streak.
+  SELECT series_id, COUNT(*) AS value, MIN(recorded_date) AS start_date, MAX(recorded_date) AS end_date
+  FROM number_one_days
+  GROUP BY series_id, island
+), best_number_one_streak AS (
+  SELECT DISTINCT ON (series_id) series_id, value, start_date, end_date
+  FROM number_one_streaks
+  ORDER BY series_id, value DESC, start_date ASC
+), weekly AS (
+  -- Monday-start ISO weeks; only weeks with all 7 days of data compete.
+  SELECT
+    date_trunc('week', sc.recorded_date::TIMESTAMP)::DATE AS week_start,
+    sc.series_id,
+    SUM(sc.daily_score) AS week_score
+  FROM scores sc
+  GROUP BY 1, 2
+  HAVING COUNT(DISTINCT sc.recorded_date) = 7
+), weekly_ranked AS (
+  SELECT
+    w.week_start,
+    w.series_id,
+    ROW_NUMBER() OVER (PARTITION BY w.week_start ORDER BY w.week_score DESC, s.title ASC) AS week_rank,
+    COUNT(*) OVER (PARTITION BY w.week_start) AS shows_that_week
+  FROM weekly w
+  JOIN series s ON s.id = w.series_id
+), number_one_weeks AS (
+  SELECT
+    series_id,
+    week_start,
+    week_start - ((ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY week_start)) * 7)::INT AS island
+  FROM weekly_ranked
+  WHERE week_rank = 1 AND shows_that_week >= 4
+), number_one_week_streaks AS (
+  SELECT series_id, COUNT(*) AS value, MIN(week_start) AS start_date, (MAX(week_start) + 6) AS end_date
+  FROM number_one_weeks
+  GROUP BY series_id, island
+), best_number_one_week_streak AS (
+  SELECT DISTINCT ON (series_id) series_id, value, start_date, end_date
+  FROM number_one_week_streaks
+  ORDER BY series_id, value DESC, start_date ASC
+), breakout_counts AS (
+  SELECT
+    series_id,
+    COUNT(DISTINCT detected_date) AS value,
+    MIN(detected_date) AS start_date,
+    MAX(detected_date) AS end_date
+  FROM series_breakouts
+  WHERE detected_date <= (now() AT TIME ZONE 'UTC')::date
+  GROUP BY series_id
+), records AS (
+  SELECT 'record_day'::TEXT AS category, series_id, value, start_date, end_date FROM best_day
+  UNION ALL SELECT 'top3_days', series_id, value, start_date, end_date FROM top3_days
+  UNION ALL SELECT 'number_one_streak', series_id, value, start_date, end_date FROM best_number_one_streak
+  UNION ALL SELECT 'number_one_weeks', series_id, value, start_date, end_date FROM best_number_one_week_streak
+  UNION ALL SELECT 'breakout_events', series_id, value, start_date, end_date FROM breakout_counts
+), ordered AS (
+  SELECT
+    r.category,
+    r.series_id,
+    s.slug,
+    s.title,
+    s.chart_color,
+    r.value::BIGINT AS value,
+    r.start_date,
+    r.end_date,
+    -- Equal values share a rank; place is a strict order: earlier achievement, then title, then id.
+    RANK() OVER (PARTITION BY r.category ORDER BY r.value DESC) AS record_rank,
+    ROW_NUMBER() OVER (
+      PARTITION BY r.category
+      ORDER BY r.value DESC, r.end_date ASC, s.title ASC, r.series_id ASC
+    ) AS place
+  FROM records r
+  JOIN series s ON s.id = r.series_id
+)
+SELECT category, place, record_rank, series_id, slug, title, chart_color, value, start_date, end_date
+FROM ordered
+WHERE place <= 10;
+
+REVOKE ALL ON series_hall_of_fame FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON series_hall_of_fame TO anon, authenticated;
+
+-- Social follows, privacy-aware game stats and friends leaderboard (#192)
+-- 1. Privacy setting + column-level protection of game stats ------------------------------
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS stats_visibility TEXT NOT NULL DEFAULT 'public'
+  CONSTRAINT profiles_stats_visibility_check CHECK (stats_visibility IN ('public', 'followers'));
+
+-- Remove inherited table-level rights; restore only the columns clients may use.
+REVOKE ALL ON TABLE public.profiles FROM PUBLIC, anon, authenticated;
+GRANT SELECT (id, username, display_name, created_at, updated_at, stats_visibility)
+  ON public.profiles TO anon, authenticated;
+GRANT UPDATE (username, display_name, stats_visibility) ON public.profiles TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.profiles_set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  NEW.updated_at := clock_timestamp();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS profiles_set_updated_at_trg ON public.profiles;
+CREATE TRIGGER profiles_set_updated_at_trg
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.profiles_set_updated_at();
+REVOKE ALL ON FUNCTION public.profiles_set_updated_at() FROM PUBLIC, anon, authenticated;
+
+-- 2. Follows ----------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_follows (
+  follower_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  followee_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'accepted',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (follower_id, followee_id),
+  CONSTRAINT user_follows_no_self_follow CHECK (follower_id <> followee_id),
+  CONSTRAINT user_follows_status_check CHECK (status IN ('pending', 'accepted'))
+);
+
+CREATE INDEX IF NOT EXISTS user_follows_followee_idx ON public.user_follows (followee_id, status);
+
+CREATE OR REPLACE FUNCTION public.user_follows_guard()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  v_visibility TEXT;
+BEGIN
+  IF (SELECT COUNT(*) FROM public.user_follows WHERE follower_id = NEW.follower_id) >= 200 THEN
+    RAISE EXCEPTION 'Follow limit reached' USING ERRCODE = 'P0001';
+  END IF;
+  -- Following a followers-only profile creates a request the owner must accept.
+  SELECT stats_visibility INTO v_visibility FROM public.profiles WHERE id = NEW.followee_id;
+  NEW.status := CASE WHEN v_visibility = 'followers' THEN 'pending' ELSE 'accepted' END;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS user_follows_guard_trg ON public.user_follows;
+CREATE TRIGGER user_follows_guard_trg
+  BEFORE INSERT ON public.user_follows
+  FOR EACH ROW EXECUTE FUNCTION public.user_follows_guard();
+
+-- Switching a profile to public resolves its pending requests.
+CREATE OR REPLACE FUNCTION public.profiles_accept_pending_on_public()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.stats_visibility = 'public' AND OLD.stats_visibility IS DISTINCT FROM 'public' THEN
+    UPDATE public.user_follows SET status = 'accepted' WHERE followee_id = NEW.id AND status = 'pending';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS profiles_accept_pending_trg ON public.profiles;
+CREATE TRIGGER profiles_accept_pending_trg
+  AFTER UPDATE OF stats_visibility ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.profiles_accept_pending_on_public();
+
+REVOKE ALL ON FUNCTION public.profiles_accept_pending_on_public() FROM PUBLIC, anon, authenticated;
+
+ALTER TABLE public.user_follows ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.user_follows FROM anon, authenticated;
+GRANT SELECT, DELETE ON public.user_follows TO authenticated;
+GRANT INSERT (follower_id, followee_id) ON public.user_follows TO authenticated;
+GRANT UPDATE (status) ON public.user_follows TO authenticated;
+
+DROP POLICY IF EXISTS "Users can read follows they are part of" ON public.user_follows;
+CREATE POLICY "Users can read follows they are part of"
+  ON public.user_follows FOR SELECT TO authenticated
+  USING ((SELECT auth.uid()) IN (follower_id, followee_id));
+
+DROP POLICY IF EXISTS "Users can follow as themselves" ON public.user_follows;
+CREATE POLICY "Users can follow as themselves"
+  ON public.user_follows FOR INSERT TO authenticated
+  WITH CHECK ((SELECT auth.uid()) = follower_id);
+
+DROP POLICY IF EXISTS "Owners can accept follow requests" ON public.user_follows;
+CREATE POLICY "Owners can accept follow requests"
+  ON public.user_follows FOR UPDATE TO authenticated
+  USING ((SELECT auth.uid()) = followee_id AND status = 'pending')
+  WITH CHECK ((SELECT auth.uid()) = followee_id AND status = 'accepted');
+
+DROP POLICY IF EXISTS "Either side can end a follow" ON public.user_follows;
+CREATE POLICY "Either side can end a follow"
+  ON public.user_follows FOR DELETE TO authenticated
+  USING ((SELECT auth.uid()) IN (follower_id, followee_id));
+
+-- 3. Privacy-aware reads ----------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.can_view_stats(p_owner UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE(
+    p_owner = auth.uid()
+    OR EXISTS (SELECT 1 FROM public.profiles WHERE id = p_owner AND stats_visibility = 'public')
+    OR EXISTS (
+      SELECT 1 FROM public.user_follows
+      WHERE follower_id = auth.uid() AND followee_id = p_owner AND status = 'accepted'
+    ),
+    FALSE
+  );
+$$;
+
+-- Streaks for a batch of users, honoring each owner's privacy setting.
+CREATE OR REPLACE FUNCTION public.get_profile_stats(p_user_ids UUID[])
+RETURNS TABLE (user_id UUID, current_streak INT, best_streak INT)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT p.id, p.current_streak, p.best_streak
+  FROM public.profiles p
+  WHERE p.id = ANY (p_user_ids[1:100]) AND public.can_view_stats(p.id);
+$$;
+
+-- Public leaderboards now skip followers-only players the viewer is not allowed to see.
+CREATE OR REPLACE FUNCTION public.daily_leaderboard(p_date DATE)
+RETURNS TABLE (username TEXT, score INT, streak INT, rank BIGINT)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    p.username,
+    s.score,
+    p.current_streak AS streak,
+    ROW_NUMBER() OVER (ORDER BY s.score DESC, s.completed_at ASC) as rank
+  FROM user_scores s
+  JOIN profiles p ON s.user_id = p.id
+  WHERE s.date = p_date AND public.can_view_stats(p.id)
+  ORDER BY s.score DESC, s.completed_at ASC
+  LIMIT 20;
+$$;
+
+CREATE OR REPLACE FUNCTION public.streak_leaderboard()
+RETURNS TABLE (username TEXT, score INT, streak INT, rank BIGINT)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    p.username,
+    p.best_streak AS score,
+    p.current_streak AS streak,
+    ROW_NUMBER() OVER (ORDER BY p.best_streak DESC, p.updated_at ASC) as rank
+  FROM profiles p
+  WHERE p.best_streak > 0 AND public.can_view_stats(p.id)
+  ORDER BY p.best_streak DESC, p.updated_at ASC
+  LIMIT 20;
+$$;
+
+-- 4. Friends leaderboard and head-to-head -----------------------------------------------------
+CREATE OR REPLACE FUNCTION public.friends_leaderboard(p_date DATE)
+RETURNS TABLE (
+  user_id UUID, username TEXT, display_name TEXT, score INT,
+  current_streak INT, best_streak INT, daily_rank BIGINT, streak_rank BIGINT,
+  is_self BOOLEAN, is_mutual BOOLEAN
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+  RETURN QUERY
+  WITH circle AS (
+    SELECT v_uid AS uid, TRUE AS is_self, FALSE AS is_mutual
+    UNION ALL
+    SELECT f.followee_id, FALSE,
+      EXISTS (
+        SELECT 1 FROM public.user_follows b
+        WHERE b.follower_id = f.followee_id AND b.followee_id = f.follower_id AND b.status = 'accepted'
+      )
+    FROM public.user_follows f
+    WHERE f.follower_id = v_uid AND f.status = 'accepted'
+  ), joined AS (
+    SELECT c.uid, c.is_self, c.is_mutual, p.username, p.display_name, p.current_streak, p.best_streak,
+           us.score, us.completed_at
+    FROM circle c
+    JOIN public.profiles p ON p.id = c.uid
+    LEFT JOIN public.user_scores us ON us.user_id = c.uid AND us.date = p_date
+  )
+  SELECT
+    j.uid, j.username, j.display_name, j.score, j.current_streak, j.best_streak,
+    CASE WHEN j.score IS NULL THEN NULL
+         ELSE ROW_NUMBER() OVER (PARTITION BY (j.score IS NOT NULL)
+                                 ORDER BY j.score DESC, j.completed_at ASC, j.username ASC) END,
+    ROW_NUMBER() OVER (ORDER BY j.current_streak DESC, j.best_streak DESC, j.username ASC),
+    j.is_self, j.is_mutual
+  FROM joined j
+  ORDER BY 7 NULLS LAST, 1;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.head_to_head(p_username TEXT, p_date DATE)
+RETURNS TABLE (
+  opponent_id UUID, opponent_username TEXT, visible BOOLEAN,
+  my_current_streak INT, my_best_streak INT, their_current_streak INT, their_best_streak INT,
+  my_score_today INT, their_score_today INT,
+  shared_days BIGINT, my_wins BIGINT, their_wins BIGINT, ties BIGINT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_opp public.profiles%ROWTYPE;
+  v_me public.profiles%ROWTYPE;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+  SELECT * INTO v_opp FROM public.profiles WHERE username = lower(btrim(p_username));
+  IF NOT FOUND OR v_opp.id = v_uid THEN
+    RETURN;
+  END IF;
+  SELECT * INTO v_me FROM public.profiles WHERE id = v_uid;
+
+  IF NOT public.can_view_stats(v_opp.id) THEN
+    RETURN QUERY SELECT v_opp.id, v_opp.username, FALSE, v_me.current_streak, v_me.best_streak,
+      NULL::INT, NULL::INT, NULL::INT, NULL::INT, NULL::BIGINT, NULL::BIGINT, NULL::BIGINT, NULL::BIGINT;
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT v_opp.id, v_opp.username, TRUE,
+    v_me.current_streak, v_me.best_streak, v_opp.current_streak, v_opp.best_streak,
+    (SELECT score FROM public.user_scores WHERE user_id = v_uid AND date = p_date),
+    (SELECT score FROM public.user_scores WHERE user_id = v_opp.id AND date = p_date),
+    COUNT(*), COUNT(*) FILTER (WHERE a.score > b.score), COUNT(*) FILTER (WHERE a.score < b.score),
+    COUNT(*) FILTER (WHERE a.score = b.score)
+  FROM public.user_scores a
+  JOIN public.user_scores b ON b.date = a.date AND b.user_id = v_opp.id
+  WHERE a.user_id = v_uid;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.can_view_stats(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.get_profile_stats(UUID[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_profile_stats(UUID[]) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.friends_leaderboard(DATE) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.friends_leaderboard(DATE) TO authenticated;
+REVOKE ALL ON FUNCTION public.head_to_head(TEXT, DATE) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.head_to_head(TEXT, DATE) TO authenticated;

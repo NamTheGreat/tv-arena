@@ -361,8 +361,8 @@ BEGIN
   INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   VALUES (v_prediction_show, 999960, 'mover-prediction-eligibility-test', 'Mover Prediction Eligibility Test', 'TestNet', 'Drama', '2026', '#111', 'Mover_Test', 'test', 0);
   INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
-  SELECT v_prediction_show, v_next_week - day_offset, 0, 100, 0, 0
-  FROM generate_series(1, 14) AS days(day_offset);
+  SELECT v_prediction_show, (now() AT TIME ZONE 'UTC')::DATE - day_offset, 0, 100, 0, 0
+  FROM generate_series(0, 13) AS days(day_offset);
 
   SET LOCAL ROLE authenticated;
   PERFORM set_config('request.jwt.claim.sub', v_user_id::text, true);
@@ -389,7 +389,7 @@ BEGIN
   INSERT INTO series (id, tmdb_id, slug, title, network, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
   VALUES (v_zero_prior_show, 999961, 'mover-prediction-zero-prior-test', 'Mover Prediction Zero Prior Test', 'TestNet', 'Drama', '2026', '#111', 'Mover_Zero_Prior_Test', 'test', 0);
   INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score, wiki_views, reddit_comments, reddit_upvotes)
-  SELECT v_zero_prior_show, v_next_week - 7 - day_offset, 0, 0, 0, 0
+  SELECT v_zero_prior_show, (now() AT TIME ZONE 'UTC')::DATE - 7 - day_offset, 0, 0, 0, 0
   FROM generate_series(1, 7) AS days(day_offset);
 
   SET LOCAL ROLE authenticated;
@@ -627,6 +627,545 @@ BEGIN
   END IF;
 
   RAISE NOTICE '✓ Legacy telemetry column resilience verified.';
+END $$;
+
+-- 7. Defensive Anchor Guard & Future-Date Guard
+DO $$
+DECLARE
+  v_score_before BIGINT;
+  v_score_after BIGINT;
+  v_candidates_before BIGINT;
+  v_candidates_after BIGINT;
+  v_future_rejected BOOLEAN := FALSE;
+  v_test_series_id UUID;
+BEGIN
+  RAISE NOTICE 'Testing Defensive Anchor Guard & Future-Date Guard...';
+
+  SELECT id INTO v_test_series_id FROM series LIMIT 1;
+
+  -- Verify trigger blocks future telemetry insertions
+  BEGIN
+    INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score)
+    VALUES (v_test_series_id, (now() AT TIME ZONE 'UTC')::date + INTERVAL '30 days', 9999);
+  EXCEPTION WHEN OTHERS THEN
+    v_future_rejected := TRUE;
+  END;
+
+  IF NOT v_future_rejected THEN
+    RAISE EXCEPTION 'Trigger failed to block future-dated telemetry row';
+  END IF;
+
+  -- Verify views ignore future rows if trigger was disabled / bypassed
+  ALTER TABLE series_daily_telemetry DISABLE TRIGGER trg_check_telemetry_recorded_date;
+
+  SELECT COALESCE(current_7d_score, 0) INTO v_score_before
+  FROM series_leaderboard WHERE id = v_test_series_id;
+  SELECT COUNT(*) INTO v_candidates_before FROM series_deck_candidates;
+
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, daily_score)
+  VALUES (v_test_series_id, (now() AT TIME ZONE 'UTC')::date + INTERVAL '365 days', 9999)
+  ON CONFLICT (series_id, recorded_date) DO NOTHING;
+
+  SELECT COALESCE(current_7d_score, 0) INTO v_score_after
+  FROM series_leaderboard WHERE id = v_test_series_id;
+  SELECT COUNT(*) INTO v_candidates_after FROM series_deck_candidates;
+
+  IF v_score_before IS DISTINCT FROM v_score_after THEN
+    RAISE EXCEPTION 'Leaderboard current_7d_score shifted when future row was present: before %, after %',
+      v_score_before, v_score_after;
+  END IF;
+
+  IF v_candidates_before IS DISTINCT FROM v_candidates_after THEN
+    RAISE EXCEPTION 'Deck candidates count shifted when future row was present: before %, after %',
+      v_candidates_before, v_candidates_after;
+  END IF;
+
+  -- Clean up test row and re-enable trigger
+  DELETE FROM series_daily_telemetry
+  WHERE series_id = v_test_series_id
+    AND recorded_date > (now() AT TIME ZONE 'UTC')::date;
+
+  ALTER TABLE series_daily_telemetry ENABLE TRIGGER trg_check_telemetry_recorded_date;
+
+  RAISE NOTICE '✓ Future telemetry rejected by trigger and ignored by rolling views.';
+END $$;
+
+-- 8. Show comments: RLS, validation, spam brake (#191)
+DO $$
+DECLARE
+  v_series UUID := gen_random_uuid();
+  v_u1 UUID := gen_random_uuid();
+  v_u2 UUID := gen_random_uuid();
+  v_c1 UUID;
+  v_n INT;
+  v_body TEXT;
+  v_ok BOOLEAN;
+BEGIN
+  RAISE NOTICE 'Testing show comments...';
+  INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES (v_series, 999951, 'cmt-show', 'Comment Show', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'Cmt_Show', 'test', 0);
+  INSERT INTO auth.users (id, email) VALUES (v_u1, 'commenter_one@example.com'), (v_u2, 'commenter_two@example.com');
+  INSERT INTO profiles (id, username) VALUES (v_u1, 'commenter_one'), (v_u2, 'commenter_two')
+  ON CONFLICT (id) DO NOTHING;
+
+  -- anon can read but cannot post
+  SET LOCAL ROLE anon;
+  PERFORM 1 FROM series_comments;
+  v_ok := FALSE;
+  BEGIN
+    INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, 'anon post');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  RESET ROLE;
+  IF NOT v_ok THEN RAISE EXCEPTION 'anon must not be able to post comments'; END IF;
+
+  -- user 1 posts; body is trimmed
+  PERFORM set_config('request.jwt.claim.sub', v_u1::text, true);
+  SET LOCAL ROLE authenticated;
+  INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, '  Deserves #1  ') RETURNING id INTO v_c1;
+  IF (SELECT body FROM series_comments WHERE id = v_c1) <> 'Deserves #1' THEN
+    RAISE EXCEPTION 'comment body must be trimmed';
+  END IF;
+
+  -- cannot post as someone else
+  v_ok := FALSE;
+  BEGIN
+    INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u2, 'impersonation');
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'users must not post as other users'; END IF;
+
+  -- cannot self-approve / set status or timestamps on insert
+  v_ok := FALSE;
+  BEGIN
+    EXECUTE 'INSERT INTO series_comments (series_id, user_id, body, status) VALUES ($1, $2, ''x'', ''hidden'')' USING v_series, v_u1;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'status must not be writable by users'; END IF;
+
+  -- validation: empty, whitespace-only, 281 chars, markup, script URLs, control chars
+  FOREACH v_body IN ARRAY ARRAY['', '   ', repeat('a', 281), '<script>alert(1)</script>', 'hi <img src=x onerror=1>', 'JavaScript:alert(1)', 'bad' || chr(7) || 'char']
+  LOOP
+    v_ok := FALSE;
+    BEGIN
+      INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, v_body);
+    EXCEPTION WHEN check_violation THEN v_ok := TRUE; END;
+    IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'invalid comment accepted: %', left(v_body, 30); END IF;
+  END LOOP;
+  -- boundary and harmless symbols are fine
+  INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, repeat('a', 280));
+  INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, 'I <3 this show & 2 > 1');
+
+  -- user 2 cannot edit or delete user 1's comment (silently affects 0 rows)
+  PERFORM set_config('request.jwt.claim.sub', v_u2::text, true);
+  UPDATE series_comments SET body = 'hijacked' WHERE id = v_c1;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 0 THEN RESET ROLE; RAISE EXCEPTION 'user 2 edited user 1 comment'; END IF;
+  DELETE FROM series_comments WHERE id = v_c1;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 0 THEN RESET ROLE; RAISE EXCEPTION 'user 2 deleted user 1 comment'; END IF;
+
+  -- author can edit (updated_at moves) but cannot reassign ownership or edit other columns
+  PERFORM set_config('request.jwt.claim.sub', v_u1::text, true);
+  UPDATE series_comments SET body = 'Edited take' WHERE id = v_c1;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 1 THEN RESET ROLE; RAISE EXCEPTION 'author could not edit own comment'; END IF;
+  v_ok := FALSE;
+  BEGIN
+    EXECUTE 'UPDATE series_comments SET user_id = $1 WHERE id = $2' USING v_u2, v_c1;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'user_id must not be updatable'; END IF;
+  v_ok := FALSE;
+  BEGIN
+    UPDATE series_comments SET body = '<b>x</b>' WHERE id = v_c1;
+  EXCEPTION WHEN check_violation THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'edits must pass the same validation'; END IF;
+
+  -- hidden comments disappear from public reads
+  RESET ROLE;
+  UPDATE series_comments SET status = 'hidden' WHERE id = v_c1;
+  SET LOCAL ROLE anon;
+  SELECT COUNT(*) INTO v_n FROM series_comments WHERE id = v_c1;
+  RESET ROLE;
+  IF v_n <> 0 THEN RAISE EXCEPTION 'hidden comments must not be publicly readable'; END IF;
+
+  -- spam brake: user 1 already has 4 rows this minute (c1 + 280 chars + <3 ... plus edits), fill to 5 then 6th fails
+  SELECT COUNT(*) INTO v_n FROM series_comments WHERE user_id = v_u1;
+  WHILE v_n < 5 LOOP
+    INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, 'filler ' || v_n);
+    v_n := v_n + 1;
+  END LOOP;
+  v_ok := FALSE;
+  BEGIN
+    INSERT INTO series_comments (series_id, user_id, body) VALUES (v_series, v_u1, 'one too many');
+  EXCEPTION WHEN raise_exception THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RAISE EXCEPTION 'spam brake did not trigger'; END IF;
+
+  -- author can delete own
+  PERFORM set_config('request.jwt.claim.sub', v_u1::text, true);
+  SET LOCAL ROLE authenticated;
+  DELETE FROM series_comments WHERE user_id = v_u1 AND body = 'I <3 this show & 2 > 1';
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RESET ROLE;
+  IF v_n <> 1 THEN RAISE EXCEPTION 'author could not delete own comment'; END IF;
+
+  RAISE NOTICE '✓ Show comments verified (RLS, validation, spam brake).';
+END $$;
+
+-- 9. Hall of Fame records: score math, ties, streaks, limited history, RLS
+DO $$
+DECLARE
+  v_a UUID := gen_random_uuid();
+  v_b UUID := gen_random_uuid();
+  v_c UUID := gen_random_uuid();
+  v_d UUID := gen_random_uuid();
+  v_e UUID := gen_random_uuid();
+  v_wiki NUMERIC;
+  v_row RECORD;
+  v_n INT;
+BEGIN
+  RAISE NOTICE 'Testing Hall of Fame records...';
+  SELECT wiki_weight INTO v_wiki FROM score_weights WHERE id = 1;
+
+  INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES
+    (v_a, 999981, 'hof-a', 'HoF A', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_A', 'test', 0),
+    (v_b, 999982, 'hof-b', 'HoF B', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_B', 'test', 0),
+    (v_c, 999983, 'hof-c', 'HoF C', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_C', 'test', 0),
+    (v_d, 999984, 'hof-d', 'HoF D', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_D', 'test', 0),
+    (v_e, 999985, 'hof-e', 'HoF E', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'HoF_E', 'test', 0);
+
+  -- Two full Monday-start weeks (2019-03-04 .. 2019-03-17) in the far past so no other data competes.
+  -- Base order every day: A 1000 > B 900 > C 800 > D 700 wiki views.
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views)
+  SELECT s.id, d::DATE,
+    CASE
+      WHEN s.id = v_a AND d::DATE IN ('2019-03-05', '2019-03-14') THEN 6000
+      WHEN s.id = v_a AND d::DATE = '2019-03-08' THEN 100
+      WHEN s.id = v_b AND d::DATE = '2019-03-08' THEN 2000
+      WHEN s.id = v_c AND d::DATE = '2019-03-12' THEN 4000
+      WHEN s.id = v_d AND d::DATE = '2019-03-13' THEN 4000
+      WHEN s.id = v_d AND d::DATE = '2019-03-04' THEN 0
+      WHEN s.id = v_a THEN 1000
+      WHEN s.id = v_b THEN 900
+      WHEN s.id = v_c THEN 800
+      ELSE 700
+    END
+  FROM (VALUES (v_a), (v_b), (v_c), (v_d)) AS s(id),
+       generate_series('2019-03-04'::DATE, '2019-03-17'::DATE, INTERVAL '1 day') AS d;
+
+  -- E has only two days of history and never ranks near the top.
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views)
+  VALUES (v_e, '2019-03-04', 10), (v_e, '2019-03-05', 10);
+
+  -- A has three distinct breakout dates (two signals on one date); B has one.
+  INSERT INTO series_breakouts (series_id, detected_date, signal, value, baseline_mean, baseline_std, pct_over_baseline, reason)
+  VALUES
+    (v_a, '2019-03-05', 'wiki', 1, 1, 1, 1, 't'), (v_a, '2019-03-05', 'reddit', 1, 1, 1, 1, 't'),
+    (v_a, '2019-03-08', 'wiki', 1, 1, 1, 1, 't'), (v_a, '2019-03-14', 'wiki', 1, 1, 1, 1, 't'),
+    (v_b, '2019-03-08', 'wiki', 1, 1, 1, 1, 't');
+
+  -- record_day: score math uses derived weights; A's tie between 03-05 and 03-14 cites the earlier date.
+  SELECT * INTO v_row FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_a;
+  IF v_row.value <> ROUND(6000 * v_wiki) OR v_row.start_date <> '2019-03-05' OR v_row.end_date <> '2019-03-05' THEN
+    RAISE EXCEPTION 'record_day for A wrong: value %, % - %', v_row.value, v_row.start_date, v_row.end_date;
+  END IF;
+
+  -- Ties: C and D both peak at 4000 views -> same record_rank, C placed first (earlier date).
+  IF (SELECT record_rank FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_c)
+     IS DISTINCT FROM (SELECT record_rank FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_d) THEN
+    RAISE EXCEPTION 'tied record days must share a record_rank';
+  END IF;
+  IF (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_c)
+     >= (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_d) THEN
+    RAISE EXCEPTION 'earlier achievement must be placed first on a tie';
+  END IF;
+  IF (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_a)
+     >= (SELECT place FROM series_hall_of_fame WHERE category = 'record_day' AND series_id = v_c) THEN
+    RAISE EXCEPTION 'higher record must be placed first';
+  END IF;
+
+  -- Limited history: E has two days of data and ranks last, so it must not hold rank-based records
+  -- (it may fall outside the top-10 record_day list when other fixtures exist).
+  IF EXISTS (SELECT 1 FROM series_hall_of_fame WHERE series_id = v_e AND category <> 'record_day') THEN
+    RAISE EXCEPTION 'a show with two days of data must not get rank-based records';
+  END IF;
+
+  -- top3_days: A 13, B 14, C 13, D 2 (days with at least 4 contending shows).
+  SELECT COUNT(*) INTO v_n FROM series_hall_of_fame
+  WHERE category = 'top3_days' AND (
+    (series_id = v_a AND value = 13) OR (series_id = v_b AND value = 14) OR
+    (series_id = v_c AND value = 13) OR (series_id = v_d AND value = 2));
+  IF v_n <> 4 THEN RAISE EXCEPTION 'top3_days counts wrong (% of 4 matched)', v_n; END IF;
+
+  -- number_one_streak: A is #1 on 03-04..07, 09..11, 14..17 -> longest 4, earliest run is cited.
+  SELECT * INTO v_row FROM series_hall_of_fame WHERE category = 'number_one_streak' AND series_id = v_a;
+  IF v_row.value <> 4 OR v_row.start_date <> '2019-03-04' OR v_row.end_date <> '2019-03-07' THEN
+    RAISE EXCEPTION 'number_one_streak for A wrong: %, % - %', v_row.value, v_row.start_date, v_row.end_date;
+  END IF;
+  IF (SELECT value FROM series_hall_of_fame WHERE category = 'number_one_streak' AND series_id = v_b) <> 1 THEN
+    RAISE EXCEPTION 'B should have a one day #1 streak';
+  END IF;
+
+  -- number_one_weeks: A wins both complete weeks; nobody else wins any.
+  SELECT * INTO v_row FROM series_hall_of_fame WHERE category = 'number_one_weeks' AND series_id = v_a;
+  IF v_row.value <> 2 OR v_row.start_date <> '2019-03-04' OR v_row.end_date <> '2019-03-17' THEN
+    RAISE EXCEPTION 'number_one_weeks for A wrong: %, % - %', v_row.value, v_row.start_date, v_row.end_date;
+  END IF;
+  IF EXISTS (SELECT 1 FROM series_hall_of_fame WHERE category = 'number_one_weeks' AND series_id IN (v_b, v_c, v_d, v_e)) THEN
+    RAISE EXCEPTION 'only A should hold weekly #1 records';
+  END IF;
+
+  -- breakout_events counts distinct dates, not signals.
+  IF (SELECT value FROM series_hall_of_fame WHERE category = 'breakout_events' AND series_id = v_a) <> 3
+     OR (SELECT value FROM series_hall_of_fame WHERE category = 'breakout_events' AND series_id = v_b) <> 1 THEN
+    RAISE EXCEPTION 'breakout_events must count distinct dates';
+  END IF;
+
+  -- Each category is capped at 10 places.
+  IF EXISTS (SELECT 1 FROM series_hall_of_fame WHERE place > 10) THEN
+    RAISE EXCEPTION 'places beyond 10 must not be returned';
+  END IF;
+
+  -- RLS: public read works for anon, writes through the view do not.
+  IF has_table_privilege('anon', 'public.series_hall_of_fame', 'INSERT')
+     OR has_table_privilege('anon', 'public.series_hall_of_fame', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.series_hall_of_fame', 'DELETE') THEN
+    RAISE EXCEPTION 'Hall of Fame view must not grant write privileges';
+  END IF;
+  SET LOCAL ROLE anon;
+  SELECT COUNT(*) INTO v_n FROM series_hall_of_fame WHERE series_id = v_a;
+  IF v_n < 1 THEN RAISE EXCEPTION 'anon must be able to read the hall of fame'; END IF;
+  BEGIN
+    UPDATE series_hall_of_fame SET value = 0;
+    RAISE EXCEPTION 'anon must not be able to update the hall of fame view';
+  EXCEPTION WHEN insufficient_privilege OR feature_not_supported OR object_not_in_prerequisite_state THEN
+    NULL;
+  END;
+  RESET ROLE;
+
+  RAISE NOTICE '✓ Hall of Fame records verified (math, ties, streaks, limited history, RLS).';
+END $$;
+
+-- 10. Follows, privacy and friends leaderboard (#192)
+DO $$
+DECLARE
+  a UUID := gen_random_uuid(); b UUID := gen_random_uuid(); c UUID := gen_random_uuid();
+  d UUID := gen_random_uuid(); e UUID := gen_random_uuid(); f UUID := gen_random_uuid();
+  g UUID := gen_random_uuid();
+  v_n INT; v_ok BOOLEAN; v_row RECORD; v_status TEXT;
+  v_updated_before TIMESTAMPTZ; v_updated_after TIMESTAMPTZ;
+  v_day DATE := '2019-05-01';
+BEGIN
+  RAISE NOTICE 'Testing follows and privacy...';
+  INSERT INTO auth.users (id, email) VALUES
+    (a, 'friend_a@example.com'), (b, 'friend_b@example.com'), (c, 'friend_c@example.com'), (d, 'friend_d@example.com'),
+    (e, 'friend_e@example.com'), (f, 'friend_f@example.com'), (g, 'friend_g@example.com');
+  UPDATE profiles SET username = 'fx_a', current_streak = 3, best_streak = 905 WHERE id = a;
+  UPDATE profiles SET username = 'fx_b', current_streak = 8, best_streak = 908 WHERE id = b;
+  UPDATE profiles SET username = 'fx_c', current_streak = 2, best_streak = 910, stats_visibility = 'followers' WHERE id = c;
+  UPDATE profiles SET username = 'fx_d', current_streak = 4, best_streak = 904 WHERE id = d;
+  UPDATE profiles SET username = 'fx_e', current_streak = 1, best_streak = 901 WHERE id = e;
+  UPDATE profiles SET username = 'fx_f', current_streak = 1, best_streak = 1 WHERE id = f;
+  UPDATE profiles SET username = 'fx_g', current_streak = 1, best_streak = 1, stats_visibility = 'followers' WHERE id = g;
+
+  INSERT INTO user_scores (user_id, date, score, completed_at) VALUES
+    (a, v_day, 7, '2019-05-01 12:00Z'), (a, v_day + 1, 5, '2019-05-02 12:00Z'), (a, v_day + 2, 8, '2019-05-03 12:00Z'),
+    (b, v_day, 9, '2019-05-01 10:00Z'), (b, v_day + 1, 5, '2019-05-02 10:00Z'), (b, v_day + 2, 6, '2019-05-03 10:00Z'),
+    (c, v_day, 9, '2019-05-01 09:00Z');
+
+  -- anon cannot touch follows
+  SET LOCAL ROLE anon;
+  v_ok := FALSE;
+  BEGIN PERFORM 1 FROM user_follows; EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  RESET ROLE;
+  IF NOT v_ok THEN RAISE EXCEPTION 'anon must not read user_follows'; END IF;
+  IF has_function_privilege('anon', 'public.profiles_accept_pending_on_public()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'trigger function must not be directly executable by anon';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.profiles_set_updated_at()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'timestamp trigger function must not be directly executable';
+  END IF;
+  IF has_table_privilege('anon', 'public.profiles', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.profiles', 'UPDATE')
+     OR has_table_privilege('anon', 'public.profiles', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.profiles', 'INSERT')
+     OR has_column_privilege('authenticated', 'public.profiles', 'current_streak', 'UPDATE')
+     OR has_column_privilege('authenticated', 'public.profiles', 'best_streak', 'UPDATE') THEN
+    RAISE EXCEPTION 'profile table writes must be limited to explicitly granted columns';
+  END IF;
+
+  -- Username edits must work without granting direct updated_at writes; the trigger owns that column.
+  SELECT updated_at INTO v_updated_before FROM profiles WHERE id = a;
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
+  SET LOCAL ROLE authenticated;
+  UPDATE profiles SET username = 'fx_a' WHERE id = a;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RESET ROLE;
+  SELECT updated_at INTO v_updated_after FROM profiles WHERE id = a;
+  IF v_n <> 1 OR v_updated_after <= v_updated_before THEN
+    RAISE EXCEPTION 'authorized profile update must succeed and advance updated_at';
+  END IF;
+  SET LOCAL ROLE authenticated;
+  v_ok := FALSE;
+  BEGIN
+    UPDATE profiles SET updated_at = clock_timestamp() WHERE id = a;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  RESET ROLE;
+  IF NOT v_ok THEN RAISE EXCEPTION 'clients must not write profile updated_at directly'; END IF;
+
+  -- A follows B (public -> accepted) and C (followers-only -> pending)
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
+  SET LOCAL ROLE authenticated;
+  INSERT INTO user_follows (follower_id, followee_id) VALUES (a, b), (a, c), (a, d), (a, f), (a, g);
+  SELECT status INTO v_status FROM user_follows WHERE follower_id = a AND followee_id = b;
+  IF v_status <> 'accepted' THEN RESET ROLE; RAISE EXCEPTION 'follow of a public profile must be accepted, got %', v_status; END IF;
+  SELECT status INTO v_status FROM user_follows WHERE follower_id = a AND followee_id = c;
+  IF v_status <> 'pending' THEN RESET ROLE; RAISE EXCEPTION 'follow of a followers-only profile must be pending, got %', v_status; END IF;
+
+  -- no self follow, no forged follower, no self-approval, no status on insert
+  v_ok := FALSE;
+  BEGIN INSERT INTO user_follows (follower_id, followee_id) VALUES (a, a);
+  EXCEPTION WHEN check_violation OR insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'self follow must be rejected'; END IF;
+  v_ok := FALSE;
+  BEGIN INSERT INTO user_follows (follower_id, followee_id) VALUES (b, e);
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'forged follower_id must be rejected'; END IF;
+  UPDATE user_follows SET status = 'accepted' WHERE follower_id = a AND followee_id = c;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 0 THEN RESET ROLE; RAISE EXCEPTION 'follower must not approve own request'; END IF;
+  v_ok := FALSE;
+  BEGIN EXECUTE 'INSERT INTO user_follows (follower_id, followee_id, status) VALUES ($1, $2, ''accepted'')' USING a, e;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'status must not be insertable'; END IF;
+
+  -- stats columns are hidden from direct reads; usernames are not
+  v_ok := FALSE;
+  BEGIN EXECUTE 'SELECT current_streak FROM profiles LIMIT 1'; EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'streak columns must not be directly readable'; END IF;
+  PERFORM username FROM profiles LIMIT 1;
+
+  -- visibility matrix from A's view: self, public, pending followers-only, accepted
+  IF NOT (EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[a])) AND EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[b])) AND EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[d]))) THEN RESET ROLE; RAISE EXCEPTION 'public and own stats must be visible'; END IF;
+  IF EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[c])) THEN RESET ROLE; RAISE EXCEPTION 'pending request must not unlock followers-only stats'; END IF;
+
+  -- head to head: hidden while pending, visible stats for public opponent with correct aggregates
+  SELECT * INTO v_row FROM head_to_head('fx_c', v_day);
+  IF v_row.visible OR v_row.their_best_streak IS NOT NULL THEN RESET ROLE; RAISE EXCEPTION 'head_to_head must hide followers-only stats'; END IF;
+  SELECT * INTO v_row FROM head_to_head('FX_B ', v_day);
+  IF NOT v_row.visible OR v_row.shared_days <> 3 OR v_row.my_wins <> 1 OR v_row.their_wins <> 1 OR v_row.ties <> 1
+     OR v_row.my_score_today <> 7 OR v_row.their_score_today <> 9
+     OR v_row.my_current_streak <> 3 OR v_row.their_current_streak <> 8 OR v_row.their_best_streak <> 908 THEN
+    RESET ROLE; RAISE EXCEPTION 'head_to_head aggregates wrong: %', v_row;
+  END IF;
+  SELECT * INTO v_row FROM head_to_head('fx_d', v_day);
+  IF NOT v_row.visible OR v_row.shared_days <> 0 OR v_row.my_wins <> 0 THEN RESET ROLE; RAISE EXCEPTION 'no shared days must give zero counts'; END IF;
+  IF EXISTS (SELECT 1 FROM head_to_head('fx_a', v_day)) OR EXISTS (SELECT 1 FROM head_to_head('nobody_here', v_day)) THEN
+    RESET ROLE; RAISE EXCEPTION 'head_to_head must return nothing for self or unknown users';
+  END IF;
+
+  -- public leaderboard hides C (followers-only, not accepted) from A
+  IF EXISTS (SELECT 1 FROM daily_leaderboard(v_day) WHERE username = 'fx_c') THEN RESET ROLE; RAISE EXCEPTION 'followers-only player leaked into daily leaderboard'; END IF;
+  IF EXISTS (SELECT 1 FROM streak_leaderboard() WHERE username = 'fx_c') THEN RESET ROLE; RAISE EXCEPTION 'followers-only player leaked into streak leaderboard'; END IF;
+  RESET ROLE;
+  SET LOCAL ROLE anon;
+  IF EXISTS (SELECT 1 FROM daily_leaderboard(v_day) WHERE username = 'fx_c') THEN RESET ROLE; RAISE EXCEPTION 'followers-only player leaked to anon'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM daily_leaderboard(v_day) WHERE username = 'fx_b') THEN RESET ROLE; RAISE EXCEPTION 'public players must stay on the leaderboard'; END IF;
+  IF EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[c, g])) OR NOT EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[b])) THEN RESET ROLE; RAISE EXCEPTION 'get_profile_stats must respect privacy for anon'; END IF;
+  v_ok := FALSE;
+  BEGIN PERFORM friends_leaderboard(v_day); EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'anon must not call friends_leaderboard'; END IF;
+  RESET ROLE;
+
+  -- C sees the request, accepts it; A cannot see unrelated follows
+  PERFORM set_config('request.jwt.claim.sub', c::text, true);
+  SET LOCAL ROLE authenticated;
+  SELECT COUNT(*) INTO v_n FROM user_follows;
+  IF v_n <> 1 THEN RESET ROLE; RAISE EXCEPTION 'C should only see the one request addressed to them, saw %', v_n; END IF;
+  UPDATE user_follows SET status = 'accepted' WHERE followee_id = c AND follower_id = a AND status = 'pending';
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 1 THEN RESET ROLE; RAISE EXCEPTION 'followee could not accept request'; END IF;
+  -- followee cannot set arbitrary statuses back or edit other columns
+  v_ok := FALSE;
+  BEGIN EXECUTE 'UPDATE user_follows SET follower_id = $1 WHERE followee_id = $2' USING e, c;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'follower_id must not be updatable'; END IF;
+  -- cannot edit someone else's privacy; own value validated
+  UPDATE profiles SET stats_visibility = 'public' WHERE id = a;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  IF v_n <> 0 THEN RESET ROLE; RAISE EXCEPTION 'users must not change other profiles'; END IF;
+  v_ok := FALSE;
+  BEGIN UPDATE profiles SET stats_visibility = 'friends' WHERE id = c; EXCEPTION WHEN check_violation THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RESET ROLE; RAISE EXCEPTION 'invalid stats_visibility accepted'; END IF;
+  RESET ROLE;
+
+  -- B and E follow A back (mutual with B; E is a follower A does not follow)
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
+  SET LOCAL ROLE authenticated; INSERT INTO user_follows (follower_id, followee_id) VALUES (b, a); RESET ROLE;
+  PERFORM set_config('request.jwt.claim.sub', e::text, true);
+  SET LOCAL ROLE authenticated; INSERT INTO user_follows (follower_id, followee_id) VALUES (e, a); RESET ROLE;
+
+  -- friends leaderboard for A: A, B, C (accepted), D, F, but not E or the pending G
+  PERFORM set_config('request.jwt.claim.sub', a::text, true);
+  SET LOCAL ROLE authenticated;
+  IF NOT EXISTS (SELECT 1 FROM get_profile_stats(ARRAY[c])) THEN RESET ROLE; RAISE EXCEPTION 'accepted follower must see followers-only stats'; END IF;
+  SELECT COUNT(*) INTO v_n FROM friends_leaderboard(v_day);
+  IF v_n <> 5 THEN RESET ROLE; RAISE EXCEPTION 'friends circle should have 5 members, got %', v_n; END IF;
+  IF EXISTS (SELECT 1 FROM friends_leaderboard(v_day) WHERE username IN ('fx_e', 'fx_g')) THEN RESET ROLE; RAISE EXCEPTION 'followers and pending requests are not friends'; END IF;
+  -- C and B tie on 9; C completed earlier so ranks 1; A (7) ranks 3; D and F have no score
+  IF (SELECT daily_rank FROM friends_leaderboard(v_day) WHERE username = 'fx_c') <> 1
+     OR (SELECT daily_rank FROM friends_leaderboard(v_day) WHERE username = 'fx_b') <> 2
+     OR (SELECT daily_rank FROM friends_leaderboard(v_day) WHERE username = 'fx_a') <> 3
+     OR EXISTS (SELECT 1 FROM friends_leaderboard(v_day) WHERE username IN ('fx_d', 'fx_f') AND (daily_rank IS NOT NULL OR score IS NOT NULL)) THEN
+    RESET ROLE; RAISE EXCEPTION 'daily friend ranks wrong';
+  END IF;
+  -- streak ranks: B 8, D 4, A 3, C 2, F 1
+  IF (SELECT array_agg(username ORDER BY streak_rank) FROM friends_leaderboard(v_day)) IS DISTINCT FROM ARRAY['fx_b','fx_d','fx_a','fx_c','fx_f'] THEN
+    RESET ROLE; RAISE EXCEPTION 'streak ranks wrong';
+  END IF;
+  IF NOT (SELECT is_self FROM friends_leaderboard(v_day) WHERE username = 'fx_a')
+     OR NOT (SELECT is_mutual FROM friends_leaderboard(v_day) WHERE username = 'fx_b')
+     OR (SELECT is_mutual FROM friends_leaderboard(v_day) WHERE username = 'fx_c')
+     OR (SELECT is_mutual FROM friends_leaderboard(v_day) WHERE username = 'fx_a') THEN
+    RESET ROLE; RAISE EXCEPTION 'is_self / is_mutual flags wrong';
+  END IF;
+  -- now that C is accepted, head to head works and C shows on the public board for A
+  IF NOT (SELECT visible FROM head_to_head('fx_c', v_day)) THEN RESET ROLE; RAISE EXCEPTION 'accepted follow must unlock head_to_head'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM daily_leaderboard(v_day) WHERE username = 'fx_c') THEN RESET ROLE; RAISE EXCEPTION 'accepted follower should see C on leaderboard'; END IF;
+  RESET ROLE;
+
+  -- switching G to public resolves its pending request
+  PERFORM set_config('request.jwt.claim.sub', g::text, true);
+  SET LOCAL ROLE authenticated;
+  UPDATE profiles SET stats_visibility = 'public' WHERE id = g;
+  RESET ROLE;
+  IF (SELECT status FROM user_follows WHERE follower_id = a AND followee_id = g) <> 'accepted' THEN
+    RAISE EXCEPTION 'going public must accept pending requests';
+  END IF;
+
+  -- either side can end a follow: E removes follower... A removes own follow of D, B removes A's follow of B
+  PERFORM set_config('request.jwt.claim.sub', b::text, true);
+  SET LOCAL ROLE authenticated;
+  DELETE FROM user_follows WHERE follower_id = a AND followee_id = b;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RESET ROLE;
+  IF v_n <> 1 THEN RAISE EXCEPTION 'followee must be able to remove a follower'; END IF;
+  PERFORM set_config('request.jwt.claim.sub', d::text, true);
+  SET LOCAL ROLE authenticated;
+  DELETE FROM user_follows WHERE follower_id = a AND followee_id = f;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RESET ROLE;
+  IF v_n <> 0 THEN RAISE EXCEPTION 'unrelated users must not delete follows'; END IF;
+
+  -- follow limit: 200 per follower
+  INSERT INTO auth.users (id, email) SELECT gen_random_uuid(), 'lim' || n || '@example.com' FROM generate_series(1, 200) n;
+  INSERT INTO user_follows (follower_id, followee_id)
+    SELECT e, p.id FROM profiles p WHERE p.id NOT IN (e, a) AND p.username <> 'fx_c' ORDER BY p.id LIMIT 199;
+  v_ok := FALSE;
+  BEGIN INSERT INTO user_follows (follower_id, followee_id) SELECT e, p.id FROM profiles p
+    WHERE p.id NOT IN (e) AND NOT EXISTS (SELECT 1 FROM user_follows u WHERE u.follower_id = e AND u.followee_id = p.id) LIMIT 2;
+  EXCEPTION WHEN raise_exception THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RAISE EXCEPTION 'follow limit did not trigger'; END IF;
+
+  RAISE NOTICE '✓ Follows, privacy and friends leaderboard verified.';
 END $$;
 
 ROLLBACK;

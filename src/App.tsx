@@ -2,6 +2,7 @@ import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import {
   Routes,
   Route,
+  Navigate,
   useNavigate,
   useLocation,
   useParams,
@@ -15,6 +16,7 @@ import { DatabaseStatusCard } from './components/DatabaseStatusCard';
 import { DailySharePage } from './components/DailySharePage';
 import { UserProfileDropdown } from './components/UserProfileDropdown';
 import { leaderboardScore } from './lib/derivedScore';
+import { isEmbedPath } from './lib/embed';
 import { orderTelemetryPages, readLeaderboardQuery } from './lib/leaderboard';
 import type { AuthModalMode } from './components/AuthModal';
 import { fetchArenaSnapshot } from './lib/snapshot';
@@ -49,17 +51,26 @@ const TriviaGame = React.lazy(() =>
 const ShowDetailView = React.lazy(() =>
   import('./components/ShowDetailView').then((m) => ({ default: m.ShowDetailView }))
 );
+const EmbedLeaderboard = React.lazy(() =>
+  import('./components/EmbedLeaderboard').then((m) => ({ default: m.EmbedLeaderboard }))
+);
 const NotFoundView = React.lazy(() =>
   import('./components/NotFoundView').then((m) => ({ default: m.NotFoundView }))
 );
 const MoversView = React.lazy(() =>
   import('./components/MoversView').then((m) => ({ default: m.MoversView }))
 );
+const FriendsView = React.lazy(() =>
+  import('./components/FriendsView').then((m) => ({ default: m.FriendsView }))
+);
+const HallOfFameView = React.lazy(() =>
+  import('./components/HallOfFameView').then((m) => ({ default: m.HallOfFameView }))
+);
 const DailyHistoryView = React.lazy(() =>
   import('./components/DailyHistoryView').then((m) => ({ default: m.DailyHistoryView }))
 );
 
-type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist' | 'history';
+type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist' | 'history' | 'friends' | 'records';
 
 function RouteLoadingFallback() {
   return (
@@ -175,17 +186,27 @@ function LeaderboardRouteWrapper({
 }
 
 function WatchlistSignInPrompt({ onOpenAuth }: { onOpenAuth: () => void }) {
+  const navigate = useNavigate();
   return (
     <main className="w-full max-w-4xl rounded-[28px] bg-white/90 p-8 text-center shadow-card">
       <h2 className="font-serif text-2xl text-arena-charcoal">Sign in to use your watchlist</h2>
       <p className="mt-2 text-sm text-arena-muted">Your saved shows are private to your account.</p>
-      <button
-        type="button"
-        onClick={onOpenAuth}
-        className="mt-5 rounded-full bg-arena-terracotta px-5 py-2 text-sm font-semibold text-white"
-      >
-        Sign in
-      </button>
+      <div className="mt-5 flex items-center justify-center gap-3">
+        <button
+          type="button"
+          onClick={onOpenAuth}
+          className="rounded-full bg-arena-terracotta px-5 py-2 text-sm font-semibold text-white hover:bg-arena-terracottaHover transition-colors"
+        >
+          Sign in
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate('/')}
+          className="rounded-full border border-stone-200 bg-white px-5 py-2 text-sm font-semibold text-arena-charcoal hover:bg-stone-50 transition-colors"
+        >
+          Explore Leaderboard
+        </button>
+      </div>
     </main>
   );
 }
@@ -366,11 +387,13 @@ export default function App() {
     }
   }, [user, passwordRecovery]);
 
-  const closeAuthModal = () => {
+  const closeAuthModal = (reason: 'dismiss' | 'success' = 'dismiss') => {
     setIsAuthModalOpen(false);
     setAuthModalMode('signin');
     clearPasswordRecovery();
     if (location.search.includes('password-reset=1') || location.search.includes('mode=update-password')) {
+      navigate('/', { replace: true });
+    } else if (reason === 'dismiss' && !user && location.pathname.startsWith('/watchlist')) {
       navigate('/', { replace: true });
     }
   };
@@ -389,6 +412,8 @@ export default function App() {
     if (location.pathname.startsWith('/guess')) return 'guess';
     if (location.pathname.startsWith('/movers')) return 'movers';
     if (location.pathname.startsWith('/watchlist')) return 'watchlist';
+    if (location.pathname.startsWith('/friends')) return 'friends';
+    if (location.pathname.startsWith('/hall-of-fame')) return 'records';
     return 'leaderboard';
   }, [location.pathname]);
 
@@ -598,6 +623,19 @@ export default function App() {
     );
   }
 
+  // Chrome-less widget for iframes (no header, nav, modals or auth).
+  if (isEmbedPath(location.pathname)) {
+    return (
+      <Suspense fallback={null}>
+        <EmbedLeaderboard
+          seriesList={seriesList}
+          isLoading={isLoading}
+          error={dbError ?? (!isSupabaseConfigured && seriesList.length === 0 ? 'unavailable' : null)}
+        />
+      </Suspense>
+    );
+  }
+
   // When static data is available, keep the app usable without Supabase.
   if ((!isSupabaseConfigured && seriesList.length === 0) || dbError) {
     return (
@@ -635,7 +673,9 @@ export default function App() {
     { label: 'Charts', tabKey: 'charts' as TabKey, path: '/charts' },
     { label: 'Guess', tabKey: 'guess' as TabKey, path: '/guess' },
     { label: 'Movers', tabKey: 'movers' as TabKey, path: '/movers' },
+    { label: 'Hall of Fame', tabKey: 'records' as TabKey, path: '/hall-of-fame' },
     ...(user ? [{ label: 'Watchlist', tabKey: 'watchlist' as TabKey, path: '/watchlist' }] : []),
+    ...(user ? [{ label: 'Friends', tabKey: 'friends' as TabKey, path: '/friends' }] : []),
   ];
 
   const leaderboardProps = {
@@ -648,7 +688,7 @@ export default function App() {
     setGenreFilter,
     watchlistIds: watchlist.seriesIds,
     pendingWatchlistIds: watchlist.pendingSeriesIds,
-    onToggleWatchlist: user ? watchlist.toggle : undefined,
+    onToggleWatchlist: user ? watchlist.toggle : () => setIsAuthModalOpen(true),
     watchlistLoading: watchlist.isLoading,
     watchlistError: watchlist.error,
   };
@@ -687,8 +727,8 @@ export default function App() {
       </header>
 
       {/* Shared Navigation Pill */}
-      <nav aria-label="Main Navigation" className="mb-6 sm:mb-12">
-        <div className="inline-flex items-center bg-white/85 backdrop-blur-md p-1 sm:p-1.5 rounded-full border border-arena-border shadow-nav-pill">
+      <nav aria-label="Main Navigation" className="mb-6 sm:mb-12 max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-2 py-2">
+        <div className="inline-flex items-center bg-white/85 backdrop-blur-md p-1 sm:p-1.5 rounded-full border border-arena-border shadow-nav-pill whitespace-nowrap">
           {navItems.map((item) => (
             <button
               key={item.tabKey}
@@ -724,6 +764,10 @@ export default function App() {
             element={<ArenaRouteWrapper seriesList={seriesList} />}
           />
           <Route
+            path="/contenders"
+            element={<Navigate to="/arena" replace />}
+          />
+          <Route
             path="/charts"
             element={<ChartsRouteWrapper seriesList={seriesList} />}
           />
@@ -753,9 +797,20 @@ export default function App() {
           />
           <Route
             path="/show/:slug"
-            element={<ShowDetailView seriesList={seriesList} />}
+            element={
+              <ShowDetailView
+                seriesList={seriesList}
+                watchlistIds={watchlist.seriesIds}
+                pendingWatchlistIds={watchlist.pendingSeriesIds}
+                onToggleWatchlist={user ? watchlist.toggle : () => setIsAuthModalOpen(true)}
+                watchlistError={watchlist.error}
+                onOpenAuth={() => setIsAuthModalOpen(true)}
+              />
+            }
           />
           <Route path="/movers" element={<MoversView seriesList={seriesList} />} />
+          <Route path="/friends" element={<FriendsView onOpenAuth={() => setIsAuthModalOpen(true)} />} />
+          <Route path="/hall-of-fame" element={<HallOfFameView />} />
           <Route
             path="/history"
             element={<DailyHistoryView user={user} onOpenAuth={() => setIsAuthModalOpen(true)} />}

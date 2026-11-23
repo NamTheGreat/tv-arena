@@ -162,6 +162,10 @@ function PredictionSection({ seriesList }: { seriesList: SeriesItem[] }) {
 }
 
 export function MoversView({ seriesList }: { seriesList: SeriesItem[] }) {
+  useEffect(() => {
+    document.title = 'TV Arena — Top Movers';
+  }, []);
+
   const { risers, fallers, breakouts } = getMovers(seriesList);
 
   return (

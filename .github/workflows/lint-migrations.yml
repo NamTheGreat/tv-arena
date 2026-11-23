@@ -34,8 +34,10 @@ jobs:
       - name: Lint new migrations and comment findings
         uses: sbdchd/squawk-action@v2
         if: steps.new-migrations.outputs.files != ''
+        continue-on-error: true
         with:
           files: ${{ steps.new-migrations.outputs.files }}
           config: '.squawk.toml'
           version: '2.70.0'
           fail-on-violations: 'false'
+          upload-to-github: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
