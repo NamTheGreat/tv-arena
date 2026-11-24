@@ -5,8 +5,9 @@ use std::{thread, time::Duration, time::Instant};
 
 use crate::clients::http::create_http_client;
 use crate::clients::supabase::{
-    batch_record_daily_telemetry, create_sync_run, fetch_prev_reddit_metrics, fetch_series,
-    fetch_series_signal_history, record_series_breakout, update_sync_run, SyncRunUpdate,
+    batch_record_daily_telemetry, create_sync_run, fetch_imdb_ids, fetch_prev_reddit_metrics,
+    fetch_series, fetch_series_signal_history, record_series_breakout, store_imdb_id,
+    update_sync_run, SyncRunUpdate,
 };
 use crate::clients::{HttpTelemetryFetcher, TelemetryFetcher};
 use crate::config::Config;
@@ -14,7 +15,7 @@ use crate::engine::anomaly::{detect_signal_breakout, REDDIT_COMMENTS_FLOOR, WIKI
 
 pub fn run_sync(config: &Config) -> Result<()> {
     let client = create_http_client();
-    let fetcher = HttpTelemetryFetcher { client: &client };
+    let fetcher = HttpTelemetryFetcher::new(&client, config);
     run_sync_with_fetcher(config, &client, &fetcher)?;
     Ok(())
 }
@@ -53,6 +54,20 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
     if config.tmdb_api_key.is_none() {
         println!("ℹ️  TMDB_API_KEY not set; skipping series event milestone checks during sync.");
     }
+
+    if config.x_bearer_token.is_none() {
+        println!("ℹ️  X_BEARER_TOKEN not set; skipping social mention volume.");
+    }
+    if config.omdb_api_key.is_none() {
+        println!("ℹ️  OMDB_API_KEY not set; skipping episode-level IMDb ratings.");
+    }
+    let mut imdb_ids = if fetcher.imdb_enabled() {
+        fetch_imdb_ids(client, config)
+    } else {
+        Default::default()
+    };
+    let mut social_recorded = 0;
+    let mut imdb_recorded = 0;
 
     let mut fetch_failures = 0;
     let mut updated_count = 0;
@@ -152,7 +167,7 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         let reddit_metrics = reddit_stats.or(previous_reddit);
         let reddit_comments = reddit_metrics.map(|(comments, _)| comments);
         let reddit_upvotes = reddit_metrics.map(|(_, upvotes)| upvotes);
-        let telemetry_batch = vec![json!({
+        let mut row = json!({
             "series_id": show_id,
             "recorded_date": recorded_date,
             "daily_score": 0,
@@ -161,9 +176,59 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
             "reddit_comments": reddit_comments,
             "reddit_upvotes": reddit_upvotes,
             "reddit_observed": reddit_stats.is_some()
-        })];
+        });
 
-        if let Err(e) = batch_record_daily_telemetry(client, config, telemetry_batch) {
+        // Secondary signals are optional and only added when actually observed, so an
+        // unconfigured or failing source never writes placeholder values.
+        if let Some(mentions) = fetcher.fetch_social_mentions(&show.title, &recorded_date) {
+            row["social_mentions"] = json!(mentions);
+            social_recorded += 1;
+        }
+        if fetcher.imdb_enabled() {
+            if !imdb_ids.contains_key(show_id) {
+                if let Some(resolved) = fetcher.resolve_imdb_id(show.tmdb_id) {
+                    if store_imdb_id(client, config, show_id, &resolved) {
+                        imdb_ids.insert(show_id.clone(), resolved);
+                    }
+                }
+            }
+            if let Some(rating) = imdb_ids
+                .get(show_id)
+                .and_then(|id| fetcher.fetch_imdb_rating(id, &recorded_date))
+            {
+                row["imdb_rating"] = json!(rating.rating);
+                row["imdb_episode"] = json!(rating.label());
+                if let Some(votes) = rating.votes {
+                    row["imdb_votes"] = json!(votes);
+                }
+                imdb_recorded += 1;
+            }
+        }
+        let has_secondary =
+            row.get("social_mentions").is_some() || row.get("imdb_rating").is_some();
+
+        let mut insert = batch_record_daily_telemetry(client, config, vec![row.clone()]);
+        if insert.is_err() && has_secondary {
+            // Most likely the secondary columns are not migrated yet. Core telemetry must still land.
+            eprintln!(
+                "⚠️  Retrying '{}' without secondary signals after: {:#}",
+                show.title,
+                insert.as_ref().err().unwrap()
+            );
+            if let Some(obj) = row.as_object_mut() {
+                for key in [
+                    "social_mentions",
+                    "imdb_rating",
+                    "imdb_votes",
+                    "imdb_episode",
+                ] {
+                    obj.remove(key);
+                }
+            }
+            insert = batch_record_daily_telemetry(client, config, vec![row]);
+        }
+
+        if let Err(e) = insert {
             let msg = format!(
                 "Failed batch recording daily telemetry for '{}': {:#}",
                 show.title, e
@@ -236,6 +301,10 @@ pub fn run_sync_with_fetcher<F: TelemetryFetcher>(
         shows.len(),
         fetch_failures,
         breakouts_flagged
+    );
+    println!(
+        "Secondary signals recorded: social mentions {}, IMDb ratings {}.",
+        social_recorded, imdb_recorded
     );
 
     let duration_ms = start_time.elapsed().as_millis() as i64;
