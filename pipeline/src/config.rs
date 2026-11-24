@@ -11,6 +11,10 @@ pub struct Config {
     pub supabase_key: String,
     pub tmdb_api_key: Option<String>,
     pub digest_webhook_url: Option<String>,
+    /// Optional: enables X (Twitter) mention volume ingestion.
+    pub x_bearer_token: Option<String>,
+    /// Optional: enables episode-level IMDb ratings through OMDb.
+    pub omdb_api_key: Option<String>,
 }
 
 pub fn load_config() -> Result<Config> {
@@ -62,10 +66,19 @@ pub fn load_config() -> Result<Config> {
         .map(|url| url.trim().to_string())
         .filter(|url| !url.is_empty());
 
+    let optional = |name: &str| {
+        env::var(name)
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+
     Ok(Config {
         supabase_url,
         supabase_key,
         tmdb_api_key,
         digest_webhook_url,
+        x_bearer_token: optional("X_BEARER_TOKEN"),
+        omdb_api_key: optional("OMDB_API_KEY"),
     })
 }

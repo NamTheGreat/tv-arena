@@ -48,6 +48,48 @@ pub fn fetch_series(client: &ureq::Agent, config: &Config) -> Result<Vec<SeriesR
     }
 }
 
+/// Known IMDb ids keyed by series id. Best effort: an empty map (for example before the
+/// `imdb_id` migration is applied) just means IMDb ratings are skipped.
+pub fn fetch_imdb_ids(
+    client: &ureq::Agent,
+    config: &Config,
+) -> std::collections::HashMap<String, String> {
+    let url = format!(
+        "{}/rest/v1/series?select=id,imdb_id&imdb_id=not.is.null&limit=5000",
+        config.supabase_url
+    );
+    let rows: Vec<serde_json::Value> = client
+        .get(&url)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .call()
+        .ok()
+        .and_then(|r| r.into_json().ok())
+        .unwrap_or_default();
+    rows.into_iter()
+        .filter_map(|row| {
+            Some((
+                row.get("id")?.as_str()?.to_string(),
+                row.get("imdb_id")?.as_str()?.to_string(),
+            ))
+        })
+        .collect()
+}
+
+pub fn store_imdb_id(client: &ureq::Agent, config: &Config, show_id: &str, imdb_id: &str) -> bool {
+    let url = format!(
+        "{}/rest/v1/series?id=eq.{}",
+        config.supabase_url,
+        urlencoding::encode(show_id)
+    );
+    client
+        .patch(&url)
+        .set("apikey", &config.supabase_key)
+        .set("Authorization", &format!("Bearer {}", config.supabase_key))
+        .send_json(json!({ "imdb_id": imdb_id }))
+        .is_ok()
+}
+
 pub fn upsert_seed_series(
     client: &ureq::Agent,
     config: &Config,

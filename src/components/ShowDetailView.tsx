@@ -5,6 +5,7 @@ import { calculateEventX, sampleDailyValues, buildMobileChartGeometry } from '..
 import { sampleDailyRanks, buildMobileRankChartGeometry } from '../lib/historicalRank';
 import { findSimilarShows } from '../lib/showDetail';
 import { getSignalFreshness, SignalStatus } from '../lib/signalFreshness';
+import { SecondarySignals } from './SecondarySignals';
 import { ShowComments } from './ShowComments';
 
 interface ShowDetailViewProps {
@@ -257,6 +258,8 @@ export function ShowDetailView({
           </ul>
         )}
       </div>
+
+      <SecondarySignals seriesId={show.id} />
 
       {show.is_breakout && <p className="mb-6 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-900">Breakout detected: {show.breakout_reason || 'This show is gaining engagement.'}</p>}
 

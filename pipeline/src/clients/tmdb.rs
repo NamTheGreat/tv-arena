@@ -54,6 +54,31 @@ pub fn is_not_found(err: &anyhow::Error) -> bool {
 
 const TMDB_BASE_URL: &str = "https://api.themoviedb.org/3";
 
+/// Resolve the IMDb id (e.g. `tt0944947`) of a TMDb series through its external ids.
+pub fn fetch_imdb_id(client: &ureq::Agent, api_key: &str, tmdb_id: i64) -> Result<Option<String>> {
+    fetch_imdb_id_from(client, "https://api.themoviedb.org", api_key, tmdb_id)
+}
+
+pub fn fetch_imdb_id_from(
+    client: &ureq::Agent,
+    base_url: &str,
+    api_key: &str,
+    tmdb_id: i64,
+) -> Result<Option<String>> {
+    let url = format!(
+        "{}/3/tv/{}/external_ids",
+        base_url.trim_end_matches('/'),
+        tmdb_id
+    );
+    let body: serde_json::Value = make_tmdb_request(client, &url, api_key)?.into_json()?;
+    Ok(body
+        .get("imdb_id")
+        .and_then(|v| v.as_str())
+        .filter(|id| {
+            id.len() >= 9 && id.starts_with("tt") && id[2..].chars().all(|c| c.is_ascii_digit())
+        })
+        .map(str::to_string))
+}
 /// Fetch season premiere and finale events for a given series from TMDb.
 /// Handles rate limits (429) with exponential backoff and skips invalid dates.
 pub fn fetch_show_events(

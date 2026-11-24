@@ -41,6 +41,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Optional secondary signals; each source is skipped when its secret is not set.
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+          OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
         run: cargo run --release -- sync
 
       - name: Build and optionally post daily digest
