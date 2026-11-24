@@ -22,6 +22,8 @@ fn backfill_insert_ignores_existing_series_dates() {
         supabase_key: "test-key".to_string(),
         tmdb_api_key: None,
         digest_webhook_url: None,
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
     let client = create_http_client();
     let row = json!({
@@ -58,6 +60,8 @@ fn backfill_insert_surfaces_http_status_and_body_on_error() {
         supabase_key: "test-key".to_string(),
         tmdb_api_key: None,
         digest_webhook_url: None,
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
     let client = create_http_client();
     let row = json!({
@@ -92,6 +96,8 @@ fn backfill_insert_handles_empty_error_body() {
         supabase_key: "test-key".to_string(),
         tmdb_api_key: None,
         digest_webhook_url: None,
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
     let client = create_http_client();
     let row = json!({

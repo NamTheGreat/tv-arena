@@ -103,6 +103,8 @@ fn test_sync_full_run_against_mock_server() {
         supabase_key: "test-anon-key".to_string(),
         tmdb_api_key: Some("test-tmdb-key".to_string()),
         digest_webhook_url: None,
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
 
     let client = create_http_client();
@@ -142,6 +144,8 @@ fn test_batch_record_daily_telemetry_surfaces_http_status_and_body_on_error() {
         supabase_key: "test-anon-key".to_string(),
         tmdb_api_key: None,
         digest_webhook_url: None,
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
     let client = create_http_client();
     let row = json!({
@@ -171,6 +175,8 @@ fn test_batch_record_daily_telemetry_handles_empty_error_body() {
         supabase_key: "test-anon-key".to_string(),
         tmdb_api_key: None,
         digest_webhook_url: None,
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
     let client = create_http_client();
     let row = json!({
@@ -227,6 +233,8 @@ fn test_sync_telemetry_batch_failure_tracks_errors_and_fails_run() {
         supabase_key: "test-anon-key".to_string(),
         tmdb_api_key: None,
         digest_webhook_url: None,
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
 
     let client = create_http_client();
@@ -301,6 +309,8 @@ fn test_sync_skips_and_records_soft_failure_when_wiki_date_mismatches_expected_d
         supabase_key: "test-anon-key".to_string(),
         tmdb_api_key: None,
         digest_webhook_url: None,
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
 
     let client = create_http_client();
