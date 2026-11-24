@@ -36,6 +36,8 @@ fn digest_uses_leaderboard_and_recent_breakouts_then_posts_to_configured_webhook
         supabase_key: "test-key".into(),
         tmdb_api_key: None,
         digest_webhook_url: Some(format!("{}/webhook", server.base_url())),
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
 
     run_digest(&config).unwrap();
@@ -68,6 +70,8 @@ fn digest_tolerates_webhook_delivery_failures() {
         supabase_key: "test-key".into(),
         tmdb_api_key: None,
         digest_webhook_url: Some(format!("{}/webhook", server.base_url())),
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
 
     assert!(run_digest(&config).is_ok());
@@ -91,6 +95,8 @@ fn digest_tolerates_query_fetch_failures() {
         supabase_key: "test-key".into(),
         tmdb_api_key: None,
         digest_webhook_url: None,
+        x_bearer_token: None,
+        omdb_api_key: None,
     };
 
     assert!(run_digest(&config).is_ok());

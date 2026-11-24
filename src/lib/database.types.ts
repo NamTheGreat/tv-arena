@@ -71,6 +71,10 @@ export type Database = {
           reddit_comments: number | null
           reddit_upvotes: number | null
           reddit_observed: boolean
+          social_mentions: number | null
+          imdb_rating: number | null
+          imdb_votes: number | null
+          imdb_episode: string | null
         }
         Insert: {
           id?: number
@@ -82,6 +86,10 @@ export type Database = {
           reddit_comments?: number | null
           reddit_upvotes?: number | null
           reddit_observed?: boolean
+          social_mentions?: number | null
+          imdb_rating?: number | null
+          imdb_votes?: number | null
+          imdb_episode?: string | null
         }
         Update: {
           id?: number
@@ -93,6 +101,10 @@ export type Database = {
           reddit_comments?: number | null
           reddit_upvotes?: number | null
           reddit_observed?: boolean
+          social_mentions?: number | null
+          imdb_rating?: number | null
+          imdb_votes?: number | null
+          imdb_episode?: string | null
         }
         Relationships: [
           {

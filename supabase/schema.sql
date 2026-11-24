@@ -1334,6 +1334,28 @@ GRANT EXECUTE ON FUNCTION public.friends_leaderboard(DATE) TO authenticated;
 REVOKE ALL ON FUNCTION public.head_to_head(TEXT, DATE) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.head_to_head(TEXT, DATE) TO authenticated;
 
+-- Secondary signals (#193): nullable, NULL means "not observed". Core scores are unchanged.
+ALTER TABLE public.series_daily_telemetry
+  ADD COLUMN IF NOT EXISTS social_mentions INT,
+  ADD COLUMN IF NOT EXISTS imdb_rating NUMERIC(3, 1),
+  ADD COLUMN IF NOT EXISTS imdb_votes INT,
+  ADD COLUMN IF NOT EXISTS imdb_episode TEXT;
+ALTER TABLE public.series ADD COLUMN IF NOT EXISTS imdb_id TEXT;
+
+ALTER TABLE public.series_daily_telemetry
+  DROP CONSTRAINT IF EXISTS telemetry_social_mentions_nonneg,
+  DROP CONSTRAINT IF EXISTS telemetry_imdb_rating_range,
+  DROP CONSTRAINT IF EXISTS telemetry_imdb_votes_nonneg,
+  DROP CONSTRAINT IF EXISTS telemetry_imdb_episode_format;
+ALTER TABLE public.series_daily_telemetry
+  ADD CONSTRAINT telemetry_social_mentions_nonneg CHECK (social_mentions IS NULL OR social_mentions >= 0),
+  ADD CONSTRAINT telemetry_imdb_rating_range CHECK (imdb_rating IS NULL OR imdb_rating BETWEEN 1 AND 10),
+  ADD CONSTRAINT telemetry_imdb_votes_nonneg CHECK (imdb_votes IS NULL OR imdb_votes >= 0),
+  ADD CONSTRAINT telemetry_imdb_episode_format CHECK (imdb_episode IS NULL OR imdb_episode ~ '^S[0-9]{2,3}E[0-9]{2,4}$');
+ALTER TABLE public.series DROP CONSTRAINT IF EXISTS series_imdb_id_format;
+ALTER TABLE public.series
+  ADD CONSTRAINT series_imdb_id_format CHECK (imdb_id IS NULL OR imdb_id ~ '^tt[0-9]{7,10}$');
+
 -- Market insights: weekly platform share, genre engagement and signal points (#194)
 -- Per show and week: average daily score over observed days (derived scores only).
 -- Weeks are Monday based, bounded to the last 26 weeks, and a show needs at least 4 observed
