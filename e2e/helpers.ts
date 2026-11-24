@@ -43,6 +43,11 @@ export async function mockSupabase(page: Page, dailyDeckLength = shows.length) {
       ];
     } else if (path.endsWith('/rpc/get_profile_stats')) {
       body = [{ user_id: '00000000-0000-0000-0000-0000000000u1', current_streak: 2, best_streak: 5 }];
+    } else if (path.endsWith('/series_premiere_impact')) {
+      body = [
+        { event_id: 1, series_id: shows[0].id, event_date: '2026-01-10', label: 'Season 1', premiere_number: 1, pre_days: 7, post_days: 7, pre_avg: 1000, post_avg: 3000, delta: 2000, multiplier: 3 },
+        { event_id: 2, series_id: shows[0].id, event_date: '2026-06-10', label: 'Season 2', premiere_number: 2, pre_days: 7, post_days: 7, pre_avg: 2000, post_avg: 3000, delta: 1000, multiplier: 1.5 },
+      ];
     } else if (path.endsWith('/daily_challenges')) {
       body = [{ series_ids: shows.slice(0, dailyDeckLength).map((show) => show.id) }];
     } else if (path.endsWith('/rpc/get_daily_score_share')) {

@@ -1168,6 +1168,88 @@ BEGIN
   RAISE NOTICE '✓ Follows, privacy and friends leaderboard verified.';
 END $$;
 
+-- 13. Premiere impact view: windows, multipliers, coverage and privileges (#195)
+DO $$
+DECLARE
+  v_today DATE := (now() AT TIME ZONE 'UTC')::DATE;
+  v_e1 DATE := v_today - 60;
+  v_e2 DATE := v_today - 20;
+  v_e3 DATE := v_today - 4;
+  v_wiki NUMERIC;
+  v_p UUID := gen_random_uuid(); v_q UUID := gen_random_uuid(); v_r UUID := gen_random_uuid();
+  v_row RECORD; v_n INT;
+BEGIN
+  RAISE NOTICE 'Testing premiere impact view...';
+  DELETE FROM series_daily_telemetry;
+  SELECT wiki_weight INTO v_wiki FROM score_weights WHERE id = 1;
+
+  INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES
+    (v_p, 999931, 'pi-p', 'Pi P', 'N', 'PiNet', 'PiDrama', '2019', '#111111', 'P_P', 't', 0),
+    (v_q, 999932, 'pi-q', 'Pi Q', 'N', 'PiNet', 'PiDrama', '2019', '#111111', 'P_Q', 't', 0),
+    (v_r, 999933, 'pi-r', 'Pi R', 'N', 'PiNet', 'PiDrama', '2019', '#111111', 'P_R', 't', 0);
+
+  -- P: season 1 premiere 1000 -> 3000 (x3), season 2 premiere 2000 -> 3000 (x1.5), pre/post windows complete
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT v_p, v_e1 + d, CASE WHEN d < 0 THEN 1000 ELSE 3000 END, NULL, NULL, FALSE FROM generate_series(-7, 6) d;
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT v_p, v_e2 + d, CASE WHEN d < 0 THEN 2000 ELSE 3000 END, NULL, NULL, FALSE FROM generate_series(-7, 6) d;
+  -- P third premiere only 4 days ago: post window is partial (5 observed days) but still qualifies
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT v_p, v_e3 + d, 3000, NULL, NULL, FALSE FROM generate_series(-7, 4) d
+  ON CONFLICT (series_id, recorded_date) DO NOTHING;
+  -- Q: zero baseline (views 0 before), so no multiplier but a delta
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT v_q, v_e2 + d, CASE WHEN d < 0 THEN 0 ELSE 500 END, NULL, NULL, FALSE FROM generate_series(-7, 6) d;
+  -- R: only 3 pre-premiere days, must be excluded
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT v_r, v_e2 + d, 1000, NULL, NULL, FALSE FROM generate_series(-3, 6) d;
+
+  INSERT INTO series_events (series_id, event_date, kind, label) VALUES
+    (v_p, v_e1, 'season_premiere', 'Season 1'),
+    (v_p, v_e2, 'season_premiere', 'Season 2'),
+    (v_p, v_e3, 'season_premiere', 'Season 3'),
+    (v_p, v_e2 + 1, 'season_finale', 'Ignored finale'),
+    (v_q, v_e2, 'season_premiere', 'Q premiere'),
+    (v_r, v_e2, 'season_premiere', 'R premiere');
+
+  SELECT * INTO v_row FROM series_premiere_impact WHERE series_id = v_p AND event_date = v_e1;
+  IF v_row.premiere_number <> 1 OR v_row.pre_days <> 7 OR v_row.post_days <> 7 THEN
+    RAISE EXCEPTION 'S1 windows wrong: %', v_row;
+  END IF;
+  IF abs(v_row.pre_avg - 1000 * v_wiki) > 0.01 OR abs(v_row.post_avg - 3000 * v_wiki) > 0.01 THEN
+    RAISE EXCEPTION 'S1 averages not derived from score_weights: %', v_row;
+  END IF;
+  IF v_row.multiplier <> 3.00 THEN RAISE EXCEPTION 'S1 multiplier expected 3.00, got %', v_row.multiplier; END IF;
+  IF abs(v_row.delta - 2000 * v_wiki) > 0.01 THEN RAISE EXCEPTION 'S1 delta wrong: %', v_row.delta; END IF;
+
+  SELECT * INTO v_row FROM series_premiere_impact WHERE series_id = v_p AND event_date = v_e2;
+  IF v_row.premiere_number <> 2 OR v_row.multiplier <> 1.50 THEN RAISE EXCEPTION 'S2 wrong: %', v_row; END IF;
+
+  SELECT * INTO v_row FROM series_premiere_impact WHERE series_id = v_p AND event_date = v_e3;
+  IF v_row.premiere_number <> 3 OR v_row.post_days <> 5 OR v_row.pre_days <> 7 THEN
+    RAISE EXCEPTION 'partial post window must be capped at today: %', v_row;
+  END IF;
+
+  SELECT * INTO v_row FROM series_premiere_impact WHERE series_id = v_q;
+  IF v_row.multiplier IS NOT NULL OR v_row.delta <= 0 THEN RAISE EXCEPTION 'zero baseline must give NULL multiplier: %', v_row; END IF;
+
+  SELECT COUNT(*) INTO v_n FROM series_premiere_impact WHERE series_id = v_r;
+  IF v_n <> 0 THEN RAISE EXCEPTION 'show with <4 pre days must be excluded'; END IF;
+  SELECT COUNT(*) INTO v_n FROM series_premiere_impact WHERE label = 'Ignored finale';
+  IF v_n <> 0 THEN RAISE EXCEPTION 'only season_premiere events are analysed'; END IF;
+
+  SET LOCAL ROLE anon;
+  SELECT COUNT(*) INTO v_n FROM series_premiere_impact;
+  RESET ROLE;
+  IF v_n < 4 THEN RAISE EXCEPTION 'anon must read premiere impact'; END IF;
+  SELECT COUNT(*) INTO v_n FROM information_schema.role_table_grants
+    WHERE table_name = 'series_premiere_impact' AND grantee IN ('anon', 'authenticated', 'service_role', 'PUBLIC') AND privilege_type <> 'SELECT';
+  IF v_n <> 0 THEN RAISE EXCEPTION 'series_premiere_impact must be read-only'; END IF;
+
+  RAISE NOTICE '✓ Premiere impact verified.';
+END $$;
+
 ROLLBACK;
 
 \echo '===================================='
