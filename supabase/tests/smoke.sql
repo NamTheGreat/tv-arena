@@ -1168,6 +1168,75 @@ BEGIN
   RAISE NOTICE '✓ Follows, privacy and friends leaderboard verified.';
 END $$;
 
+-- 11. Secondary signals: nullable columns, constraints, public read, no public write (#193)
+DO $$
+DECLARE
+  v_series UUID := gen_random_uuid();
+  v_ok BOOLEAN;
+  v_n INT;
+  v_score_before BIGINT;
+  v_score_after BIGINT;
+BEGIN
+  RAISE NOTICE 'Testing secondary signals...';
+  INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES (v_series, 999941, 'sec-show', 'Secondary Show', 'TestNet', 'TestNet', 'Drama', '2019', '#111111', 'Sec_Show', 'test', 0);
+
+  -- Rows without secondary signals stay valid and keep NULLs (not zeros)
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views) VALUES (v_series, '2019-06-01', 1000);
+  IF EXISTS (SELECT 1 FROM series_daily_telemetry WHERE series_id = v_series AND recorded_date = '2019-06-01'
+             AND (social_mentions IS NOT NULL OR imdb_rating IS NOT NULL OR imdb_votes IS NOT NULL OR imdb_episode IS NOT NULL)) THEN
+    RAISE EXCEPTION 'secondary signals must default to NULL';
+  END IF;
+
+  SELECT daily_score INTO v_score_before FROM series_daily_scores WHERE series_id = v_series AND recorded_date = '2019-06-01';
+
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, social_mentions, imdb_rating, imdb_votes, imdb_episode)
+  VALUES (v_series, '2019-06-02', 1000, 5400, 8.7, 2100, 'S02E05');
+  IF (SELECT imdb_rating FROM series_daily_telemetry WHERE series_id = v_series AND recorded_date = '2019-06-02') <> 8.7 THEN
+    RAISE EXCEPTION 'imdb_rating not stored';
+  END IF;
+
+  -- Core score is unaffected by secondary signals (same wiki views, huge mentions)
+  SELECT daily_score INTO v_score_after FROM series_daily_scores WHERE series_id = v_series AND recorded_date = '2019-06-02';
+  IF v_score_before IS DISTINCT FROM v_score_after THEN
+    RAISE EXCEPTION 'secondary signals must not change core scores (% vs %)', v_score_before, v_score_after;
+  END IF;
+
+  -- Constraints
+  FOR v_n IN 1..6 LOOP
+    v_ok := FALSE;
+    BEGIN
+      IF v_n = 1 THEN INSERT INTO series_daily_telemetry (series_id, recorded_date, social_mentions) VALUES (v_series, '2019-06-10', -1);
+      ELSIF v_n = 2 THEN INSERT INTO series_daily_telemetry (series_id, recorded_date, imdb_rating) VALUES (v_series, '2019-06-10', 10.5);
+      ELSIF v_n = 3 THEN INSERT INTO series_daily_telemetry (series_id, recorded_date, imdb_rating) VALUES (v_series, '2019-06-10', 0.5);
+      ELSIF v_n = 4 THEN INSERT INTO series_daily_telemetry (series_id, recorded_date, imdb_votes) VALUES (v_series, '2019-06-10', -5);
+      ELSIF v_n = 5 THEN INSERT INTO series_daily_telemetry (series_id, recorded_date, imdb_episode) VALUES (v_series, '2019-06-10', 'season 2 ep 5');
+      ELSE UPDATE series SET imdb_id = 'nm0000001' WHERE id = v_series;
+      END IF;
+    EXCEPTION WHEN check_violation THEN v_ok := TRUE; END;
+    IF NOT v_ok THEN RAISE EXCEPTION 'invalid secondary signal accepted (case %)', v_n; END IF;
+  END LOOP;
+  UPDATE series SET imdb_id = 'tt11280740' WHERE id = v_series;
+
+  -- Public can read the columns but cannot write them
+  SET LOCAL ROLE anon;
+  SELECT COUNT(*) INTO v_n FROM series_daily_telemetry WHERE series_id = v_series AND social_mentions = 5400;
+  IF v_n <> 1 THEN RESET ROLE; RAISE EXCEPTION 'anon should read secondary signals'; END IF;
+  v_ok := FALSE;
+  BEGIN
+    UPDATE series_daily_telemetry SET social_mentions = 1 WHERE series_id = v_series;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    IF v_n = 0 THEN v_ok := TRUE; END IF;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  RESET ROLE;
+  IF NOT v_ok THEN RAISE EXCEPTION 'anon must not be able to write secondary signals'; END IF;
+  IF (SELECT social_mentions FROM series_daily_telemetry WHERE series_id = v_series AND recorded_date = '2019-06-02') <> 5400 THEN
+    RAISE EXCEPTION 'anon write changed data';
+  END IF;
+
+  RAISE NOTICE '✓ Secondary signals verified (nullable, constraints, core score unchanged, read-only for public).';
+END $$;
+
 -- 13. Premiere impact view: windows, multipliers, coverage and privileges (#195)
 DO $$
 DECLARE
@@ -1248,6 +1317,7 @@ BEGIN
   IF v_n <> 0 THEN RAISE EXCEPTION 'series_premiere_impact must be read-only'; END IF;
 
   RAISE NOTICE '✓ Premiere impact verified.';
+END $$;
 END $$;
 
 ROLLBACK;

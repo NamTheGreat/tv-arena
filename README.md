@@ -223,6 +223,13 @@ cd pipeline
    ```
    *(Supports both TMDb v3 32-character API keys and v4 Bearer JWT tokens).*
 
+   Optional secondary signals (each is skipped when its key is unset, and never changes the buzz score):
+   ```env
+   X_BEARER_TOKEN=your-x-api-v2-bearer-token   # daily mention volume via /2/tweets/counts/recent (paid X API tier)
+   OMDB_API_KEY=your-omdb-key                  # newest-episode IMDb rating and votes (IMDb id is resolved via TMDb)
+   ```
+   The clients space requests, retry 429/5xx responses with backoff (honoring `Retry-After`), and stop calling a source for the rest of the run once its quota is exhausted or its key is rejected.
+
 2. **TMDb Auto-Discover Catalog Seeding (Primary):**
    ```bash
    cargo run --release -- seed --limit 200

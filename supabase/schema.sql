@@ -1334,6 +1334,28 @@ GRANT EXECUTE ON FUNCTION public.friends_leaderboard(DATE) TO authenticated;
 REVOKE ALL ON FUNCTION public.head_to_head(TEXT, DATE) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.head_to_head(TEXT, DATE) TO authenticated;
 
+-- Secondary signals (#193): nullable, NULL means "not observed". Core scores are unchanged.
+ALTER TABLE public.series_daily_telemetry
+  ADD COLUMN IF NOT EXISTS social_mentions INT,
+  ADD COLUMN IF NOT EXISTS imdb_rating NUMERIC(3, 1),
+  ADD COLUMN IF NOT EXISTS imdb_votes INT,
+  ADD COLUMN IF NOT EXISTS imdb_episode TEXT;
+ALTER TABLE public.series ADD COLUMN IF NOT EXISTS imdb_id TEXT;
+
+ALTER TABLE public.series_daily_telemetry
+  DROP CONSTRAINT IF EXISTS telemetry_social_mentions_nonneg,
+  DROP CONSTRAINT IF EXISTS telemetry_imdb_rating_range,
+  DROP CONSTRAINT IF EXISTS telemetry_imdb_votes_nonneg,
+  DROP CONSTRAINT IF EXISTS telemetry_imdb_episode_format;
+ALTER TABLE public.series_daily_telemetry
+  ADD CONSTRAINT telemetry_social_mentions_nonneg CHECK (social_mentions IS NULL OR social_mentions >= 0),
+  ADD CONSTRAINT telemetry_imdb_rating_range CHECK (imdb_rating IS NULL OR imdb_rating BETWEEN 1 AND 10),
+  ADD CONSTRAINT telemetry_imdb_votes_nonneg CHECK (imdb_votes IS NULL OR imdb_votes >= 0),
+  ADD CONSTRAINT telemetry_imdb_episode_format CHECK (imdb_episode IS NULL OR imdb_episode ~ '^S[0-9]{2,3}E[0-9]{2,4}$');
+ALTER TABLE public.series DROP CONSTRAINT IF EXISTS series_imdb_id_format;
+ALTER TABLE public.series
+  ADD CONSTRAINT series_imdb_id_format CHECK (imdb_id IS NULL OR imdb_id ~ '^tt[0-9]{7,10}$');
+
 -- Premiere impact (#195): see migration 20261124020000_premiere_impact.sql
 CREATE OR REPLACE VIEW series_premiere_impact
 WITH (security_invoker = on) AS
