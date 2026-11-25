@@ -48,6 +48,22 @@ export async function mockSupabase(page: Page, dailyDeckLength = shows.length) {
         { event_id: 1, series_id: shows[0].id, event_date: '2026-01-10', label: 'Season 1', premiere_number: 1, pre_days: 7, post_days: 7, pre_avg: 1000, post_avg: 3000, delta: 2000, multiplier: 3 },
         { event_id: 2, series_id: shows[0].id, event_date: '2026-06-10', label: 'Season 2', premiere_number: 2, pre_days: 7, post_days: 7, pre_avg: 2000, post_avg: 3000, delta: 1000, multiplier: 1.5 },
       ];
+    } else if (path.endsWith('/insights_platform_share_weekly')) {
+      body = ['2026-10-26', '2026-11-02', '2026-11-09'].flatMap((week, i) => [
+        { week_start: week, network_group: 'Netflix', shows: 40 - i * 4, share_pct: 40 - i * 4, score_share_pct: 50 - i * 3, ranked_shows: 100 },
+        { week_start: week, network_group: 'HBO', shows: 20 + i * 2, share_pct: 20 + i * 2, score_share_pct: 25, ranked_shows: 100 },
+        { week_start: week, network_group: 'Apple TV+', shows: 10, share_pct: 10, score_share_pct: 12, ranked_shows: 100 },
+      ]);
+    } else if (path.endsWith('/insights_genre_share_weekly')) {
+      body = ['2026-10-26', '2026-11-02', '2026-11-09'].flatMap((week, i) => [
+        { week_start: week, genre_group: 'Drama & Sci-Fi', shows: 30, total_daily_score: 900000, avg_score_per_show: 30000, share_pct: 50 + i },
+        { week_start: week, genre_group: 'Comedy', shows: 20, total_daily_score: 400000, avg_score_per_show: 20000, share_pct: 30 - i },
+      ]);
+    } else if (path.endsWith('/insights_signal_points')) {
+      body = Array.from({ length: 12 }, (_, n) => ({
+        series_id: `id-${n}`, slug: `show-${n}`, title: `Show ${n}`, network_group: 'Netflix', genre_group: 'Drama & Sci-Fi', observed_days: 7,
+        avg_wiki_views: 1000 * (n + 1), avg_reddit_comments: 40 * (n + 1) + (n % 3) * 15, avg_reddit_upvotes: 200 * (n + 1), avg_daily_score: 12000 * (n + 1),
+      }));
     } else if (path.endsWith('/daily_challenges')) {
       body = [{ series_ids: shows.slice(0, dailyDeckLength).map((show) => show.id) }];
     } else if (path.endsWith('/rpc/get_daily_score_share')) {

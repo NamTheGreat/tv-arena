@@ -1237,6 +1237,133 @@ BEGIN
   RAISE NOTICE '✓ Secondary signals verified (nullable, constraints, core score unchanged, read-only for public).';
 END $$;
 
+-- 12. Market insights views: aggregation precision, top-100 cap, minimum coverage, signal points (#194)
+DO $$
+DECLARE
+  v_today DATE := (now() AT TIME ZONE 'UTC')::DATE;
+  v_w DATE := date_trunc('week', (v_today - 28)::TIMESTAMP)::DATE;   -- week under test
+  v_w1 DATE := v_w + 7;
+  v_wcap DATE := v_w - 7;                                            -- week for the top-100 cap
+  v_wiki NUMERIC;
+  v_a1 UUID := gen_random_uuid(); v_a2 UUID := gen_random_uuid(); v_b1 UUID := gen_random_uuid();
+  v_c1 UUID := gen_random_uuid(); v_d1 UUID := gen_random_uuid();
+  v_s1 UUID := gen_random_uuid(); v_s2 UUID := gen_random_uuid(); v_s3 UUID := gen_random_uuid();
+  v_row RECORD; v_n INT; v_ok BOOLEAN; r RECORD;
+BEGIN
+  RAISE NOTICE 'Testing market insights views...';
+  -- Start from a clean slate (the whole smoke run is rolled back).
+  DELETE FROM series_daily_telemetry;
+  SELECT wiki_weight INTO v_wiki FROM score_weights WHERE id = 1;
+
+  INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+  VALUES
+    (v_a1, 999921, 'ins-a1', 'Ins A1', 'N', 'InsNetA', 'InsDrama',  '2019', '#111111', 'I_A1', 't', 0),
+    (v_a2, 999922, 'ins-a2', 'Ins A2', 'N', 'InsNetA', 'InsComedy', '2019', '#111111', 'I_A2', 't', 0),
+    (v_b1, 999923, 'ins-b1', 'Ins B1', 'N', 'InsNetB', 'InsDrama',  '2019', '#111111', 'I_B1', 't', 0),
+    (v_c1, 999924, 'ins-c1', 'Ins C1', 'N', 'InsNetC', 'InsDrama',  '2019', '#111111', 'I_C1', 't', 0),
+    (v_d1, 999925, 'ins-d1', 'Ins D1', 'N', 'InsNetB', 'InsComedy', '2019', '#111111', 'I_D1', 't', 0),
+    (v_s1, 999926, 'ins-s1', 'Ins S1', 'N', 'InsSig',  'InsDrama',  '2019', '#111111', 'I_S1', 't', 0),
+    (v_s2, 999927, 'ins-s2', 'Ins S2', 'N', 'InsSig',  'InsDrama',  '2019', '#111111', 'I_S2', 't', 0),
+    (v_s3, 999928, 'ins-s3', 'Ins S3', 'N', 'InsSig',  'InsDrama',  '2019', '#111111', 'I_S3', 't', 0);
+
+  -- Week W: A1 1000, A2 3000, B1 4000, D1 2000 (4 days), C1 5000 but only 3 days (must be excluded)
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT s.id, v_w + d, s.views, NULL, NULL, FALSE
+  FROM (VALUES (v_a1, 1000, 7), (v_a2, 3000, 7), (v_b1, 4000, 7), (v_d1, 2000, 4), (v_c1, 5000, 3)) AS s(id, views, days),
+       generate_series(0, 6) AS d
+  WHERE d < s.days;
+  -- Week W+1: only A1, five days
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT v_a1, v_w1 + d, 1500, NULL, NULL, FALSE FROM generate_series(0, 4) d;
+
+  -- Platform share, week W: top 100 holds A1, A2, B1, D1 (C1 lacks coverage)
+  SELECT * INTO v_row FROM insights_platform_share_weekly WHERE week_start = v_w AND network_group = 'InsNetA';
+  IF v_row.shows <> 2 OR v_row.share_pct <> 50.0 OR v_row.score_share_pct <> 40.0 OR v_row.ranked_shows <> 4 THEN
+    RAISE EXCEPTION 'InsNetA week W wrong: %', v_row;
+  END IF;
+  SELECT * INTO v_row FROM insights_platform_share_weekly WHERE week_start = v_w AND network_group = 'InsNetB';
+  IF v_row.shows <> 2 OR v_row.share_pct <> 50.0 OR v_row.score_share_pct <> 60.0 THEN
+    RAISE EXCEPTION 'InsNetB week W wrong: %', v_row;
+  END IF;
+  IF EXISTS (SELECT 1 FROM insights_platform_share_weekly WHERE week_start = v_w AND network_group = 'InsNetC') THEN
+    RAISE EXCEPTION 'a show with 3 observed days must not compete';
+  END IF;
+  -- Week W+1 (5 days is enough): single platform holds 100%
+  SELECT * INTO v_row FROM insights_platform_share_weekly WHERE week_start = v_w1;
+  IF v_row.network_group <> 'InsNetA' OR v_row.share_pct <> 100.0 OR v_row.score_share_pct <> 100.0 THEN
+    RAISE EXCEPTION 'single platform week wrong: %', v_row;
+  END IF;
+
+  -- Weekly show scores use derived scores: A2 = 3000 views * wiki weight
+  IF (SELECT avg_daily_score FROM insights_weekly_show_scores WHERE series_id = v_a2 AND week_start = v_w) <> ROUND(3000 * v_wiki) THEN
+    RAISE EXCEPTION 'weekly show score must be derived from score_weights';
+  END IF;
+
+  -- Genre share, week W: Drama = A1 + B1 (5000 views), Comedy = A2 + D1 (5000 views)
+  SELECT * INTO v_row FROM insights_genre_share_weekly WHERE week_start = v_w AND genre_group = 'InsDrama';
+  IF v_row.shows <> 2 OR v_row.total_daily_score <> ROUND(5000 * v_wiki) OR v_row.avg_score_per_show <> ROUND(2500 * v_wiki) OR v_row.share_pct <> 50.0 THEN
+    RAISE EXCEPTION 'InsDrama week W wrong: %', v_row;
+  END IF;
+  IF (SELECT SUM(share_pct) FROM insights_genre_share_weekly WHERE week_start = v_w) <> 100.0 THEN
+    RAISE EXCEPTION 'genre shares must sum to 100 for the week';
+  END IF;
+
+  -- Top-100 cap: 105 shows with distinct scores; the 5 lowest sit on their own platform and must be cut
+  FOR r IN SELECT n FROM generate_series(1, 105) n LOOP
+    INSERT INTO series (id, tmdb_id, slug, title, network, network_group, genre_group, release_years, chart_color, wiki_slug, reddit_query, buzz_score)
+    VALUES (gen_random_uuid(), 990000 + r.n, 'ins-cap-' || r.n, 'Ins Cap ' || lpad(r.n::TEXT, 3, '0'), 'N',
+            CASE WHEN r.n > 100 THEN 'InsLow' ELSE 'InsHigh' END, 'InsCap', '2019', '#111111', 'I_CAP_' || r.n, 't', 0);
+  END LOOP;
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT s.id, v_wcap + d, 100000 - (substring(s.slug FROM 9)::INT * 100), NULL, NULL, FALSE
+  FROM series s, generate_series(0, 3) d WHERE s.slug LIKE 'ins-cap-%';
+  SELECT * INTO v_row FROM insights_platform_share_weekly WHERE week_start = v_wcap AND network_group = 'InsHigh';
+  IF v_row.shows <> 100 OR v_row.ranked_shows <> 100 OR v_row.share_pct <> 100.0 THEN
+    RAISE EXCEPTION 'top 100 cap wrong: %', v_row;
+  END IF;
+  IF EXISTS (SELECT 1 FROM insights_platform_share_weekly WHERE week_start = v_wcap AND network_group = 'InsLow') THEN
+    RAISE EXCEPTION 'shows ranked below 100 must be excluded';
+  END IF;
+
+  -- Signal points: S1 observed Reddit, S2 Reddit throttled (no zeros), S3 only 3 days (excluded)
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT v_s1, v_today - d, 100 * (4 - d), 10 * (4 - d), 50 * (4 - d), TRUE FROM generate_series(0, 3) d;
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT v_s2, v_today - d, 1000, NULL, NULL, FALSE FROM generate_series(0, 3) d;
+  INSERT INTO series_daily_telemetry (series_id, recorded_date, wiki_views, reddit_comments, reddit_upvotes, reddit_observed)
+  SELECT v_s3, v_today - d, 500, 5, 5, TRUE FROM generate_series(0, 2) d;
+  SELECT * INTO v_row FROM insights_signal_points WHERE series_id = v_s1;
+  IF v_row.observed_days <> 4 OR v_row.avg_wiki_views <> 250 OR v_row.avg_reddit_comments <> 25 OR v_row.avg_reddit_upvotes <> 125 THEN
+    RAISE EXCEPTION 'signal point S1 wrong: %', v_row;
+  END IF;
+  SELECT * INTO v_row FROM insights_signal_points WHERE series_id = v_s2;
+  IF v_row.avg_wiki_views <> 1000 OR v_row.avg_reddit_comments IS NOT NULL OR v_row.avg_reddit_upvotes IS NOT NULL THEN
+    RAISE EXCEPTION 'throttled Reddit must stay NULL, got %', v_row;
+  END IF;
+  IF EXISTS (SELECT 1 FROM insights_signal_points WHERE series_id = v_s3) THEN
+    RAISE EXCEPTION 'shows with fewer than 4 observed days must be excluded';
+  END IF;
+  IF (SELECT avg_daily_score FROM insights_signal_points WHERE series_id = v_s1) <> ROUND(
+       (SELECT AVG(daily_score) FROM series_daily_scores WHERE series_id = v_s1)) THEN
+    RAISE EXCEPTION 'signal point score must match derived scores';
+  END IF;
+
+  -- Public read only
+  SET LOCAL ROLE anon;
+  SELECT COUNT(*) INTO v_n FROM insights_platform_share_weekly WHERE week_start = v_w;
+  IF v_n = 0 THEN RESET ROLE; RAISE EXCEPTION 'anon must read insights views'; END IF;
+  RESET ROLE;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.role_table_grants
+    WHERE table_name IN ('insights_weekly_show_scores','insights_platform_share_weekly','insights_genre_share_weekly','insights_signal_points')
+      AND grantee IN ('anon', 'authenticated', 'PUBLIC') AND privilege_type <> 'SELECT'
+  ) THEN
+    RAISE EXCEPTION 'insights views must be read-only for public roles';
+  END IF;
+
+  RAISE NOTICE '✓ Market insights verified (shares, top-100 cap, coverage floor, signal points, read-only).';
+END $$;
+
 -- 13. Premiere impact view: windows, multipliers, coverage and privileges (#195)
 DO $$
 DECLARE
