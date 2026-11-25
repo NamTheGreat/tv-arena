@@ -7,6 +7,7 @@ import { findSimilarShows } from '../lib/showDetail';
 import { getSignalFreshness, SignalStatus } from '../lib/signalFreshness';
 import { SecondarySignals } from './SecondarySignals';
 import { ShowComments } from './ShowComments';
+import { PremiereImpactCard } from './PremiereImpactCard';
 
 interface ShowDetailViewProps {
   seriesList: SeriesItem[];
@@ -271,6 +272,8 @@ export function ShowDetailView({
           </ul>
         ) : <p className="text-xs text-stone-500">No shows share this platform or genre yet.</p>}
       </section>
+
+      <PremiereImpactCard seriesId={show.id} />
 
       <ShowComments seriesId={show.id} onOpenAuth={onOpenAuth} />
 
