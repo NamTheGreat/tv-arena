@@ -66,11 +66,14 @@ const FriendsView = React.lazy(() =>
 const HallOfFameView = React.lazy(() =>
   import('./components/HallOfFameView').then((m) => ({ default: m.HallOfFameView }))
 );
+const InsightsView = React.lazy(() =>
+  import('./components/InsightsView').then((m) => ({ default: m.InsightsView }))
+);
 const DailyHistoryView = React.lazy(() =>
   import('./components/DailyHistoryView').then((m) => ({ default: m.DailyHistoryView }))
 );
 
-type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist' | 'history' | 'friends' | 'records';
+type TabKey = 'leaderboard' | 'arena' | 'charts' | 'guess' | 'movers' | 'watchlist' | 'history' | 'friends' | 'records' | 'insights';
 
 function RouteLoadingFallback() {
   return (
@@ -414,6 +417,7 @@ export default function App() {
     if (location.pathname.startsWith('/watchlist')) return 'watchlist';
     if (location.pathname.startsWith('/friends')) return 'friends';
     if (location.pathname.startsWith('/hall-of-fame')) return 'records';
+    if (location.pathname.startsWith('/insights')) return 'insights';
     return 'leaderboard';
   }, [location.pathname]);
 
@@ -674,6 +678,7 @@ export default function App() {
     { label: 'Guess', tabKey: 'guess' as TabKey, path: '/guess' },
     { label: 'Movers', tabKey: 'movers' as TabKey, path: '/movers' },
     { label: 'Hall of Fame', tabKey: 'records' as TabKey, path: '/hall-of-fame' },
+    { label: 'Insights', tabKey: 'insights' as TabKey, path: '/insights' },
     ...(user ? [{ label: 'Watchlist', tabKey: 'watchlist' as TabKey, path: '/watchlist' }] : []),
     ...(user ? [{ label: 'Friends', tabKey: 'friends' as TabKey, path: '/friends' }] : []),
   ];
@@ -811,6 +816,7 @@ export default function App() {
           <Route path="/movers" element={<MoversView seriesList={seriesList} />} />
           <Route path="/friends" element={<FriendsView onOpenAuth={() => setIsAuthModalOpen(true)} />} />
           <Route path="/hall-of-fame" element={<HallOfFameView />} />
+          <Route path="/insights" element={<InsightsView />} />
           <Route
             path="/history"
             element={<DailyHistoryView user={user} onOpenAuth={() => setIsAuthModalOpen(true)} />}
