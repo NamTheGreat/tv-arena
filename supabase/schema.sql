@@ -1443,6 +1443,44 @@ REVOKE ALL ON insights_weekly_show_scores, insights_platform_share_weekly, insig
 GRANT SELECT ON insights_weekly_show_scores, insights_platform_share_weekly, insights_genre_share_weekly, insights_signal_points
   TO anon, authenticated;
 
+-- Premiere impact (#195): see migration 20261124020000_premiere_impact.sql
+CREATE OR REPLACE VIEW series_premiere_impact
+WITH (security_invoker = on) AS
+SELECT
+  e.id AS event_id,
+  e.series_id,
+  s.slug,
+  s.title,
+  s.genre_group,
+  e.event_date,
+  e.label,
+  ROW_NUMBER() OVER (PARTITION BY e.series_id ORDER BY e.event_date)::INT AS premiere_number,
+  w.pre_days,
+  w.post_days,
+  w.pre_avg,
+  w.post_avg,
+  (w.post_avg - w.pre_avg) AS delta,
+  CASE WHEN w.pre_avg > 0 THEN ROUND(w.post_avg / w.pre_avg, 2) END AS multiplier
+FROM series_events e
+JOIN series s ON s.id = e.series_id
+CROSS JOIN LATERAL (
+  SELECT
+    COUNT(*) FILTER (WHERE sc.recorded_date < e.event_date)::INT AS pre_days,
+    COUNT(*) FILTER (WHERE sc.recorded_date >= e.event_date)::INT AS post_days,
+    ROUND(AVG(sc.daily_score) FILTER (WHERE sc.recorded_date < e.event_date), 2) AS pre_avg,
+    ROUND(AVG(sc.daily_score) FILTER (WHERE sc.recorded_date >= e.event_date), 2) AS post_avg
+  FROM series_daily_scores sc
+  WHERE sc.series_id = e.series_id
+    AND sc.recorded_date >= e.event_date - 7
+    AND sc.recorded_date <= LEAST(e.event_date + 6, (now() AT TIME ZONE 'UTC')::date)
+) w
+WHERE e.kind = 'season_premiere'
+  AND w.pre_days >= 4
+  AND w.post_days >= 4;
+
+REVOKE ALL ON series_premiere_impact FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON series_premiere_impact TO anon, authenticated;
+
 -- AI-generated weekly newsletter drafts (#198): server side only, see migration 20261124030000_newsletter_drafts.sql
 CREATE TABLE IF NOT EXISTS newsletter_drafts (
   week_start DATE PRIMARY KEY CHECK (EXTRACT(ISODOW FROM week_start) = 1),

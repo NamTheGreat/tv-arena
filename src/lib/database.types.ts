@@ -519,6 +519,25 @@ export type Database = {
         }
         Relationships: []
       }
+      series_premiere_impact: {
+        Row: {
+          event_id: number
+          series_id: string
+          slug: string
+          title: string
+          genre_group: string
+          event_date: string
+          label: string
+          premiere_number: number
+          pre_days: number
+          post_days: number
+          pre_avg: number
+          post_avg: number
+          delta: number
+          multiplier: number | null
+        }
+        Relationships: []
+      }
       series_signal_contributions: {
         Row: {
           series_id: string
