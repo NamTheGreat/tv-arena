@@ -1333,3 +1333,19 @@ REVOKE ALL ON FUNCTION public.friends_leaderboard(DATE) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.friends_leaderboard(DATE) TO authenticated;
 REVOKE ALL ON FUNCTION public.head_to_head(TEXT, DATE) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.head_to_head(TEXT, DATE) TO authenticated;
+
+-- AI-generated weekly newsletter drafts (#198): server side only, see migration 20261124030000_newsletter_drafts.sql
+CREATE TABLE IF NOT EXISTS newsletter_drafts (
+  week_start DATE PRIMARY KEY CHECK (EXTRACT(ISODOW FROM week_start) = 1),
+  markdown TEXT NOT NULL CHECK (length(markdown) BETWEEN 1 AND 20000),
+  facts JSONB NOT NULL,
+  model TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE newsletter_drafts ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON newsletter_drafts FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE ON newsletter_drafts TO service_role;
