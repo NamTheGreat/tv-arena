@@ -1318,7 +1318,6 @@ BEGIN
 
   RAISE NOTICE '✓ Premiere impact verified.';
 END $$;
-END $$;
 
 ROLLBACK;
 
