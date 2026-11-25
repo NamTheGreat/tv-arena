@@ -71,6 +71,10 @@ export type Database = {
           reddit_comments: number | null
           reddit_upvotes: number | null
           reddit_observed: boolean
+          social_mentions: number | null
+          imdb_rating: number | null
+          imdb_votes: number | null
+          imdb_episode: string | null
         }
         Insert: {
           id?: number
@@ -82,6 +86,10 @@ export type Database = {
           reddit_comments?: number | null
           reddit_upvotes?: number | null
           reddit_observed?: boolean
+          social_mentions?: number | null
+          imdb_rating?: number | null
+          imdb_votes?: number | null
+          imdb_episode?: string | null
         }
         Update: {
           id?: number
@@ -93,6 +101,10 @@ export type Database = {
           reddit_comments?: number | null
           reddit_upvotes?: number | null
           reddit_observed?: boolean
+          social_mentions?: number | null
+          imdb_rating?: number | null
+          imdb_votes?: number | null
+          imdb_episode?: string | null
         }
         Relationships: [
           {
@@ -534,6 +546,43 @@ export type Database = {
           daily_series: number[]
           daily_dates: string[]
           daily_ranks: number[]
+        }
+        Relationships: []
+      }
+      insights_platform_share_weekly: {
+        Row: {
+          week_start: string
+          network_group: string
+          shows: number
+          share_pct: number
+          score_share_pct: number
+          ranked_shows: number
+        }
+        Relationships: []
+      }
+      insights_genre_share_weekly: {
+        Row: {
+          week_start: string
+          genre_group: string
+          shows: number
+          total_daily_score: number
+          avg_score_per_show: number
+          share_pct: number
+        }
+        Relationships: []
+      }
+      insights_signal_points: {
+        Row: {
+          series_id: string
+          slug: string
+          title: string
+          network_group: string
+          genre_group: string
+          observed_days: number
+          avg_wiki_views: number | null
+          avg_reddit_comments: number | null
+          avg_reddit_upvotes: number | null
+          avg_daily_score: number | null
         }
         Relationships: []
       }

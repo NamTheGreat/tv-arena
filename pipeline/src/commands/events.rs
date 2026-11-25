@@ -3,7 +3,7 @@ use std::{thread, time::Duration};
 
 use crate::clients::http::create_http_client;
 use crate::clients::supabase::{batch_record_series_events, fetch_series};
-use crate::clients::tmdb::{fetch_show_events, SeriesEventItem};
+use crate::clients::tmdb::{fetch_show_events, is_not_found, SeriesEventItem};
 use crate::config::Config;
 use crate::models::SeriesRow;
 
@@ -13,7 +13,14 @@ pub struct EventIngestionSummary {
     pub successful_shows: usize,
     pub total_milestones: usize,
     pub failed_shows: Vec<(String, i32, String)>,
+    /// Shows whose stored TMDb ID no longer exists. A catalog data problem: reported loudly
+    /// (workflow warning) but not a pipeline failure, so one stale ID cannot fail every weekly run.
+    pub not_found_shows: Vec<(String, i32)>,
 }
+
+/// If more than this share of shows is missing on TMDb the cause is systemic (wrong API base,
+/// key scope, outage), not stale catalog rows, so the run fails.
+const MAX_NOT_FOUND_SHARE_PERCENT: usize = 20;
 
 pub fn ingest_events_for_shows<F, S>(
     shows: &[SeriesRow],
@@ -66,6 +73,15 @@ where
                     }
                 }
             }
+            Err(e) if is_not_found(&e) => {
+                println!(
+                    "::warning title=TMDb ID not found::'{}' (tmdb_id: {}) no longer exists on TMDb; fix its tmdb_id in the series table.",
+                    show.title, show.tmdb_id
+                );
+                summary
+                    .not_found_shows
+                    .push((show.title.clone(), show.tmdb_id));
+            }
             Err(e) => {
                 eprintln!(
                     "  ⚠️  TMDb error for '{}' (tmdb_id: {}): {}",
@@ -85,12 +101,25 @@ where
     }
 
     println!(
-        "\nEvent ingestion complete. Attempted: {}, Succeeded: {}, Failed: {}, Total milestones recorded: {}.",
+        "\nEvent ingestion complete. Attempted: {}, Succeeded: {}, Failed: {}, Not found on TMDb: {}, Total milestones recorded: {}.",
         summary.total_attempted,
         summary.successful_shows,
         summary.failed_shows.len(),
+        summary.not_found_shows.len(),
         summary.total_milestones
     );
+
+    if summary.total_attempted > 0
+        && summary.not_found_shows.len() * 100
+            > summary.total_attempted * MAX_NOT_FOUND_SHARE_PERCENT
+    {
+        bail!(
+            "{} of {} shows were not found on TMDb (over {}%); this looks systemic, not stale catalog rows.",
+            summary.not_found_shows.len(),
+            summary.total_attempted,
+            MAX_NOT_FOUND_SHARE_PERCENT
+        );
+    }
 
     if !summary.failed_shows.is_empty() {
         let details = summary
@@ -260,6 +289,82 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("Write Fail Show"));
         assert!(err_msg.contains("Supabase write error"));
+    }
+
+    fn not_found_err() -> anyhow::Error {
+        anyhow::Error::new(crate::clients::tmdb::TmdbNotFound { status: 404 })
+    }
+
+    #[test]
+    fn test_stale_tmdb_id_is_reported_but_does_not_fail_the_run() {
+        let mut shows: Vec<SeriesRow> = (0..9)
+            .map(|i| mock_show(&format!("ok-{i}"), &format!("Ok {i}"), 500 + i))
+            .collect();
+        shows.push(mock_show("fargo", "Fargo", 57405));
+
+        let summary = ingest_events_for_shows(
+            &shows,
+            |tmdb_id| {
+                if tmdb_id == 57405 {
+                    Err(not_found_err())
+                } else {
+                    Ok(vec![])
+                }
+            },
+            |_, _| Ok(()),
+            0,
+        )
+        .expect("one stale TMDb ID must not fail the run");
+
+        assert_eq!(summary.not_found_shows, vec![("Fargo".to_string(), 57405)]);
+        assert_eq!(summary.successful_shows, 9);
+        assert!(summary.failed_shows.is_empty());
+    }
+
+    #[test]
+    fn test_stale_ids_still_allow_real_failures_to_fail_the_run() {
+        let shows = vec![
+            mock_show("a", "Stale", 1),
+            mock_show("b", "Broken", 2),
+            mock_show("c", "Fine 1", 3),
+            mock_show("d", "Fine 2", 4),
+            mock_show("e", "Fine 3", 5),
+            mock_show("f", "Fine 4", 6),
+            mock_show("g", "Fine 5", 7),
+            mock_show("h", "Fine 6", 8),
+            mock_show("i", "Fine 7", 9),
+            mock_show("j", "Fine 8", 10),
+            mock_show("k", "Fine 9", 11),
+            mock_show("l", "Fine 10", 12),
+        ];
+        let err = ingest_events_for_shows(
+            &shows,
+            |id| match id {
+                1 => Err(not_found_err()),
+                2 => anyhow::bail!("TMDb request failed after 3 attempts (HTTP 500)"),
+                _ => Ok(vec![]),
+            },
+            |_, _| Ok(()),
+            0,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("Broken"));
+        assert!(!err.contains("Stale"));
+    }
+
+    #[test]
+    fn test_mass_not_found_is_treated_as_systemic_failure() {
+        let shows = vec![
+            mock_show("a", "One", 1),
+            mock_show("b", "Two", 2),
+            mock_show("c", "Three", 3),
+            mock_show("d", "Four", 4),
+        ];
+        let err = ingest_events_for_shows(&shows, |_| Err(not_found_err()), |_, _| Ok(()), 0)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("systemic"));
     }
 
     #[test]
