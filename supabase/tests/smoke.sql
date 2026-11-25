@@ -1446,6 +1446,50 @@ BEGIN
   RAISE NOTICE '✓ Premiere impact verified.';
 END $$;
 
+-- 14. Newsletter drafts: server-side only staging table (#198)
+DO $$
+DECLARE
+  v_n INT; v_ok BOOLEAN;
+  v_monday DATE := date_trunc('week', now())::DATE;
+BEGIN
+  RAISE NOTICE 'Testing newsletter_drafts...';
+  INSERT INTO newsletter_drafts (week_start, markdown, facts, model) VALUES (v_monday, '# Draft', '[]'::jsonb, 'test-model');
+  IF (SELECT status FROM newsletter_drafts WHERE week_start = v_monday) <> 'draft' THEN RAISE EXCEPTION 'default status must be draft'; END IF;
+
+  v_ok := FALSE;
+  BEGIN INSERT INTO newsletter_drafts (week_start, markdown, facts, model) VALUES (v_monday + 1, 'x', '[]'::jsonb, 'm');
+  EXCEPTION WHEN check_violation THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RAISE EXCEPTION 'week_start must be a Monday'; END IF;
+
+  v_ok := FALSE;
+  BEGIN INSERT INTO newsletter_drafts (week_start, markdown, facts, model, status) VALUES (v_monday - 7, 'x', '[]'::jsonb, 'm', 'sent');
+  EXCEPTION WHEN check_violation THEN v_ok := TRUE; END;
+  IF NOT v_ok THEN RAISE EXCEPTION 'status must be draft or published'; END IF;
+
+  v_ok := FALSE;
+  BEGIN SET LOCAL ROLE anon; PERFORM 1 FROM newsletter_drafts;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  RESET ROLE;
+  IF NOT v_ok THEN RAISE EXCEPTION 'anon must not read drafts'; END IF;
+  v_ok := FALSE;
+  BEGIN SET LOCAL ROLE authenticated; PERFORM 1 FROM newsletter_drafts;
+  EXCEPTION WHEN insufficient_privilege THEN v_ok := TRUE; END;
+  RESET ROLE;
+  IF NOT v_ok THEN RAISE EXCEPTION 'authenticated must not read drafts'; END IF;
+
+  SELECT COUNT(*) INTO v_n FROM information_schema.role_table_grants
+    WHERE table_name = 'newsletter_drafts' AND grantee = 'service_role' AND privilege_type IN ('DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER');
+  IF v_n <> 0 THEN RAISE EXCEPTION 'service_role must not delete drafts'; END IF;
+  SELECT COUNT(*) INTO v_n FROM information_schema.role_table_grants
+    WHERE table_name = 'newsletter_drafts' AND grantee IN ('anon', 'authenticated', 'PUBLIC');
+  IF v_n <> 0 THEN RAISE EXCEPTION 'public roles must have no grants on drafts'; END IF;
+  IF (SELECT COUNT(*) FROM information_schema.role_table_grants WHERE table_name = 'newsletter_drafts' AND grantee = 'service_role' AND privilege_type IN ('SELECT','INSERT','UPDATE')) <> 3 THEN
+    RAISE EXCEPTION 'service_role needs select/insert/update';
+  END IF;
+
+  RAISE NOTICE '✓ Newsletter drafts verified.';
+END $$;
+
 ROLLBACK;
 
 \echo '===================================='
