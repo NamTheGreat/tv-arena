@@ -1363,7 +1363,6 @@ BEGIN
 
   RAISE NOTICE '✓ Market insights verified (shares, top-100 cap, coverage floor, signal points, read-only).';
 END $$;
-END $$;
 
 ROLLBACK;
 
